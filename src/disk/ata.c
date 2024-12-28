@@ -397,6 +397,7 @@ disk_t* IdentifyDisk(uint8 diskNum){
 
 // Note: partition-relative LBA implementation may be a good idea
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
+    printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
     if(disk->populated || !disk->removable){
         // If the disk exists, we can read from it
         // Select the master or slave depending on the drive
@@ -409,6 +410,8 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
                 outb(DriveSelect(disk->base), 0x50);
             }else{
                 // Convert CHS to LBA28
+                // Placeholder
+                return NULL;
             }
         }else{
             if(disk->addressing == LBA28){
@@ -419,6 +422,8 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
                 outb(DriveSelect(disk->base), 0x40);
             }else{
                 // Convert CHS to LBA28
+                // Placeholder
+                return NULL;
             }
         }
         DiskDelay(disk->base);
@@ -427,8 +432,22 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         return NULL;
     }
 
+    if(lba + sectorsToRead > disk->size){
+        // Request outside disk bounds
+        return NULL;
+    }
+
+    if(sectorsToRead == 0 || (disk->addressing == LBA28 && sectorsToRead > 255)){
+        // Invalid sector count
+        return NULL;
+    }
+
     // Allocate the buffer that the data will be sent to
     uint16* buffer = alloc(sectorsToRead * disk->sectorSize);
+    if(buffer == NULL){
+        // Memory allocation error
+        return NULL;
+    }
 
     if(disk->addressing == LBA28){
         lba = (uint32)lba;
@@ -476,8 +495,19 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         WaitForIdle(disk->base);
         outb(CmdPort(disk->base), COMMAND_READ_SECTORS_EXT);
 
-        for(int i = 0; i < 4; i++){
-            inb(ErrorPort(disk->base));
+        int retries = 3;
+        while (retries-- > 0) {
+            for (int i = 0; i < 4; i++) {
+                inb(ErrorPort(disk->base));  // Clear errors
+            }
+
+            if (inb(ErrorPort(disk->base)) == 0) {
+                break;  // No error, proceed
+            }
+
+            if (retries == 0) {
+                return NULL;  // Give up after retries
+            }
         }
 
         // Wait for the drive to indicate it's ready to transfer data

@@ -245,6 +245,16 @@ void printk(const char *str, ...){
             }else if(str[i] == 'c'){
                 int chr = va_arg(args, int);
                 *(output + index) = (char)chr;
+            }else if(str[i] == 'l' && str[i + 1] == 'l' && str[i+2] == 'u'){
+                uint32 argVal = va_arg(args, uint32);
+                char* strnum = ConvertUnSigned(argVal, 10);
+                int len = strlen(strnum);
+                for(int i = 0; i < len; i++){
+                    *(output + index + i) = *(strnum + i);
+                }
+                i += 2;
+                dealloc(strnum);
+                index += len;
             }else{
                 *(output + index) = '%';
                 index++;

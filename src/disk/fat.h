@@ -144,7 +144,7 @@ typedef struct PACKED FAT_File {
 } fat_entry_t;
 
 typedef struct PACKED LFN_Entry {
-    uint8 orderSequence;            // ????????????????????????????????????????????
+    uint8 orderSequence;            // The order this is in an LFN. There are multiple values in chains.
     uint16 firstFive[5];             // The first five two-byte characters in this entry
     uint8 attribute;                // Always 0x0F
     uint8 type;                     // Long entry type. Zero if name.
