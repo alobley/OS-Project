@@ -68,6 +68,20 @@ void InitializeHardware(){
     InitializeDisks();
 }
 
+int32 ExecuteProgram(void *program) {
+    if (program == NULL) {
+        printk("Error: Program is NULL!\n");
+        return -1;
+    }
+
+    // Cast the program data to a function pointer
+    int (*func)() = (int (*)()) program;
+
+    // Execute the program and return its result
+    int result = func();
+    return result;
+}
+
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     if(magic != MULTIBOOT_MAGIC){

@@ -397,7 +397,7 @@ disk_t* IdentifyDisk(uint8 diskNum){
 
 // Note: partition-relative LBA implementation may be a good idea
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
-    printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
+    //printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
     if(disk->populated || !disk->removable){
         // If the disk exists, we can read from it
         // Select the master or slave depending on the drive

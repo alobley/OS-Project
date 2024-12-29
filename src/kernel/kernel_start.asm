@@ -54,14 +54,6 @@ _start:
     hlt
     jmp .end
 
-global ExecuteProgram
-ExecuteProgram:
-    ; Pretty simple. Retrieve the address of a program's main function (which was passed into this function) and jump to it.
-    pop eax
-    push .done
-    jmp eax
-.done:
-    ret     ; EAX should have the return value
 
 section .text.interrupts
 ALIGN 4

@@ -21,6 +21,8 @@ extern void shutdown();
 extern disk_t* disks[MAX_DRIVES];
 extern fat_disk_t* fatdisks[MAX_DRIVES];
 
+extern int32 ExecuteProgram(void* program);
+
 // Execute a syscall to see what happens
 void syscall(){
     asm volatile("int %0" :: "Nd" (SYSCALL_INT));
@@ -39,7 +41,85 @@ void fseek(){
         }
     }
 
-    ReadRootDirectory(supportedDisk);
+    FAT_cluster_t* rootDir = ReadRootDirectory(supportedDisk);
+    FAT_cluster_t* current = rootDir;
+    fat_disk_t* fatdisk = supportedDisk;
+
+    printk("Files in the root directory:\n");
+    while(true){
+        if(current == NULL){
+            break;
+        }
+        size_t bytesPerCluster = fatdisk->paramBlock->sectorsPerCluster * fatdisk->paramBlock->bytesPerSector;
+        size_t numEntries = bytesPerCluster / (sizeof(fat_entry_t));
+
+        uint64 offset = 0;
+        for(size_t i = 0; i < numEntries; i++){
+            fat_entry_t* file = (fat_entry_t* )(current->buffer + offset);
+            if(file->name[0] == 0){
+                // End of directory entries
+                break;
+            }
+            if(file->name[0] == DELETED){
+                if(file->attributes == 0x0F){
+                    offset += sizeof(lfn_entry_t);
+                }else{
+                    offset += sizeof(fat_entry_t);
+                }
+                continue;
+            }
+            if(file->attributes == 0x0F){
+                // The file is an LFN file. Process it like a regular file for now for debugging purposes.
+                WriteStrSize(&file->name, 11);
+                char* ptr = (char*)file;
+                for(int j = 0; j < sizeof(fat_entry_t); j++){
+                    printk("0x%x ", (uint32)((*(ptr + j)) & 0x000000FFU));
+                }
+                lfn_entry_t* lfn = (lfn_entry_t*)((void*)file);
+                file = &lfn->file;
+                if(file->name[0] == DELETED){
+                    //printk("Deleted!\n");
+                    offset += sizeof(fat_entry_t);          // If the entry is deleted, it's there, so we have to skip it.
+                    continue;
+                }
+                // Just in case the 8.3 filename has 0 characters
+                printk("LFN file found!\n");
+
+                WriteStrSize(lfn->file.name, 11);
+                printk("\n");
+                offset += sizeof(lfn_entry_t);
+            }else{
+                offset += sizeof(fat_entry_t);
+            }
+            if(file->name[0] != DELETED){
+                // The file we're looking for was found and not deleted
+                file_t* foundFile = (file_t*)alloc(sizeof(file_t));
+
+                // Copy the file name to the VFS file
+                foundFile->name = (char*)alloc(12);
+                memcpy(foundFile->name, file->name, 11);
+                foundFile->name[11] = '\0';
+                for(int i = 0; i < 11; i++){
+                    if(foundFile->name[i] == ' ' && i == 7){
+                        foundFile->name[i] = '.';
+                    }
+                }
+
+                uint32 firstFileCluster = file->firstClusterLow | (file->firstClusterHigh << 16);
+                uint32 allClusters = file->fileSize / (fatdisk->paramBlock->sectorsPerCluster * fatdisk->paramBlock->bytesPerSector);       // How many clusters the file takes up
+
+                uint64 clusterLba = firstFileCluster * fatdisk->paramBlock->sectorsPerCluster + fatdisk->firstDataSector;
+                printk(foundFile->name);
+                printk("\n");
+                dealloc(foundFile->name);
+                dealloc(foundFile);
+            }
+        }
+
+        current = current->next;
+        offset = 0;
+    }
+    printk("End of directory.\n");
 }
 
 // The shell commands
@@ -78,6 +158,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("fault: intentionally cause an exception (debug)\n");
         printk("reboot: reboots the machine\n");
         printk("shutdown: shuts down the computer (QEMU/Bochs only)\n");
+        printk("lex: loads and executes a program from the disk\n");
 
     }else if(strcmp(cmd, "dskchk")){
         for(int i = 0; i < MAX_DRIVES; i++){
@@ -120,6 +201,23 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 
     }else if (strcmp(cmd, "dir")){
         fseek();
+
+    }else if(strncmp(cmd, "lex", 3)){
+        // Expects a file name after the command as well as a space between them
+        for(int i = 0; i < MAX_DRIVES; i++){
+            if(fatdisks[i] != NULL){
+                //printk("Disk %d: ", i);
+                if(fatdisks[i]->fstype == FS_FAT32){
+                    supportedDisk = fatdisks[i];
+                }
+            }
+        }
+        file_t* program = SeekFile(supportedDisk, &cmd[4]);
+        if(program == NULL){
+            printk("File not found!\n");
+            return;
+        }
+        ExecuteProgram(program->data);
 
     }else{
         printk("Invalid Command!\n");

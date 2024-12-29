@@ -196,7 +196,7 @@ typedef struct PACKED FAT_cluster {
     struct FAT_Dir* next;
 } FAT_cluster_t;
 
-
+void ClearRootDirectory(FAT_cluster_t* rootDir);
 fat_disk_t* ParseFilesystem(disk_t* disk);
 file_t* SeekFile(fat_disk_t* fatdisk, char* fileName);        // Returns a pointer to the loaded file
 FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk);        // Returns a linked list of clusters containing the root directory entries
