@@ -11,6 +11,7 @@
 #include <ata.h>
 #include <multiboot.h>
 #include <fat.h>
+#include <vfs.h>
 
 // Very simple CLI shell built into the kernel until I get filesystem and ABI support
 
@@ -31,29 +32,14 @@ fat_disk_t* supportedDisk;
 void fseek(){
     for(int i = 0; i < MAX_DRIVES; i++){
         if(fatdisks[i] != NULL){
-            printk("Disk %d: ", i);
-            if(fatdisks[i]->fstype == FS_UNSUPPORTED){
-                printk("Non-FAT disk!\n");
-            }else if(fatdisks[i]->fstype == FS_FAT12){
-                printk("FAT12 disk found!\n");
-            }else if(fatdisks[i]->fstype == FS_FAT16){
-                printk("FAT16 disk found!\n");
-            }else if(fatdisks[i]->fstype == FS_FAT32){
-                printk("FAT32 disk found!\n");
+            //printk("Disk %d: ", i);
+            if(fatdisks[i]->fstype == FS_FAT32){
                 supportedDisk = fatdisks[i];
-            }else{
-                printk("exFAT disk found!\n");
             }
         }
     }
 
-    fat_entry_t* file = SeekFile(supportedDisk, "prgm.bin");
-    if(file == NULL){
-        printk("File not found!\n");
-    }else{
-        WriteStrSize(file->name, 11);
-        printk("\n");
-    }
+    ReadRootDirectory(supportedDisk);
 }
 
 // The shell commands
@@ -87,7 +73,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("help: view this screen\n");
         printk("dskchk: scans the system for PATA disks\n");
         printk("memsize: get the total system RAM in bytes\n");
-        printk("fseek: tests the FAT driver by looking for a file on the disk\n");
+        printk("dir: tests the FAT driver by looking for a file on the disk\n");
         printk("clear: clears the terminal screen\n");
         printk("fault: intentionally cause an exception (debug)\n");
         printk("reboot: reboots the machine\n");
@@ -130,9 +116,9 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         asm volatile("int $0x08");
 
     }else if(strcmp(cmd, "memsize")){
-        printk("Total memory: %u MB\n", (multibootInfo->memLower + multibootInfo->memUpper + 1024) / 1024);
+        printk("Total memory: %u MiB\n", (multibootInfo->memLower + multibootInfo->memUpper + 1024) / 1024);
 
-    }else if (strcmp(cmd, "fseek")){
+    }else if (strcmp(cmd, "dir")){
         fseek();
 
     }else{

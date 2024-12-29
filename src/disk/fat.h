@@ -4,6 +4,7 @@
 #include <types.h>
 #include <util.h>
 #include "ata.h"
+#include "vfs.h"
 
 #define FS_FAT12 0
 #define FS_FAT16 1
@@ -33,7 +34,7 @@ typedef struct PACKED Extended_Boot_Record {
             uint32 sectorsPerFat;
             uint16 flags;
             uint16 version;             // High byte = major version, low byte = minor version
-            uint32 rootDirCluster;      // First LBA of the root cluster
+            uint32 rootDirCluster;      // Cluster containing the root directory
             uint16 fsInfo;              // Sector number on the disk containing the fsinfo structure
             uint16 backupBoot;          // Sector number for the backup boot sector
             uint8 _reserved[12];
@@ -186,10 +187,18 @@ typedef struct PACKED exFAT_file {
     uint8 nameEntryType;
     uint8 nameFlags;
     char fileName[30];
-} exfat_file_t;
+} exfat_entry_t;
+
+// Linked list of clusters
+typedef struct PACKED FAT_cluster {
+    uint32 cluster;
+    void* buffer;
+    struct FAT_Dir* next;
+} FAT_cluster_t;
 
 
 fat_disk_t* ParseFilesystem(disk_t* disk);
-fat_entry_t* SeekFile(fat_disk_t* fatdisk, char* fileName);
+file_t* SeekFile(fat_disk_t* fatdisk, char* fileName);        // Returns a pointer to the loaded file
+FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk);        // Returns a linked list of clusters containing the root directory entries
 
 #endif
