@@ -119,6 +119,7 @@ void fseek(){
         current = current->next;
         offset = 0;
     }
+    ClearRootDirectory(rootDir);
     printk("End of directory.\n");
 }
 
@@ -218,7 +219,9 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
             return;
         }
         ExecuteProgram(program->data);
-
+        dealloc(program->data);
+        dealloc(program->name);
+        dealloc(program);
     }else{
         printk("Invalid Command!\n");
     }

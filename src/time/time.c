@@ -36,9 +36,6 @@
 #define FREQ_OF_DIV(_d) (PIT_HZ / (_d))
 #define REAL_FREQ_OF_FREQ(_f) (FREQ_OF_DIV(DIV_OF_FREQ((_f))))
 
-// Define a type for timer functions that will be called
-typedef void (*TimerCallback)(void);
-
 // This is an entry that contains data for other timers which will be executed when a timer interrupt is called
 typedef struct TimerCallbackEntry{
     TimerCallback callback;             // The function that this timer calls
@@ -73,7 +70,6 @@ void AddTimerCallback(TimerCallback callback, uint32 callbackNum, uint32 interva
     if(newEntry == NULL){
         // This too will have to be expanded
         // If there is not enough memory to allocate the new entry, return
-        //???????????????????????????????????????????????????????????????????????????????????
         printk("No Memory!\n");
         return;
     }

@@ -87,7 +87,7 @@ void ClearRootDirectory(FAT_cluster_t* rootDir){
     }
 }
 
-// Start it with FAT32 then go to FAT12/16 when it's figured out
+// Start it with FAT32 then go to FAT12/16 when it's figured out (I have to figure this out again :despair:)
 // In FAT32, the root directory is a cluster chain, which is itself full of FAT entries. The first cluster is in the BPB.
 // Returns a linked list of clusters that contain the root directory entries
 FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk){
@@ -163,7 +163,7 @@ FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk){
     return rootDir;
 }
 
-// Find and load a file from the filesystem
+// Find and load a file from the filesystem (only the root directory and a single cluster for now)
 file_t* SeekFile(fat_disk_t* fatdisk, char* fileName){
     FAT_cluster_t* rootDir = ReadRootDirectory(fatdisk);
 
@@ -273,6 +273,8 @@ file_t* SeekFile(fat_disk_t* fatdisk, char* fileName){
                 uint32 allClusters = file->fileSize / (fatdisk->paramBlock->sectorsPerCluster * fatdisk->paramBlock->bytesPerSector);       // How many clusters the file takes up
 
                 uint64 clusterLba = firstFileCluster * fatdisk->paramBlock->sectorsPerCluster + fatdisk->firstDataSector;
+
+                ClearRootDirectory(rootDir);
 
                 return foundFile;
             }

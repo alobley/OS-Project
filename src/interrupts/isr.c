@@ -2,7 +2,7 @@
 #include "idt.h"
 #include <vga.h>
 #include <util.h>
-#include <time.h>
+#include <time/time.h>
 
 #define NUM_ISRS 49
 
@@ -59,13 +59,23 @@ extern void _isr48(struct Registers*);
 //extern void syscall_handler(struct Registers* regs);
 
 // This is what is processed when you perform an ABI call (int 0x30). It works!
-// Implementation at a later date
 void syscall_handler(struct Registers *regs){
-    if(regs->eax == 0x01){
-        printk("Debug!\n");
-    }else{
-        printk("The system was called!\n");
-        printk("Syscall Number: %d\n", regs->eax);
+    switch(regs->eax){
+        case 0:
+            // SYS_DEBUG
+            printk("Debug!\n");
+            break;
+        case 1:
+            // SYS_PRINT
+            WriteStr((char*)regs->ebx);
+            break;
+        case 2:
+            // SYS_ADD_TIMER
+            AddTimerCallback((TimerCallback)regs->ebx, regs->ecx, regs->edx);
+            break;
+        default:
+            printk("Invalid syscall!\n");
+            break;
     }
 }
 
