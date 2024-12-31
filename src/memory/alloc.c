@@ -33,12 +33,15 @@ uint32 PAGE_TABLE_AREA_END;
 void InitializeMemory(size_t memSize){
     totalMem = memSize;
 
+    // Reserve space for the page tables
     PAGE_TABLE_AREA_BEGIN = kernel_heap_end;
     if(PAGE_TABLE_AREA_BEGIN % 4096 != 0){
         PAGE_TABLE_AREA_BEGIN += 4096 - (PAGE_TABLE_AREA_BEGIN % 4096);
     }
     PAGE_TABLE_AREA_END = PAGE_TABLE_AREA_BEGIN + (1024 * 4096); 
 
+    // Later: remake this file to use the page tables
+    
     KERNEL_FREE_HEAP_END = memSize;
     kernel_heap_end = PAGE_TABLE_AREA_END;
 

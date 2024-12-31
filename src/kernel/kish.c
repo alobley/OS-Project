@@ -160,6 +160,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("reboot: reboots the machine\n");
         printk("shutdown: shuts down the computer (QEMU/Bochs only)\n");
         printk("lex: loads and executes a program from the disk\n");
+        printk("pginfo: show the total number of pages in the system\n");
 
     }else if(strcmp(cmd, "dskchk")){
         for(int i = 0; i < MAX_DRIVES; i++){
@@ -198,7 +199,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         asm volatile("int $0x08");
 
     }else if(strcmp(cmd, "memsize")){
-        printk("Total memory: %u MiB\n", GetTotalMemory());
+        printk("Total memory: %u MiB\n", (GetTotalMemory() / 1024) / 1024);
 
     }else if (strcmp(cmd, "dir")){
         fseek();
@@ -222,6 +223,8 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         dealloc(program->data);
         dealloc(program->name);
         dealloc(program);
+    }else if(strcmp(cmd, "pginfo")){
+        printk("Total pages: %u\n", GetPages());
     }else{
         printk("Invalid Command!\n");
     }

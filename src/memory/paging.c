@@ -23,6 +23,12 @@ extern uint32 PAGE_TABLE_AREA_END;
 
 uint32 current_page_table_addr = 0;
 
+uint32 allPages = 0;
+
+uint32 GetPages(){
+    return allPages;
+}
+
 PageTable* AllocatePageTable(){
     if (current_page_table_addr + 4096 > PAGE_TABLE_AREA_END) {
         // No more space for page tables
@@ -60,6 +66,8 @@ PageDirectory* InitPaging(size_t totalMem){
         // Check if there is leftover memory that doesn't span a whole page, and give it a page
         totalPages++;
     }
+
+    allPages = totalPages;
 
     if(totalPages % 1024 != 0){
         // Check if there is leftover memory that doesn't span a whole table, and give it a table

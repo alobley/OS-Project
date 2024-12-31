@@ -54,4 +54,6 @@ typedef struct ALIGNED(4096) PageTable {
 // Generate the page directory and all tables for memory
 PageDirectory* InitPaging(size_t totalMem);
 
+uint32 GetPages();
+
 #endif
