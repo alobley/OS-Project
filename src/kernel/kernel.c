@@ -11,6 +11,7 @@
 #include <ata.h>
 #include <multiboot.h>
 #include <fat.h>
+#include <paging.h>
 
 #define MULTIBOOT_MAGIC 0x2BADB002
 
@@ -87,9 +88,11 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     if(magic != MULTIBOOT_MAGIC){
         // There was a problem, reboot
         WriteStr("WARNING: no multiboot magic number.\n");
+        reboot();
     }
     // Dynamic memory achieved!
     InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
+    InitPaging((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitializeHardware();
 
     // Launch the shell

@@ -123,3 +123,69 @@ uint64 __udivmoddi4(uint64 dividend, uint64 divisor, uint64* rem){
 
     return quotient;
 }
+
+
+int64 __divdi3(int64 a, int64 b) {
+    // Handle division by zero
+    if (b == 0) {
+        // Define your error behavior (e.g., abort, return a special value)
+        return 0; // For demonstration purposes
+    }
+
+    int neg = (a < 0) ^ (b < 0); // Result is negative if signs of a and b differ
+    uint64 ua = (a < 0) ? -a : a; // Absolute value of a
+    uint64 ub = (b < 0) ? -b : b; // Absolute value of b
+
+    uint64 result = 0;
+    while (ua >= ub) {
+        uint64 temp = ub, multiple = 1;
+        while ((temp << 1) > temp && (temp << 1) <= ua) {
+            temp <<= 1;
+            multiple <<= 1;
+        }
+        ua -= temp;
+        result += multiple;
+    }
+
+    return neg ? -(int64)result : (int64)result;
+}
+
+int64 __moddi3(int64 a, int64 b) {
+    // Handle division by zero
+    if (b == 0) {
+        // Define your error behavior (e.g., abort, return a special value)
+        return 0; // For demonstration purposes
+    }
+
+    int neg = (a < 0); // Result is negative if a is negative
+    uint64 ua = (a < 0) ? -a : a; // Absolute value of a
+    uint64 ub = (b < 0) ? -b : b; // Absolute value of b
+
+    while (ua >= ub) {
+        uint64 temp = ub;
+        while ((temp << 1) > temp && (temp << 1) <= ua) {
+            temp <<= 1;
+        }
+        ua -= temp;
+    }
+
+    return neg ? -(int64)ua : (int64)ua;
+}
+
+uint64 __umoddi3(uint64 a, uint64 b) {
+    // Handle division by zero
+    if (b == 0) {
+        // Define your error behavior (e.g., abort, return a special value)
+        return 0; // For demonstration purposes
+    }
+
+    while (a >= b) {
+        uint64 temp = b;
+        while ((temp << 1) > temp && (temp << 1) <= a) {
+            temp <<= 1;
+        }
+        a -= temp;
+    }
+
+    return a;
+}

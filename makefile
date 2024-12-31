@@ -4,7 +4,7 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga std -display gtk -drive file=build/main.iso,media=cdrom,if=ide
+EMARGS=-m 4G -smp 1 -vga std -display gtk -drive file=build/main.iso,media=cdrom,if=ide
 EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
 EMARGS+=-d cpu_reset -audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
@@ -38,7 +38,7 @@ LIBS=$(BUILD_DIR)/kernel_start.o $(INT_DIR)/isr.c $(INT_DIR)/idt.c $(INT_DIR)/ir
 LIBS+=$(LIB_DIR)/io.c $(LIB_DIR)/fpu.c $(VGA_DIR)/vga.c $(VGA_DIR)/pixel.c
 LIBS+=$(MEM_DIR)/alloc.c $(TIME_DIR)/time.c $(KB_DIR)/keyboard.c $(LIB_DIR)/math.c
 LIBS+=$(DISK_DIR)/ata.c $(DISK_DIR)/fat.c $(SOUND_DIR)/pcspkr.c $(VGA_DIR)/text.c
-LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c
+LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c $(MEM_DIR)/paging.c
 
 # Assembly and Kernel Files
 ASMFILE=boot

@@ -198,7 +198,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         asm volatile("int $0x08");
 
     }else if(strcmp(cmd, "memsize")){
-        printk("Total memory: %u MiB\n", (multibootInfo->memLower + multibootInfo->memUpper + 1024) / 1024);
+        printk("Total memory: %u MiB\n", GetTotalMemory());
 
     }else if (strcmp(cmd, "dir")){
         fseek();

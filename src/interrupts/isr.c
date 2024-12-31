@@ -3,6 +3,8 @@
 #include <vga.h>
 #include <util.h>
 #include <time/time.h>
+#include <disk/fat.h>
+#include <keyboard.h>
 
 #define NUM_ISRS 49
 
@@ -56,6 +58,8 @@ extern void _isr46(struct Registers*);
 extern void _isr47(struct Registers*);
 extern void _isr48(struct Registers*);
 
+extern fat_disk_t* fatdisks[MAX_DRIVES];
+
 //extern void syscall_handler(struct Registers* regs);
 
 // This is what is processed when you perform an ABI call (int 0x30). It works!
@@ -67,12 +71,49 @@ void syscall_handler(struct Registers *regs){
             break;
         case 1:
             // SYS_PRINT
+            // EBX = pointer to string
             WriteStr((char*)regs->ebx);
             break;
         case 2:
-            // SYS_ADD_TIMER
+            // SYS_CREATE_TIMER
+            // EBX = callback function pointer
+            // ECX = callback number
+            // EDX = interval
             AddTimerCallback((TimerCallback)regs->ebx, regs->ecx, regs->edx);
             break;
+        case 3:
+            // SYS_REMOVE_TIMER
+            RemoveTimerCallback(regs->ebx);
+            break;
+        case 4:
+            // SYS_FSEEK
+            // EBX = Pointer to string containing the name of the file to search for
+            // Returns a pointer to the file_t struct's data, in EBX
+            char* fileName = (char*)regs->ebx;
+            regs->ebx = 0;
+            for(int i = 0; i < MAX_DRIVES; i++){
+                if(fatdisks[i] != NULL){
+                    if(fatdisks[i]->fstype == FS_FAT32){
+                        regs->ebx = (uint32)SeekFile(fatdisks[i], fileName)->data;
+                        if(regs->ebx != 0){
+                            break;
+                        }
+                    }
+                }
+            }
+        case 5:
+            // SYS_SET_VGA_MODE
+            // EBX = mode
+            // Right now we don't need to provide a pointer to the VGA buffer since there's no virtual memory
+            VGA_SetMode(regs->ebx);
+            break;
+        case 6:
+            // SYS_SET_VGA_PALETTE
+            VGA_SetPalette((color_rgb_t*)regs->ebx);
+        case 7:
+            // SYS_GET_KEY
+            // Returns the key in EAX
+            regs->eax = GetKey();
         default:
             printk("Invalid syscall!\n");
             break;

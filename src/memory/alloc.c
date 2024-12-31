@@ -21,10 +21,26 @@ memory_block_t* kernel_heap;
 
 uint32 kernel_heap_end;
 
+uint32 totalMem = 0;
+
+uint32 GetTotalMemory(){
+    return totalMem;
+}
+
+uint32 PAGE_TABLE_AREA_BEGIN;
+uint32 PAGE_TABLE_AREA_END;
+
 void InitializeMemory(size_t memSize){
-    // Set to 1 gigabyte for now (need to get the GRUB memory map)
+    totalMem = memSize;
+
+    PAGE_TABLE_AREA_BEGIN = kernel_heap_end;
+    if(PAGE_TABLE_AREA_BEGIN % 4096 != 0){
+        PAGE_TABLE_AREA_BEGIN += 4096 - (PAGE_TABLE_AREA_BEGIN % 4096);
+    }
+    PAGE_TABLE_AREA_END = PAGE_TABLE_AREA_BEGIN + (1024 * 4096); 
+
     KERNEL_FREE_HEAP_END = memSize;
-    kernel_heap_end = __kernel_end;
+    kernel_heap_end = PAGE_TABLE_AREA_END;
 
     KERNEL_FREE_HEAP_BEGIN = __kernel_end;
     kernel_heap = (memory_block_t *)KERNEL_FREE_HEAP_BEGIN;

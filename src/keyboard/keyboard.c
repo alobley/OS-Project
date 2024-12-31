@@ -74,10 +74,8 @@ bool IsKeyPressed(uint8 scanCode){
 
 // Get the last key pressed
 uint8 GetKey(){
-    cli;                        // Prevent race conditions (real hardware test result)
     uint8 key = lastKeyPressed;
     lastKeyPressed = 0;
-    sti;
     return key;
 }
 

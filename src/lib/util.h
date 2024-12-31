@@ -11,7 +11,7 @@
 
 // Attributes
 #define PACKED __attribute__((packed))
-#define ALIGNED(num) __attribute__aligned((num))
+#define ALIGNED(num) __attribute__((aligned(num)))
 #define NORETURN __attribute__((noreturn))
 #define INLINE __attribute__((always_inline)) inline
 

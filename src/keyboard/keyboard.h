@@ -125,7 +125,7 @@ static char ASCIIUpper[104] = {
     0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-// Get a keyboard scancode from a PS/2 keyboard (WARNING: DEPRECATED)
+// Get the last key pressed
 uint8 GetKey();
 
 void WaitForKeyPress();

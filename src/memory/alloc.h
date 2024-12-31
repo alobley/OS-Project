@@ -13,4 +13,6 @@ void dealloc(void* ptr);
 // Initialize the kernel's memory heap
 void InitializeMemory(size_t memSize);
 
+uint32 GetTotalMemory();
+
 #endif

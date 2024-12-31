@@ -4,6 +4,9 @@ BITS 32
 section .text
     global _start
 
+%define VGA_MODE_TEXT 0x03
+%define VGA_MODE_GRAPHICS 0x13
+
 _start:
     call _main              ; Call the main function to get the program's physical memory address
 _main:
