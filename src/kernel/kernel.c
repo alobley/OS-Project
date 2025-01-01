@@ -20,7 +20,7 @@
 // Do git commit -m "Say what you did"
 // To push, do git push -u origin main
 
-// Reference a small example for showcase
+// Reference the integrated shell
 extern int CliHandler();
 
 // 8042 reset
