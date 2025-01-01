@@ -41,7 +41,8 @@ void InitializeMemory(size_t memSize){
     PAGE_TABLE_AREA_END = PAGE_TABLE_AREA_BEGIN + (1024 * 4096); 
 
     // Later: remake this file to use the page tables
-    
+    // TODO: Implement paging for the kernel heap and paging for individual processes
+
     KERNEL_FREE_HEAP_END = memSize;
     kernel_heap_end = PAGE_TABLE_AREA_END;
 

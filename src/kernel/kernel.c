@@ -86,9 +86,8 @@ int32 ExecuteProgram(void *program) {
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     if(magic != MULTIBOOT_MAGIC){
-        // There was a problem, reboot
+        // There was a problem, may not be vital
         WriteStr("WARNING: no multiboot magic number.\n");
-        reboot();
     }
     // Dynamic memory achieved!
     InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);

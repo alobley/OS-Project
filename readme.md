@@ -33,21 +33,21 @@ Currently, this project is still in the early stages. I've spent the past year l
 ## To-Do
 - Comment and document the code. Both are very sparse.
 - Learn how to use git and GitHub properly. (done)
-- Write an ATA and FAT driver for disk access. (working on it)
+- Write an ATA and FAT driver for disk access. (working on it - functional)
 - Write a system call interrupt and an ABI. (working on it)
 
 ## Long-Term Goals
 - Write a terminal application using my custom ABI.
 - Utilize the majority of the GRUB Multiboot info structure
-- Implement paging and better memory allocation.
+- Implement paging and better memory allocation. (working on it)
 - Implement process management and multitasking.
-- Add a userland and memory protection.
+- Add a userland and memory protection. <-- when everything else is done, this is the next goal
 - Add USB support.
 - Add milticore support.
 
 ## Build & Run
 
-**Note:** This is currently untested on real hardware. It is recommended to use QEMU for emulation.
+**Note:** This is currently largely untested on real hardware. It is recommended to use QEMU for emulation.
 
 ### Prerequisites
 Ensure you have the following installed:
