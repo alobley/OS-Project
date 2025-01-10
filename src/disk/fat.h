@@ -6,12 +6,6 @@
 #include "ata.h"
 #include "vfs.h"
 
-#define FS_FAT12 0
-#define FS_FAT16 1
-#define FS_FAT32 2
-#define FS_EXFAT 3
-#define FS_UNSUPPORTED 0xFF
-
 #define VALID_FSINFO_LEAD 0x41615252
 #define VALID_FSINFO_MID 0x61417272
 #define VALID_FSINFO_TRAIL 0xAA550000
@@ -196,9 +190,10 @@ typedef struct PACKED FAT_cluster {
     struct FAT_Dir* next;
 } FAT_cluster_t;
 
-void ClearRootDirectory(FAT_cluster_t* rootDir);
-fat_disk_t* ParseFilesystem(disk_t* disk);
-file_t* SeekFile(fat_disk_t* fatdisk, char* fileName);        // Returns a pointer to the loaded file
+void ClearFatDirectory(FAT_cluster_t* rootDir);
+fat_disk_t* TryFatFS(disk_t* disk);
+file_t* FatSeekFile(fat_disk_t* fatdisk, char* fileName);        // Returns a pointer to the loaded file
 FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk);        // Returns a linked list of clusters containing the root directory entries
+directory_t* FATDirToVfsDir(FAT_cluster_t* directory, fat_disk_t* fatdisk, char* name);
 
 #endif

@@ -3,7 +3,7 @@
 #include <vga.h>
 #include <util.h>
 #include <time/time.h>
-#include <disk/fat.h>
+#include <disk/vfs.h>
 #include <keyboard.h>
 
 #define NUM_ISRS 49
@@ -90,17 +90,7 @@ void syscall_handler(struct Registers *regs){
             // EBX = Pointer to string containing the name of the file to search for
             // Returns a pointer to the file_t struct's data, in EBX
             char* fileName = (char*)regs->ebx;
-            regs->ebx = 0;
-            for(int i = 0; i < MAX_DRIVES; i++){
-                if(fatdisks[i] != NULL){
-                    if(fatdisks[i]->fstype == FS_FAT32){
-                        regs->ebx = (uint32)SeekFile(fatdisks[i], fileName)->data;
-                        if(regs->ebx != 0){
-                            break;
-                        }
-                    }
-                }
-            }
+            regs->ebx = (uint32)GetFile(fileName)->data;
         case 5:
             // SYS_SET_VGA_MODE
             // EBX = mode

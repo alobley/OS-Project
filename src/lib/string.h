@@ -61,4 +61,44 @@ static inline char toupper(char c){
     return c;
 }
 
+
+// strpbrk is a function that finds the first occurrence of any character in the second string in the first string.
+static inline char* strpbrk(const char* str, const char* delim){
+    while(*str){
+        for(int i = 0; delim[i]; i++){
+            if(*str == delim[i]){
+                return (char*)str;
+            }
+        }
+        str++;
+    }
+
+    return NULL;
+}
+
+// strtok is a function that tokenizes a string based on a delimiter
+static inline char* strtok(char* str, const char* delim){
+    static char* src = NULL;
+    char* p, *ret = 0;
+
+    if(str != NULL){
+        src = str;
+    }
+
+    if(src == NULL){
+        return NULL;
+    }
+
+    if((p = strpbrk(src, delim)) != NULL){
+        *p = 0;
+        ret = src;
+        src = ++p;
+    }else if(*src){
+        ret = src;
+        src = NULL;
+    }
+
+    return ret;
+}
+
 #endif
