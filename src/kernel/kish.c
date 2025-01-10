@@ -32,7 +32,6 @@ void syscall(){
 
 char* workingDir = ROOT_MNT;
 
-
 void dir(){
     vfs_disk_t* root = disks[ROOT_INDEX];
     directory_t* rootDir = root->mountDir;
@@ -158,7 +157,8 @@ int CliHandler(mboot_info_t* multibootInfo){
 
     int index = 0;
 
-    printk("KISh> ");
+    printk(workingDir);
+    printk("> ");
     while(true){
         uint8 lastKey = GetKey();
         if(lastKey != 0){
@@ -177,7 +177,8 @@ int CliHandler(mboot_info_t* multibootInfo){
                     ProcessCommand(command, multibootInfo);
                     memset(command, 0, 1000);
                     index = 0;
-                    printk("KISh> ");
+                    printk(workingDir);
+                    printk("> ");
                     break;
                 
                 default:
