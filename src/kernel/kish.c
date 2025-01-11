@@ -38,9 +38,10 @@ void dir(){
     directory_entry_t* current = rootDir->firstFile;
     while(current != NULL){
         printk(current->name);
-        printk("\n");
+        printk("  ");
         current = current->next;
     }
+    printk("\n");
 }
 
 // The shell commands
@@ -74,7 +75,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("help: view this screen\n");
         printk("dskchk: scans the system for PATA disks\n");
         printk("memsize: get the total system RAM in bytes\n");
-        printk("dir: tests the FAT driver by looking for a file on the disk\n");
+        printk("dir: prints all the entries in the working directory\n");
         printk("clear: clears the terminal screen\n");
         printk("fault: intentionally cause an exception (debug)\n");
         printk("reboot: reboots the machine\n");
@@ -127,6 +128,10 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 
     }else if(strncmp(cmd, "lex", 3)){
         // Expects a file path after the command as well as a space between them
+        if(strlen(cmd) < 5){
+            printk("No file specified!\n");
+            return;
+        }
         file_t* program = GetFile(&cmd[4]);
         if(program == NULL){
             printk("File not found!\n");
@@ -148,7 +153,6 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 }
 
 int CliHandler(mboot_info_t* multibootInfo){
-    printk("Thanks for the GRUB!\n");
     printk("Kernel-Integrated Shell (KISh)\n");
     printk("Enter \"help\" into the console for a list of commands.\n");
     // Allocate 1000 bytes for a command. That means a max of 1000 characters. Should be more than enough.
@@ -165,7 +169,7 @@ int CliHandler(mboot_info_t* multibootInfo){
             switch (lastKey)
             {
                 case '\b':
-                    if(GetX() > 6){
+                    if(GetX() > strlen(workingDir) + 2){
                         index--;
                         command[index] = 0;
                         WriteStrSize(&lastKey, 1);

@@ -41,7 +41,7 @@ directory_t* GetRoot(vfs_disk_t* disk){
         fatdisk->parent = disk->parent;
         fatdisk->fstype = disk->fstype;
         fatdisk->paramBlock = (bpb_t*)ReadSectors(fatdisk->parent, 1, 0);
-        FAT_cluster_t* fatroot = ReadRootDirectory(fatdisk);
+        FAT_cluster_t* fatroot = FatReadRootDirectory(fatdisk);
         return FATDirToVfsDir(fatroot, fatdisk, rootDir);
     }else{
         // Other FS types (unimplemented)
@@ -51,27 +51,31 @@ directory_t* GetRoot(vfs_disk_t* disk){
 
 vfs_disk_t* DefineDisk(uint8 diskNum){
     vfs_disk_t* disk = (vfs_disk_t*)alloc(sizeof(vfs_disk_t));
+    if(disk == NULL){
+        return NULL;
+    }
     disk->parent = IdentifyDisk(diskNum);
+    if(disk->parent == NULL){
+        // Invalid disk
+        return NULL;
+    }
 
     fat_disk_t* fatdisk =  TryFatFS(disk->parent);
     if(fatdisk == NULL){
         // Invalid disk
+        dealloc(disk);
         return NULL;
     }
 
     disk->fstype = fatdisk->fstype;
     dealloc(fatdisk);
 
-    if(disk->fstype == FS_UNSUPPORTED){
-        // Try next filesystem...
+    while(disk->fstype == FS_UNSUPPORTED){
+        // Try next filesystems... (implement later)
         dealloc(disk);
         return NULL;
-    }else if(disk->fstype == FS_FAT12 || disk->fstype == FS_FAT16 || disk->fstype == FS_FAT32){
-        return disk;
-    }else{
-        printk("Disk Read Error: Invalid Filesystem!\n");
-        return NULL;
     }
+    return disk;
 }
 
 vfs_disk_t* FindRoot(){

@@ -21,7 +21,7 @@ void WaitForKeyPress(){
 }
 
 void WaitForRelease(uint8 ScanCode){
-    while(IsKeyPressed(ScanCode));
+    while(IsKeyPressed(ScanCode));      // Busy wait so that the CPU isn't halted. Important for multitasking.
 }
 
 bool shiftPressed = false;
@@ -29,11 +29,9 @@ bool shiftPressed = false;
 
 void kb_handler(){
     uint8 scanCode;
-    if(inb(KBD_STATUS_PORT) & 0x01){
+    while (inb(KBD_STATUS_PORT) & 0x01) {
         // If there is anything to retrieve, retrieve it
         scanCode = inb(KBD_DATA_PORT);
-    }else{
-        return;
     }
 
 
@@ -48,6 +46,7 @@ void kb_handler(){
     }
 
     if(scanCode == LSHIFT || scanCode == RSHIFT){
+        // When shift is pressed
         shiftPressed = true;
     }
     

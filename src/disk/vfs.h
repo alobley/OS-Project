@@ -5,14 +5,18 @@
 #include <util.h>
 #include "ata.h"
 
+
+#define TYPE_FILE 0
+#define TYPE_DIR 1
+
 typedef struct File {
     char* name;
     void* data;
 } file_t;
 
-
 typedef struct DirectoryEntry {
     char* name;
+    uint8 type;
     struct DirectoryEntry* next;
 } directory_entry_t;
 
