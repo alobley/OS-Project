@@ -111,6 +111,7 @@ file_t* GetFile(char* filePath){
     }else if(disk->fstype == FS_FAT32){
         fat_disk_t* fatdisk = TryFatFS(disk->parent);
         file_t* file = FatSeekFile(fatdisk, fileName);
+        dealloc(fatdisk->paramBlock);
         dealloc(fatdisk);
         return file;
     }

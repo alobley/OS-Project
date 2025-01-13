@@ -13,6 +13,7 @@
 #include <fat.h>
 #include <paging.h>
 #include <vfs.h>
+#include <acpi.h>
 
 #define MULTIBOOT_MAGIC 0x2BADB002
 
@@ -31,6 +32,10 @@ void reboot(){
         good = inb(0x64);
     }
     outb(0x64, 0xFE);
+
+    // Just in case that didn't work
+    asm volatile("lidt 0");         // Load a null IDT
+    asm volatile("int $0x20");      // Triple fault
 }
 
 // QEMU and Bochs only. ACPI support pending.
@@ -49,6 +54,7 @@ void InitializeHardware(){
     InitializeFPU();
     InitIRQ();
     InitializePIT();
+    InitializeACPI();
     InitializeKeyboard();
     InitializeDisks();
 }

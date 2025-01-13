@@ -101,4 +101,17 @@ static inline char* strtok(char* str, const char* delim){
     return ret;
 }
 
+static inline bool memcmp(const void* s1, const void* s2, uint32 n){
+    const uint8* p1 = s1;
+    const uint8* p2 = s2;
+
+    for(uint32 i = 0; i < n; i++){
+        if(p1[i] != p2[i]){
+            return false;
+        }
+    }
+
+    return true;
+}
+
 #endif

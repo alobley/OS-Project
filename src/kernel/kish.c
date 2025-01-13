@@ -12,6 +12,7 @@
 #include <multiboot.h>
 #include <fat.h>
 #include <vfs.h>
+#include <acpi.h>
 
 // Very simple CLI shell built into the kernel until I get filesystem and ABI support
 
@@ -50,6 +51,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         return;
     }
 
+    // There has got to be a way to optimize this
     if(strcmp(cmd, "game")){
         LittleGame();
 
@@ -60,10 +62,20 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("Hello!\n");
 
     }else if(strcmp(cmd, "reboot")){
-        reboot();
+        AcpiReboot();
+        if(PS2ControllerExists){
+            // Fallback if ACPI reboot fails (QEMU has ACPI V1, so this must be used in it)
+            reboot();
+        }
 
     }else if(strcmp(cmd, "shutdown")){
-        shutdown();
+        printk("Trying ACPI shutdown...\n");
+        AcpiShutdown();
+        if(PS2ControllerExists){
+            // Fallback if ACPI shutdown fails. QEMU and Bochs only. If ACPI shoutdown fails and the OS is running on real hardware, the computer will not shut down.
+            printk("ACPI shutdown failed. Trying QEMU/Bochs shutdown...\n");
+            shutdown();
+        }
 
     }else if(strcmp(cmd, "systest")){
         syscall();
@@ -147,6 +159,8 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
     }else if(strcmp(cmd, "pwd")){
         printk(workingDir);
         printk("\n");
+    }else if(strncmp(cmd, "acpiinfo", 8)){
+        //ConfirmRSDP();
     }else{
         printk("Invalid Command!\n");
     }
