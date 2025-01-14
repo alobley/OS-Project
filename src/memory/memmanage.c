@@ -37,6 +37,9 @@ PageDirectory* currentDir;
 // Activate a set of new pages in a page directory.
 page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd, PageDirectory* pageDir, bool user){
     // Get the page directory entry
+    if (virtualAddr % 4096 != 0 || physicalAddr % 4096 != 0) {
+        return NULL; // Addresses must be 4KiB aligned
+    }
     page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
@@ -70,6 +73,18 @@ void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
 void AllocatePage(uintptr_t virtualAddr, PageDirectory* pageDir, bool user){
     PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr)];
     PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+    if(!dirEntry->present){
+        dirEntry->address = (uint32)(&pageTables[PTI(virtualAddr)]) >> 12;
+        dirEntry->present = 1;
+        dirEntry->readWrite = 1;
+        dirEntry->user = user;
+        dirEntry->writeThrough = 0;
+        dirEntry->cacheDisabled = 0;
+        dirEntry->accessed = 0;
+        dirEntry->dirty = 0;
+        dirEntry->pageSize = 0;
+        dirEntry->available = 0;
+    }
     if(table->entries[PTI(virtualAddr)].present){
         // The page is already allocated in this directory (need new directory to remap)
         return;
@@ -96,7 +111,7 @@ PageDirectory* AllocatePageDirectory(size_t virtualAddr, void* start, bool user)
     for(size_t i = 0; i < 1024; i++){
         // Allocate the page tables
         dir->entries[i].address = (uint32)(&pageTables[i]) >> 12;
-        dir->entries[i].present = 1;                            // Must be 1 or there will be a page fault
+        dir->entries[i].present = 0;
         dir->entries[i].readWrite = 1;
         dir->entries[i].user = user;
         dir->entries[i].writeThrough = 0;
@@ -141,11 +156,17 @@ void PageKernel(size_t totalmem){
         kernelPages++;
     }
 
-    // Map the kernel memory to itself for now, the kernel will need to be edited to be higher-half
+    // Get the page directory and assign its virtual address to its physical address
     AllocatePageDirectory(&pageDir[0], &pageDir[0], false);
 
+    //palloc(0, 0, totalPages, &pageDir[0], false);
+    //return;
+
     // Set the kernel's pages to active (virtual address will change later but for now identity map it)
-    palloc(&__kernel_start, &__kernel_start, kernelPages, &pageDir[0], false);
+    page_t* firstKernelPage = palloc(&__kernel_start, &__kernel_start, kernelPages, &pageDir[0], false);
+    if(firstKernelPage == NULL){
+        return;
+    }
 
     // Map VGA memory to right after the kernel memory
     size_t vgaSize = VGA_PIXEL_MODE_SIZE + VGA_TEXT_MODE_SIZE;
@@ -156,14 +177,15 @@ void PageKernel(size_t totalmem){
         vgaPages++;
     }
     
-    // For the moment identity map the VGA memory, will change to virtual addressing later
-    page_t* firstVgaPage = palloc(0xA0000, 0xA0000, vgaPages, &pageDir[0], false);
-    vgaRegion = (uintptr_t)(&__kernel_start + kernelSize);
+    vgaRegion = (uintptr_t)(&__kernel_start) + kernelSize;
+    page_t* firstVgaPage = palloc(vgaRegion, (uintptr_t)(&__kernel_start) + kernelSize, vgaPages, &pageDir[0], false);
 
     for(size_t i = 0; i < vgaPages; i++){
         // The framebuffer is an MMIO region, so it must be write-through
         firstVgaPage[i].writeThrough = 1;
         firstVgaPage[i].cacheDisabled = 1;
+        firstVgaPage[i].readWrite = 1;
+        firstVgaPage[i].present = 1;
         firstVgaPage[i].user = false;
     }
 

@@ -85,8 +85,8 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     WriteStr("Paging Kernel...\n");
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitVGA();
-    WriteStr("Paging works!\n");
     STOP;
+    WriteStr("Paging complete.\n");
     if(magic != MULTIBOOT_MAGIC){
         // There was a problem, may not be vital
         WriteStr("WARNING: no multiboot magic number.\n");
