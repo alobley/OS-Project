@@ -7,8 +7,7 @@
 // Virtual address translates directly into a page directory index and page table index. There's nothing else to it. That's what the virtual address means.
 // The physical address is 4KiB-aligned and in the page entry itself.
 extern uint32 __kernel_end;
-// The kernel starts at 2 MiB
-uint32 __kernel_start = 1024 * 1024 * 2;
+extern uint32 __kernel_start;
 
 size_t numPages = 0;
 
@@ -38,6 +37,7 @@ PageDirectory* currentDir;
 // Activate a set of new pages in a page directory.
 page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd, PageDirectory* pageDir, bool user){
     // Get the page directory entry
+    page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
         PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
@@ -50,10 +50,10 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
             dirEntry->user = user;
             table->entries[PTI(virtualAddr + (i * 4096))].address = (physicalAddr + (i * 4096)) >> 12;      // The physical memory location of the page
             numPages++;
-            return &table->entries[PTI(virtualAddr + (i * 4096))];                                          // Return the first page table entry (allocated consecutively)
+            firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
         }
     }
-    return NULL;
+    return firstPage;
 }
 
 void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
@@ -136,26 +136,16 @@ void PageKernel(size_t totalmem){
     }
 
     // Make sure to include the kernel's page directory in the mapping
-    size_t kernelPages = (__kernel_end - __kernel_start) / 4096;
-    if((__kernel_end - __kernel_start) % 4096 != 0){
+    size_t kernelPages = (&__kernel_end - &__kernel_start) / 4096;
+    if((&__kernel_end - &__kernel_start) % 4096 != 0){
         kernelPages++;
     }
 
     // Map the kernel memory to itself for now, the kernel will need to be edited to be higher-half
-    AllocatePageDirectory(__kernel_start, &pageDir[0], false);
-
-    // Identity map everything
-    palloc(0, 0, totalPages, &pageDir[0], false);
-    // Enable paging
-    cr3((uint32)&pageDir[0]);
-    uint32 currentCr0 = 0;
-    get_cr0(currentCr0);
-    cr0(currentCr0 | 0x80000001);
-
-    return;
+    AllocatePageDirectory(&pageDir[0], &pageDir[0], false);
 
     // Set the kernel's pages to active (virtual address will change later but for now identity map it)
-    palloc(__kernel_start, __kernel_start, kernelPages, &pageDir[0], false);
+    palloc(&__kernel_start, &__kernel_start, kernelPages, &pageDir[0], false);
 
     // Map VGA memory to right after the kernel memory
     size_t vgaSize = VGA_PIXEL_MODE_SIZE + VGA_TEXT_MODE_SIZE;
@@ -166,8 +156,9 @@ void PageKernel(size_t totalmem){
         vgaPages++;
     }
     
+    // For the moment identity map the VGA memory, will change to virtual addressing later
     page_t* firstVgaPage = palloc(0xA0000, 0xA0000, vgaPages, &pageDir[0], false);
-    vgaRegion = (uintptr_t)(__kernel_start + kernelSize);
+    vgaRegion = (uintptr_t)(&__kernel_start + kernelSize);
 
     for(size_t i = 0; i < vgaPages; i++){
         // The framebuffer is an MMIO region, so it must be write-through
@@ -176,17 +167,20 @@ void PageKernel(size_t totalmem){
         firstVgaPage[i].user = false;
     }
 
+    // Remap the BIOS...
+    // Remap the ACPI tables...
+
     memSize = totalmem;
 
     heapStart = vgaRegion + vgaSize;
 
     // Map the rest of the memory
     size_t remainingPages = totalPages - kernelPages - vgaPages;
-    uint32 lowmemPages = __kernel_start / 4096;
+    uint32 lowmemPages = (uint32)&__kernel_start / 4096;
 
     // Enable paging
     cr3((uint32)&pageDir[0]);
-    currentCr0 = 0;
+    uint32 currentCr0 = 0;
     get_cr0(currentCr0);
     cr0(currentCr0 | 0x80000001);
 }

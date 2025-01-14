@@ -13,6 +13,8 @@
 #include <vfs.h>
 #include <acpi.h>
 #include <memmanage.h>
+//#include <alloc.h>
+//#include <paging.h>
 
 #define MULTIBOOT_MAGIC 0x2BADB002
 
@@ -75,6 +77,8 @@ int32 ExecuteProgram(file_t* program) {
     memset((void*)0, 0, program->size);
     return result;
 }
+
+extern uint32 __kernel_end;
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){

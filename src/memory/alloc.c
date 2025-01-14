@@ -34,11 +34,10 @@ void InitializeMemory(size_t memSize){
     totalMem = memSize;
 
     // Reserve space for the page tables
-    PAGE_TABLE_AREA_BEGIN = kernel_heap_end;
+    PAGE_TABLE_AREA_BEGIN = &__kernel_end;
     if(PAGE_TABLE_AREA_BEGIN % 4096 != 0){
         PAGE_TABLE_AREA_BEGIN += 4096 - (PAGE_TABLE_AREA_BEGIN % 4096);
     }
-    PAGE_TABLE_AREA_END = PAGE_TABLE_AREA_BEGIN + (1024 * 4096); 
 
     // TODO: 
     // - Overhaul memory management and paging to be more efficient (and for paging, understand it properly)
