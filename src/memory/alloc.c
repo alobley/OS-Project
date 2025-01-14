@@ -40,8 +40,10 @@ void InitializeMemory(size_t memSize){
     }
     PAGE_TABLE_AREA_END = PAGE_TABLE_AREA_BEGIN + (1024 * 4096); 
 
-    // Later: remake this file to use the page tables
-    // TODO: Implement paging for the kernel heap and paging for individual processes
+    // TODO: 
+    // - Overhaul memory management and paging to be more efficient (and for paging, understand it properly)
+    // - Implement a kernel heap and the ability to allocate heap memory for userland programs
+    // - With both of those, it's important to also provide applications access to the VGA framebuffer somehow
 
     KERNEL_FREE_HEAP_END = memSize;
     kernel_heap_end = PAGE_TABLE_AREA_END;

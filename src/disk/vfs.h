@@ -11,6 +11,7 @@
 
 typedef struct File {
     char* name;
+    size_t size;
     void* data;
 } file_t;
 
@@ -52,6 +53,7 @@ typedef struct vfs_disk{
 vfs_disk_t* FindRoot();
 vfs_disk_t* DefineDisk(uint8 diskNum);
 file_t* GetFile(char* fileName);
+void DeallocFile(file_t* file);
 void InitializeDisks();
 
 #endif

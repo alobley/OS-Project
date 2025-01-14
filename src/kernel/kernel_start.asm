@@ -37,6 +37,7 @@ _start:
     inc esi
     cmp esi, stack
     je .done
+    jmp .clear_stack
 
 .done:
     mov esp, stack

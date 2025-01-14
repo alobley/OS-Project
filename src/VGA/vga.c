@@ -1,6 +1,7 @@
 #include "vga.h"
 #include <alloc.h>
 #include <util.h>
+#include <memmanage.h>
 
 void VGA_SetColorRGB8(){
     outb(VGA_DAC_MASK, 0xFF);
@@ -29,7 +30,7 @@ void VGA_SetPalette(const color_rgb_t* palette){
     }
 }
 
-// Tainted Driver (almost everything below this line does not belong to me. Sourced from https://files.osdev.org/mirrors/geezer/osd/graphics/modes.c).
+// Almost everything below this line does not belong to me. Sourced from https://files.osdev.org/mirrors/geezer/osd/graphics/modes.c
 
 unsigned char g_80x25_text[] =
 {
@@ -548,7 +549,6 @@ static void write_font(unsigned char *buf, unsigned font_height)
 
 void VGA_SetMode(uint8 mode){
     uint8 i;
-    // TODO: Implement *sob*
     switch(mode){
         case VGA_MODE_TEXT:
             // 80x25x16 linear text mode
@@ -583,4 +583,14 @@ void VGA_SetMode(uint8 mode){
             printk("ERROR: Unsupported VGA Configuration!\n");  // Log the error to console for now
             break;
     }
+}
+
+uintptr_t VGA_TEXT_MODE_START = 0xB8000;
+uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
+
+void InitVGA(){
+	uintptr_t vgaBase = (uintptr_t)GetVgaRegion();
+	uintptr_t textModeOffset = 0xB8000 - 0xA0000;
+	VGA_TEXT_MODE_START = GetVgaRegion() + textModeOffset;
+	VGA_PIXEL_MODE_START = GetVgaRegion();
 }

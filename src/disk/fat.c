@@ -406,6 +406,7 @@ file_t* FatSeekFile(fat_disk_t* fatdisk, char* fileName){
 
                 ClearFatDirectory(rootDir);
 
+                foundFile->size = file->fileSize;
                 return foundFile;
             }
         }

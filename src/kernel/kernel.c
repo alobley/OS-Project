@@ -3,7 +3,6 @@
 #include <idt.h>
 #include <vga.h>
 #include <keyboard.h>
-#include <alloc.h>
 #include <time.h>
 #include <fpu.h>
 #include <pcspkr.h>
@@ -11,9 +10,9 @@
 #include <ata.h>
 #include <multiboot.h>
 #include <fat.h>
-#include <paging.h>
 #include <vfs.h>
 #include <acpi.h>
+#include <memmanage.h>
 
 #define MULTIBOOT_MAGIC 0x2BADB002
 
@@ -35,10 +34,10 @@ void reboot(){
 
     // Just in case that didn't work
     asm volatile("lidt 0");         // Load a null IDT
-    asm volatile("int $0x20");      // Triple fault
+    asm volatile("int $0x30");      // Triple fault
 }
 
-// QEMU and Bochs only. ACPI support pending.
+// QEMU and Bochs only.
 void shutdown(){
     // Try QEMU shutdown
     outw(0x604, 0x2000);
@@ -59,38 +58,44 @@ void InitializeHardware(){
     InitializeDisks();
 }
 
-int32 ExecuteProgram(void *program) {
+int32 ExecuteProgram(file_t* program) {
     if (program == NULL) {
         printk("Error: Program is NULL!\n");
         return -1;
     }
 
+    // Copy the program to physical address 0
+    memcpy((void*)0, program->data, program->size);
+
     // Cast the program data to a function pointer
-    int (*func)() = (int (*)()) program;
+    int (*func)() = (int (*)()) 0;
 
     // Execute the program and return its result
     int result = func();
+    memset((void*)0, 0, program->size);
     return result;
 }
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
+    WriteStr("Paging Kernel...\n");
+    PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
+    InitVGA();
+    WriteStr("Paging works!\n");
+    STOP;
     if(magic != MULTIBOOT_MAGIC){
         // There was a problem, may not be vital
         WriteStr("WARNING: no multiboot magic number.\n");
     }
     // Dynamic memory achieved!
-    InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
-    InitPaging((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
+    //InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
+    //InitPaging((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitializeHardware();
 
     // Launch the shell
     int value = CliHandler(multibootInfo);
 
-    // Temporary solution since the shell is built-in. We shouldn't return from it.
-    printk("CRITICAL ERROR! Rebooting...\n");
-
-    delay(1000);
+    // After protected memory is done, put a task scheduler here
 
     reboot();
 

@@ -8,7 +8,7 @@ EMARGS=-m 4G -smp 1 -vga std -display gtk -drive file=build/main.iso,media=cdrom
 EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
 EMARGS+=-d cpu_reset -audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1
+EMARGS+=-device ich9-usb-uhci1 #-d int,exec -no-reboot
 
 # Directories
 SRC_DIR=src
@@ -37,9 +37,10 @@ CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu99 -Wall -Wextra -Wcas
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(INT_DIR)/isr.c $(INT_DIR)/idt.c $(INT_DIR)/irq.c
 LIBS+=$(LIB_DIR)/io.c $(LIB_DIR)/fpu.c $(VGA_DIR)/vga.c $(VGA_DIR)/pixel.c
-LIBS+=$(MEM_DIR)/alloc.c $(TIME_DIR)/time.c $(KB_DIR)/keyboard.c $(LIB_DIR)/math.c
+LIBS+=$(TIME_DIR)/time.c $(KB_DIR)/keyboard.c $(LIB_DIR)/math.c
 LIBS+=$(DISK_DIR)/ata.c $(DISK_DIR)/fat.c $(SOUND_DIR)/pcspkr.c $(VGA_DIR)/text.c
-LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c $(MEM_DIR)/paging.c $(DISK_DIR)/vfs.c $(SRC_DIR)/acpi/acpi.c
+LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c $(DISK_DIR)/vfs.c $(SRC_DIR)/acpi/acpi.c
+LIBS+=$(MEM_DIR)/memmanage.c
 
 # Assembly and Kernel Files
 ASMFILE=boot

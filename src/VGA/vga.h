@@ -62,7 +62,8 @@ typedef uint8 color;
 
 // Text mode information
 #define VGA_MODE_TEXT 0x03          // 80x25x16 text mode
-#define VGA_TEXT_MODE_START 0xB8000
+//#define VGA_TEXT_MODE_START 0xB8000
+extern uintptr_t VGA_TEXT_MODE_START;
 #define VGA_TEXT_MODE_SIZE (80 * 25)
 #define VGA_TEXT_MODE_WIDTH 80
 #define VGA_TEXT_MODE_HEIGHT 25
@@ -70,7 +71,8 @@ typedef uint8 color;
 
 // Graphics mode information
 #define VGA_MODE_GRAPHICS 0x13      // 320x200x256 pixel mode
-#define VGA_PIXEL_MODE_START 0xA0000
+extern uintptr_t VGA_PIXEL_MODE_START;
+//#define VGA_PIXEL_MODE_START 0xA0000
 #define VGA_PIXEL_MODE_SIZE (320 * 200)
 #define VGA_PIXEL_MODE_WIDTH 320
 #define VGA_PIXEL_MODE_HEIGHT 200
@@ -93,5 +95,7 @@ void VGA_SetMode(uint8 mode);
 void VGA_SetPalette(const color_rgb_t* palette);
 
 void VGA_SaveState();
+
+void InitVGA();
 
 #endif

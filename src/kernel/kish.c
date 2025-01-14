@@ -13,6 +13,7 @@
 #include <fat.h>
 #include <vfs.h>
 #include <acpi.h>
+#include <alloc.h>
 
 // Very simple CLI shell built into the kernel until I get filesystem and ABI support
 
@@ -63,7 +64,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 
     }else if(strcmp(cmd, "reboot")){
         AcpiReboot();
-        if(PS2ControllerExists){
+        if(PS2ControllerExists()){
             // Fallback if ACPI reboot fails (QEMU has ACPI V1, so this must be used in it)
             reboot();
         }
@@ -71,7 +72,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
     }else if(strcmp(cmd, "shutdown")){
         printk("Trying ACPI shutdown...\n");
         AcpiShutdown();
-        if(PS2ControllerExists){
+        if(PS2ControllerExists()){
             // Fallback if ACPI shutdown fails. QEMU and Bochs only. If ACPI shoutdown fails and the OS is running on real hardware, the computer will not shut down.
             printk("ACPI shutdown failed. Trying QEMU/Bochs shutdown...\n");
             shutdown();
@@ -149,10 +150,9 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
             printk("File not found!\n");
             return;
         }
-        ExecuteProgram(program->data);
-        dealloc(program->data);
-        dealloc(program->name);
-        dealloc(program);
+
+        ExecuteProgram(program);
+        DeallocFile(program);
         
     }else if(strcmp(cmd, "pginfo")){
         printk("Total pages: %u\n", GetPages());

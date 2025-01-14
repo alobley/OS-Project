@@ -90,6 +90,7 @@ void kb_handler(){
     outb(PIC_EOI, PIC_EOI);
 
 
+    // At some point, replace the following code with calling keyboard handlers from applications (just make sure they return to user mode first).
     if(scanCode & EVENT_KEYUP){
         // On key release
         if((scanCode ^ EVENT_KEYUP) == LSHIFT || (scanCode ^ EVENT_KEYUP) == RSHIFT){

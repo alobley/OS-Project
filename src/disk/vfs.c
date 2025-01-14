@@ -116,3 +116,9 @@ file_t* GetFile(char* filePath){
         return file;
     }
 }
+
+void DeallocFile(file_t* file){
+    dealloc(file->data);
+    dealloc(file->name);
+    dealloc(file);
+}

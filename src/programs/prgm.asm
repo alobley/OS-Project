@@ -4,18 +4,15 @@ BITS 32
 section .text
     global _start
 
+; For later when I want to expand this program
 %define VGA_MODE_TEXT 0x03
 %define VGA_MODE_GRAPHICS 0x13
+%define VGA_GRAPHICS_FRAMEBUFFER 0xA0000
+%define VGA_TEXT_FRAMEBUFFER 0xB8000
 
 _start:
-    call _main              ; Call the main function to get the program's physical memory address
-_main:
-    ; Calculate the program's physical memory address since the OS has no memory protection
-    pop esi
-    sub esi, _main
-
     mov eax, 1              ; System call number for print
-    lea ebx, [esi + msg]    ; Load the address of the message to print
+    lea ebx, [msg]          ; Load the address of the message to print
     int 0x30                ; System call
 
     mov eax, 0              ; Return value. Indicates success.

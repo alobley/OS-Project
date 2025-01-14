@@ -67,7 +67,7 @@ void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case 0:
             // SYS_DEBUG
-            printk("Debug!\n");
+            WriteStr("Debug!\n");
             break;
         case 1:
             // SYS_PRINT
@@ -105,7 +105,7 @@ void syscall_handler(struct Registers *regs){
             // Returns the key in EAX
             regs->eax = GetKey();
         default:
-            printk("Invalid syscall!\n");
+            WriteStr("Invalid syscall!\n");
             break;
     }
 }
@@ -215,7 +215,7 @@ void ISRHandler(struct Registers *regs){
 extern void reboot();
 static void ExceptionHandler(struct Registers *regs){
     ClearTerminal();
-    printk(exceptions[regs->intNum]);
+    WriteStr(exceptions[regs->intNum]);
     cli;
     for(;;) hlt;
 }
