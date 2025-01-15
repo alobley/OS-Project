@@ -1,7 +1,7 @@
 #include "ata.h"
 #include <io.h>
 #include <util.h>
-#include <alloc.h>
+#include <memmanage.h>
 #include <vga.h>
 
 #define NUM_BUS_PORTS 7

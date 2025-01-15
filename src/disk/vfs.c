@@ -1,5 +1,5 @@
 #include "vfs.h"
-#include <alloc.h>
+#include <memmanage.h>
 #include <string.h>
 
 #define DEFAULT_ROOTDISK 0

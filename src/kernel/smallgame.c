@@ -3,7 +3,7 @@
 #include <idt.h>
 #include <vga.h>
 #include <keyboard.h>
-#include <alloc.h>
+#include <memmanage.h>
 #include <time.h>
 #include <fpu.h>
 #include <pcspkr.h>

@@ -17,11 +17,20 @@ typedef struct process_page {
     struct process_page* next;
 } procpage_t;
 
-typedef struct memory_region {
-    size_t size;
-    void* start;
-    struct memory_region* next;
-} memregion_t;
+uint32 KERNEL_FREE_HEAP_BEGIN;
+uint32 KERNEL_FREE_HEAP_END;
+size_t kernel_heap_end;
+
+
+typedef struct memory_block {
+    size_t size;                 // Size of the memory block
+    struct memory_block* next;   // Pointer to the next free block of memory
+    bool free;                   // Block free or bot
+} memory_block_t;
+
+#define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
+
+memory_block_t* kernel_heap;
 
 size_t memSize = 0;
 uintptr_t vgaRegion = NULL;
@@ -74,6 +83,17 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
         }
     }
     return firstPage;
+}
+
+uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
+    // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel and return its address
+    for(uintptr_t i = heapStart; i < memSize; i += 4096){
+        PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(i)];
+        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+        if(!table->entries[PTI(i)].present){
+            return i;
+        }
+    }
 }
 
 void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
@@ -185,11 +205,12 @@ void PageKernel(size_t totalmem){
     }
 
     // Map VGA memory to right after the kernel memory
-    size_t vgaSize = VGA_PIXEL_MODE_SIZE + VGA_TEXT_MODE_SIZE;
+    //size_t vgaSize = VGA_PIXEL_MODE_SIZE + VGA_TEXT_MODE_SIZE;
     size_t kernelSize = kernelPages * 4096;
     
-    size_t vgaPages = vgaSize / 4096;
-    if(vgaSize % 4096 != 0){
+
+    size_t vgaPages = (1024 * 256) / 4096;
+    if(VGA_REGION_SIZE % 4096 != 0){
         vgaPages++;
     }
     
@@ -202,6 +223,7 @@ void PageKernel(size_t totalmem){
         firstVgaPage[i].cacheDisabled = 1;
         firstVgaPage[i].readWrite = 1;
         firstVgaPage[i].present = 1;
+        firstVgaPage[i].global = 1;
         firstVgaPage[i].user = false;
     }
 
@@ -210,11 +232,23 @@ void PageKernel(size_t totalmem){
 
     memSize = totalmem;
 
-    heapStart = vgaRegion + vgaSize;
+    heapStart = vgaRegion + vgaPages * 4096;
+
+    uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
+    page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
+
+    kernel_heap = (memory_block_t*)heapStart;
+    kernel_heap->size = 4096;
+    kernel_heap->next = NULL;
+    kernel_heap_end = heapStart + 4096;
+    KERNEL_FREE_HEAP_BEGIN = heapStart;
+    KERNEL_FREE_HEAP_END = memSize;
 
     // Map the rest of the memory
     size_t remainingPages = totalPages - kernelPages - vgaPages;
     uint32 lowmemPages = (uintptr_t)&__kernel_start / 4096;
+
+    currentDir = &pageDir[0];
 
     // Enable paging
     cr3((uint32)&pageDir[0]);
@@ -223,15 +257,91 @@ void PageKernel(size_t totalmem){
     cr0(currentCr0 | 0x80000001);
 }
 
-memregion_t* kheapRegion = NULL;
-memregion_t* userHeaps = NULL;
+// Allocate memory and return a pointer to it
+void* alloc(size_t size) {
+    memory_block_t* current = kernel_heap;
+    memory_block_t* prev = NULL;
 
+    while (current != NULL) {
+        if (current->free && current->size >= size) {
+            // Suitable free block found
+            if (current->size >= size + MEMORY_BLOCK_SIZE + 1) {
+                // Split the block if it's big enough
+                memory_block_t* new_block = (memory_block_t*)((uint8*)current + MEMORY_BLOCK_SIZE + size);
+                new_block->size = current->size - size - MEMORY_BLOCK_SIZE;
+                new_block->next = current->next;
+                new_block->free = true;
 
-void* alloc(size_t size){
-    // Search for an unpaged region of memory
+                current->size = size;
+                current->next = new_block;
+            }
+            current->free = false;
+            return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
+        }
+        prev = current;
+        current = current->next;
+    }
+
+    // No suitable block found, expand heap
+    if (kernel_heap_end + size + MEMORY_BLOCK_SIZE < KERNEL_FREE_HEAP_END) {
+        uint32 pagesToAdd = size / 4096;
+        if (size % 4096 != 0) {
+            pagesToAdd++;
+        }
+        uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
+        page_t* newPage = palloc(kernel_heap_end, newStart, pagesToAdd, currentDir, false);
+        if (newPage == NULL) {
+            // Out of memory
+            return NULL;
+        }
+        memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
+        kernel_heap_end += size + MEMORY_BLOCK_SIZE;
+
+        new_block->size = size;
+        new_block->next = NULL;
+        new_block->free = false;
+
+        if (prev != NULL) {
+            prev->next = new_block;
+        } else {
+            kernel_heap = new_block;
+        }
+
+        return (void*)((uint8*)new_block + MEMORY_BLOCK_SIZE);
+    }
+
+    // Out of memory
+    return NULL;
 }
 
+// Free an allocated pointer
 void dealloc(void* ptr){
-    // Find the region of memory that contains the pointer
-    // Free the memory
+    if(ptr == NULL){
+        // Data does not exist
+        return;
+    }
+
+    memory_block_t* block = (memory_block_t* )((uint8* )ptr - MEMORY_BLOCK_SIZE);
+    block->free = true;
+
+    // Coalesce adjacent free blocks to prevent memory fragmentation
+    memory_block_t* current = kernel_heap;
+    while(current != NULL){
+        if(current->free && current->next != NULL && current->next->free){
+            current->size += current->next->size + MEMORY_BLOCK_SIZE;
+            current->next = current->next->next;
+        }
+        current = current->next;
+    }
+
+    return;     // I'm too tired to figure out more paging stuff
+
+    // Check if any pages can be freed (note: don't free pages containing allocated data)
+    current = kernel_heap;
+    while(current != NULL){
+        if(current->free){
+            pfree((uintptr_t)current, currentDir);
+        }
+        current = current->next;
+    }
 }

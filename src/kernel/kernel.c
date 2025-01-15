@@ -55,8 +55,8 @@ void InitializeHardware(){
     InitializeFPU();
     InitIRQ();
     InitializePIT();
-    InitializeACPI();
-    InitializeKeyboard();
+    //InitializeACPI();
+    //InitializeKeyboard();
     InitializeDisks();
 }
 
@@ -82,18 +82,15 @@ extern uint32 __kernel_end;
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
-    WriteStr("Paging Kernel...\n");
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitVGA();
-    WriteStr("Paging complete.\n");
+    WriteStr("Dedication OS Version 0.0.1\n");
     STOP;
+    InitializeHardware();
     if(magic != MULTIBOOT_MAGIC){
         // There was a problem, may not be vital
         WriteStr("WARNING: no multiboot magic number.\n");
     }
-    // Dynamic memory achieved!
-    //InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
-    //InitPaging((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     // Launch the shell
     int value = CliHandler(multibootInfo);
 

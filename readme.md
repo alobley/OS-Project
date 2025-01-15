@@ -1,13 +1,14 @@
-# My custom OS project (name undecided)
+# Dedication OS - My Custom OS Project
 
 This project is meant to be a lightweight 32-bit x86 operating system developed entirely and exclusively by me, using only my own code. Every line of code in every file was written by me, unless stated otherwise. GRUB, of course, also does not belong to me. Written entirely from scratch.
 
 ## Project Status
 Currently, this project is still in the early stages. I've spent the past year learning about x86 and I started with basically zero knowledge, including in C and assembly.
+Kernel Version Alpha 0.0.1 is on the way.
 
-## System Requirements
+## System Requirements (subject to change)
 - An i386 processor or newer
-- At least 5MB of RAM
+- At least 10MB of RAM
 - A VGA-compatible display
 - PATA/PATAPI compatible storage
 - PS/2 keyboard
@@ -23,6 +24,7 @@ Currently, this project is still in the early stages. I've spent the past year l
   - Keyboard and timer ISRs mapped to the Programmable Interrupt Controller (PIC)
   - PC speaker initialization
   - Very basic disk driver (currently incomplete)
+  - Parses ACPI tables
 - **Graphics**:
   - VGA driver setup
 - **Kernel**:
@@ -34,16 +36,34 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Comment and document the code. Both are very sparse.
 - Learn how to use git and GitHub properly. (done)
 - Write an ATA and FAT driver for disk access. (working on it - functional)
-- Write a system call interrupt and an ABI. (working on it)
+- Write a system call interrupt and an ABI. (working on it - functional)
+- Move away from ATA PIO Mode
+- Write to the disk
+- Read FAT subdirectories
+- Add ISO9660 support
+- Finish the new memory management system (currently broken)
+- Improve upon the VFS
 
 ## Long-Term Goals
 - Write a terminal application using my custom ABI.
 - Utilize the majority of the GRUB Multiboot info structure
 - Implement paging and better memory allocation. (working on it)
-- Implement process management and multitasking.
-- Add a userland and memory protection. <-- when everything else is done, this is the next goal
-- Add USB support.
+- Implement process management and multitasking.  (primitives exist, but incomplete)
+- Add a userland and memory protection. (Working on it)
+- Add the ability for programs to interact with each other
+- Add the ability for drivers to run separately from the kernel itself (how do I do that and have a standard system for interacting with hardware?)
+- Add USB support. (basically required for running on real hardware)
 - Add milticore support.
+- Create a custom filesystem (very long-term goal)
+
+## Completed Goals
+- Get the GRUB memory map
+- Learn Paging (Thanks, OSDev community!)
+- Implement paging
+- Read from the disk
+- Load and execute a program
+- Install a syscall ISR
+- Have a minimal CLI to make debugging easier
 
 ## Build & Run
 

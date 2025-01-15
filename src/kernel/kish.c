@@ -3,7 +3,7 @@
 #include <idt.h>
 #include <vga.h>
 #include <keyboard.h>
-#include <alloc.h>
+#include <memmanage.h>
 #include <time.h>
 #include <fpu.h>
 #include <pcspkr.h>
@@ -13,7 +13,6 @@
 #include <fat.h>
 #include <vfs.h>
 #include <acpi.h>
-#include <alloc.h>
 
 // Very simple CLI shell built into the kernel until I get filesystem and ABI support
 

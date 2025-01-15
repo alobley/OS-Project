@@ -69,6 +69,8 @@ extern uintptr_t VGA_TEXT_MODE_START;
 #define VGA_TEXT_MODE_HEIGHT 25
 #define VGA_TEXT_MODE_END (VGA_TEXT_MODE_START + VGA_TEXT_MODE_SIZE)
 
+#define VGA_REGION_SIZE 0x10000
+
 // Graphics mode information
 #define VGA_MODE_GRAPHICS 0x13      // 320x200x256 pixel mode
 extern uintptr_t VGA_PIXEL_MODE_START;

@@ -1,5 +1,5 @@
 #include "fat.h"
-#include <alloc.h>
+#include <memmanage.h>
 #include <string.h>
 #include <vga.h>
 

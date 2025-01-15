@@ -1,5 +1,5 @@
 #include "pixel.h"
-#include <alloc.h>
+#include <memmanage.h>
 
 void VGA_ClearScreen(){
     uint8* fb = (uint8*)VGA_PIXEL_MODE_START;

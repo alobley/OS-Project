@@ -1,9 +1,7 @@
 #include "vga.h"
-#include <alloc.h>
 #include <util.h>
 #include <memmanage.h>
 
-//extern uintptr_t vgaRegion;
 uintptr_t VGA_TEXT_MODE_START = 0xB8000;
 uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
 

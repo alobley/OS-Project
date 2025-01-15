@@ -1,5 +1,5 @@
 #include "text.h"
-#include <alloc.h>
+#include <memmanage.h>
 #include <io.h>
 #include <util.h>
 #include <stdarg.h>

@@ -3,7 +3,7 @@
 #include <irq.h>
 #include <idt.h>
 #include <util.h>
-#include <alloc.h>
+#include <memmanage.h>
 #include <io.h>
 #include <text.h>
 
