@@ -59,7 +59,7 @@ typedef struct ALIGNED(4096) PageTable {
 #define KERNEL_VIRTADDR 0xC0000000      // Don't use this yet
 
 void PageKernel();
-void* GetVgaRegion();
+uintptr_t GetVgaRegion();
 page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t numPages, PageDirectory* pageDir, bool user);
 void pfree(uintptr_t virtualAddr, PageDirectory* pageDir);
 size_t GetPages();

@@ -3,14 +3,14 @@
 #include <util.h>
 #include <memmanage.h>
 
-extern void* vgaRegion;
+//extern uintptr_t vgaRegion;
 uintptr_t VGA_TEXT_MODE_START = 0xB8000;
 uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
 
 void InitVGA(){
 	uint32 textModeOffset = 0xB8000 - 0xA0000;
-	VGA_TEXT_MODE_START = vgaRegion + textModeOffset;
-	VGA_PIXEL_MODE_START = vgaRegion;
+	VGA_TEXT_MODE_START = GetVgaRegion() + textModeOffset;
+	VGA_PIXEL_MODE_START = GetVgaRegion();
 }
 
 void VGA_SetColorRGB8(){

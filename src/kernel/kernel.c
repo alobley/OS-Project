@@ -82,7 +82,7 @@ extern uint32 __kernel_end;
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
-    //WriteStr("Paging Kernel...\n");
+    WriteStr("Paging Kernel...\n");
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitVGA();
     WriteStr("Paging complete.\n");

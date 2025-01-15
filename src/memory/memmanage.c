@@ -24,7 +24,7 @@ typedef struct memory_region {
 } memregion_t;
 
 size_t memSize = 0;
-void* vgaRegion = NULL;
+uintptr_t vgaRegion = NULL;
 uintptr_t heapStart = 0;
 size_t totalPages = 0;
 
@@ -146,8 +146,8 @@ PageDirectory* AllocatePageDirectory(size_t virtualAddr, void* start, bool user)
     return dir;
 }
 
-void* GetVgaRegion(){
-    return (void*)vgaRegion;
+uintptr_t GetVgaRegion(){
+    return vgaRegion;
 }
 
 size_t GetPages(){
