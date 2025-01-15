@@ -162,7 +162,6 @@ size_t GetTotalMemory(){
 // This is important for the kernel heap, and will also page important memory regions such as VGA memory and ACPI tables
 // TODO: make this a higher-half kernel
 void PageKernel(size_t totalmem){
-    // Get the return address directly from the stack
     totalPages = totalmem / 4096;
     if(totalmem % 4096 != 0){
         totalPages++;
@@ -197,9 +196,6 @@ void PageKernel(size_t totalmem){
     
     vgaRegion = (uint32)&__kernel_start + kernelSize;
     page_t* firstVgaPage = palloc(vgaRegion, 0xA0000, vgaPages, &pageDir[0], false);
-
-    // Palloc a weird arbitrary memory location that keeps getting accessed
-    palloc(0x61D000, (uintptr_t)vgaRegion + (vgaPages * 4096), 1, &pageDir[0], false);
 
     for(size_t i = 0; i < vgaPages; i++){
         // The framebuffer is an MMIO region, so it must be write-through
