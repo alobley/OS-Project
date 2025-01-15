@@ -51,9 +51,27 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
             table->entries[PTI(virtualAddr + (i * 4096))].present = 1;                                      // This page is active
             dirEntry->present = 1;
             dirEntry->user = user;
+            dirEntry->readWrite = 1;
+            dirEntry->writeThrough = 0;
+            dirEntry->cacheDisabled = 0;
+            dirEntry->accessed = 0;
+            dirEntry->dirty = 0;
+            dirEntry->pageSize = 0;
+            dirEntry->available = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].address = (physicalAddr + (i * 4096)) >> 12;      // The physical memory location of the page
+            table->entries[PTI(virtualAddr + (i * 4096))].user = user;
+            table->entries[PTI(virtualAddr + (i * 4096))].readWrite = 1;
+            table->entries[PTI(virtualAddr + (i * 4096))].writeThrough = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].cacheDisabled = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].accessed = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].dirty = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].pageSize = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].global = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].available = 0;
             numPages++;
-            firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
+            if(i == 0){
+                firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
+            }
         }
     }
     return firstPage;
@@ -130,7 +148,7 @@ PageDirectory* AllocatePageDirectory(size_t virtualAddr, void* start, bool user)
 }
 
 void* GetVgaRegion(){
-    return vgaRegion;
+    return (void*)vgaRegion;
 }
 
 size_t GetPages(){
@@ -177,8 +195,11 @@ void PageKernel(size_t totalmem){
         vgaPages++;
     }
     
-    vgaRegion = (uintptr_t)(&__kernel_start) + kernelSize;
-    page_t* firstVgaPage = palloc(vgaRegion, (uintptr_t)(&__kernel_start) + kernelSize, vgaPages, &pageDir[0], false);
+    vgaRegion = (uint32)&__kernel_start + kernelSize;
+    page_t* firstVgaPage = palloc(vgaRegion, 0xA0000, vgaPages, &pageDir[0], false);
+
+    // Palloc a weird arbitrary memory location that keeps getting accessed
+    palloc(0x61D000, (uintptr_t)vgaRegion + (vgaPages * 4096), 1, &pageDir[0], false);
 
     for(size_t i = 0; i < vgaPages; i++){
         // The framebuffer is an MMIO region, so it must be write-through

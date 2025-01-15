@@ -3,6 +3,15 @@
 #include <util.h>
 #include <memmanage.h>
 
+uintptr_t VGA_TEXT_MODE_START = 0xB8000;
+uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
+
+void InitVGA(){
+	uint32 textModeOffset = 0xB8000 - 0xA0000;
+	VGA_TEXT_MODE_START = GetVgaRegion() + textModeOffset;
+	VGA_PIXEL_MODE_START = GetVgaRegion();
+}
+
 void VGA_SetColorRGB8(){
     outb(VGA_DAC_MASK, 0xFF);
     outb(VGA_DAC_WRITE, 0);
@@ -583,14 +592,4 @@ void VGA_SetMode(uint8 mode){
             printk("ERROR: Unsupported VGA Configuration!\n");  // Log the error to console for now
             break;
     }
-}
-
-uintptr_t VGA_TEXT_MODE_START = 0xB8000;
-uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
-
-void InitVGA(){
-	uintptr_t vgaBase = (uintptr_t)GetVgaRegion();
-	uintptr_t textModeOffset = 0xB8000 - 0xA0000;
-	VGA_TEXT_MODE_START = GetVgaRegion() + textModeOffset;
-	VGA_PIXEL_MODE_START = GetVgaRegion();
 }
