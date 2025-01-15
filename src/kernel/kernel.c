@@ -82,9 +82,8 @@ extern uint32 __kernel_end;
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
-    WriteStr("Paging Kernel...\n");
+    //WriteStr("Paging Kernel...\n");
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
-    STOP;
     InitVGA();
     WriteStr("Paging complete.\n");
     STOP;
@@ -95,8 +94,6 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     // Dynamic memory achieved!
     //InitializeMemory((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     //InitPaging((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
-    InitializeHardware();
-
     // Launch the shell
     int value = CliHandler(multibootInfo);
 

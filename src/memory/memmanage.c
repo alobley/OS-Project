@@ -2,7 +2,6 @@
 #include <vga.h>
 #include <util.h>
 
-
 // NOTE:
 // Virtual address translates directly into a page directory index and page table index. There's nothing else to it. That's what the virtual address means.
 // The physical address is 4KiB-aligned and in the page entry itself.
@@ -168,8 +167,8 @@ void PageKernel(size_t totalmem){
     }
 
     // Make sure to include the kernel's page directory in the mapping
-    size_t kernelPages = (&__kernel_end - &__kernel_start) / 4096;
-    if((&__kernel_end - &__kernel_start) % 4096 != 0){
+    size_t kernelPages = ((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) / 4096;
+    if(((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) % 4096 != 0){
         kernelPages++;
     }
 
@@ -180,7 +179,7 @@ void PageKernel(size_t totalmem){
     //return;
 
     // Set the kernel's pages to active (virtual address will change later but for now identity map it)
-    page_t* firstKernelPage = palloc(&__kernel_start, &__kernel_start, kernelPages, &pageDir[0], false);
+    page_t* firstKernelPage = palloc((uintptr_t)&__kernel_start, (uintptr_t)&__kernel_start, kernelPages, &pageDir[0], false);
     if(firstKernelPage == NULL){
         return;
     }
@@ -194,7 +193,7 @@ void PageKernel(size_t totalmem){
         vgaPages++;
     }
     
-    vgaRegion = (uint32)&__kernel_start + kernelSize;
+    vgaRegion = (uintptr_t)&__kernel_start + kernelSize;
     page_t* firstVgaPage = palloc(vgaRegion, 0xA0000, vgaPages, &pageDir[0], false);
 
     for(size_t i = 0; i < vgaPages; i++){
@@ -215,7 +214,7 @@ void PageKernel(size_t totalmem){
 
     // Map the rest of the memory
     size_t remainingPages = totalPages - kernelPages - vgaPages;
-    uint32 lowmemPages = (uint32)&__kernel_start / 4096;
+    uint32 lowmemPages = (uintptr_t)&__kernel_start / 4096;
 
     // Enable paging
     cr3((uint32)&pageDir[0]);
