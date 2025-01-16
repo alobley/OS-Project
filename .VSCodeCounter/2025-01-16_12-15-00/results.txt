@@ -1,0 +1,96 @@
+Date : 2025-01-16 12:15:00
+Directory : /home/andrew/osdev
+Total : 53 files,  4983 codes, 653 comments, 1056 blanks, all 6692 lines
+
+Languages
++---------------+------------+------------+------------+------------+------------+
+| language      | files      | code       | comment    | blank      | total      |
++---------------+------------+------------+------------+------------+------------+
+| C             |         24 |      3,179 |        440 |        593 |      4,212 |
+| C++           |         22 |      1,044 |         81 |        245 |      1,370 |
+| NASM Assembly |          4 |        598 |        114 |        178 |        890 |
+| Markdown      |          1 |         80 |          0 |         16 |         96 |
+| Makefile      |          1 |         79 |         18 |         24 |        121 |
+| Properties    |          1 |          3 |          0 |          0 |          3 |
++---------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                           | files      | code       | comment    | blank      | total      |
++------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                              |         53 |      4,983 |        653 |      1,056 |      6,692 |
+| . (Files)                                      |          2 |        159 |         18 |         40 |        217 |
+| src                                            |         51 |      4,824 |        635 |      1,016 |      6,475 |
+| src/VGA                                        |          6 |        861 |         69 |        121 |      1,051 |
+| src/acpi                                       |          2 |        249 |         25 |         45 |        319 |
+| src/boot                                       |          6 |        493 |        114 |        172 |        779 |
+| src/disk                                       |          6 |      1,025 |        150 |        200 |      1,375 |
+| src/interrupts                                 |          6 |        331 |         19 |         47 |        397 |
+| src/kernel                                     |          5 |        495 |         52 |         97 |        644 |
+| src/keyboard                                   |          2 |        390 |         46 |         68 |        504 |
+| src/lib                                        |         10 |        387 |         36 |        109 |        532 |
+| src/memory                                     |          3 |        412 |         61 |         90 |        563 |
+| src/programs                                   |          1 |         14 |          4 |          4 |         22 |
+| src/sound                                      |          2 |         43 |          0 |         13 |         56 |
+| src/time                                       |          2 |        124 |         59 |         50 |        233 |
++------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------+---------------+------------+------------+------------+------------+
+| filename                                       | language      | code       | comment    | blank      | total      |
++------------------------------------------------+---------------+------------+------------+------------+------------+
+| /home/andrew/osdev/makefile                    | Makefile      |         79 |         18 |         24 |        121 |
+| /home/andrew/osdev/readme.md                   | Markdown      |         80 |          0 |         16 |         96 |
+| /home/andrew/osdev/src/VGA/pixel.c             | C             |         28 |          0 |          5 |         33 |
+| /home/andrew/osdev/src/VGA/pixel.h             | C++           |         17 |          0 |          8 |         25 |
+| /home/andrew/osdev/src/VGA/text.c              | C             |        231 |          4 |         42 |        277 |
+| /home/andrew/osdev/src/VGA/text.h              | C++           |         11 |          0 |          8 |         19 |
+| /home/andrew/osdev/src/VGA/vga.c               | C             |        515 |         46 |         33 |        594 |
+| /home/andrew/osdev/src/VGA/vga.h               | C             |         59 |         19 |         25 |        103 |
+| /home/andrew/osdev/src/acpi/acpi.c             | C             |        129 |         21 |         27 |        177 |
+| /home/andrew/osdev/src/acpi/acpi.h             | C++           |        120 |          4 |         18 |        142 |
+| /home/andrew/osdev/src/boot/bios.h             | C++           |         21 |          3 |          8 |         32 |
+| /home/andrew/osdev/src/boot/boot.asm           | NASM Assembly |        227 |         70 |         85 |        382 |
+| /home/andrew/osdev/src/boot/bootutil.h         | C++           |         41 |          1 |         17 |         59 |
+| /home/andrew/osdev/src/boot/grub.cfg           | Properties    |          3 |          0 |          0 |          3 |
+| /home/andrew/osdev/src/boot/stage1.asm         | NASM Assembly |        189 |         39 |         59 |        287 |
+| /home/andrew/osdev/src/boot/stage1.c           | C             |         12 |          1 |          3 |         16 |
+| /home/andrew/osdev/src/disk/ata.c              | C             |        384 |         74 |         71 |        529 |
+| /home/andrew/osdev/src/disk/ata.h              | C++           |         35 |          1 |          9 |         45 |
+| /home/andrew/osdev/src/disk/fat.c              | C             |        296 |         52 |         71 |        419 |
+| /home/andrew/osdev/src/disk/fat.h              | C++           |        172 |         11 |         16 |        199 |
+| /home/andrew/osdev/src/disk/vfs.c              | C             |         96 |         10 |         18 |        124 |
+| /home/andrew/osdev/src/disk/vfs.h              | C++           |         42 |          2 |         15 |         59 |
+| /home/andrew/osdev/src/interrupts/idt.c        | C             |         33 |          0 |          6 |         39 |
+| /home/andrew/osdev/src/interrupts/idt.h        | C++           |          7 |          0 |          4 |         11 |
+| /home/andrew/osdev/src/interrupts/irq.c        | C             |         59 |          0 |         11 |         70 |
+| /home/andrew/osdev/src/interrupts/irq.h        | C++           |         19 |          0 |          7 |         26 |
+| /home/andrew/osdev/src/interrupts/isr.c        | C             |        201 |         19 |         15 |        235 |
+| /home/andrew/osdev/src/interrupts/isr.h        | C             |         12 |          0 |          4 |         16 |
+| /home/andrew/osdev/src/kernel/kernel.c         | C             |         63 |         22 |         17 |        102 |
+| /home/andrew/osdev/src/kernel/kernel_start.asm | NASM Assembly |        168 |          1 |         30 |        199 |
+| /home/andrew/osdev/src/kernel/kish.c           | C             |        176 |         11 |         29 |        216 |
+| /home/andrew/osdev/src/kernel/multitasking.h   | C++           |         39 |          8 |          9 |         56 |
+| /home/andrew/osdev/src/kernel/smallgame.c      | C             |         49 |         10 |         12 |         71 |
+| /home/andrew/osdev/src/keyboard/keyboard.c     | C             |        239 |         40 |         50 |        329 |
+| /home/andrew/osdev/src/keyboard/keyboard.h     | C++           |        151 |          6 |         18 |        175 |
+| /home/andrew/osdev/src/lib/fpu.c               | C             |         13 |          0 |          2 |         15 |
+| /home/andrew/osdev/src/lib/fpu.h               | C++           |          5 |          0 |          2 |          7 |
+| /home/andrew/osdev/src/lib/io.c                | C             |         25 |          6 |          6 |         37 |
+| /home/andrew/osdev/src/lib/io.h                | C++           |         10 |          0 |          3 |         13 |
+| /home/andrew/osdev/src/lib/math.c              | C             |        146 |         10 |         35 |        191 |
+| /home/andrew/osdev/src/lib/math.h              | C++           |         16 |          0 |          4 |         20 |
+| /home/andrew/osdev/src/lib/stdarg.h            | C++           |          7 |          0 |          5 |         12 |
+| /home/andrew/osdev/src/lib/string.h            | C++           |         83 |          9 |         25 |        117 |
+| /home/andrew/osdev/src/lib/types.h             | C++           |         49 |          9 |         14 |         72 |
+| /home/andrew/osdev/src/lib/util.h              | C++           |         33 |          2 |         13 |         48 |
+| /home/andrew/osdev/src/memory/memmanage.c      | C             |        257 |         38 |         53 |        348 |
+| /home/andrew/osdev/src/memory/memmanage.h      | C++           |         55 |          4 |         11 |         70 |
+| /home/andrew/osdev/src/memory/multiboot.h      | C++           |        100 |         19 |         26 |        145 |
+| /home/andrew/osdev/src/programs/prgm.asm       | NASM Assembly |         14 |          4 |          4 |         22 |
+| /home/andrew/osdev/src/sound/pcspkr.c          | C             |         32 |          0 |         10 |         42 |
+| /home/andrew/osdev/src/sound/pcspkr.h          | C             |         11 |          0 |          3 |         14 |
+| /home/andrew/osdev/src/time/time.c             | C             |        113 |         57 |         45 |        215 |
+| /home/andrew/osdev/src/time/time.h             | C++           |         11 |          2 |          5 |         18 |
+| Total                                          |               |      4,983 |        653 |      1,056 |      6,692 |
++------------------------------------------------+---------------+------------+------------+------------+------------+

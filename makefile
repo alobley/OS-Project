@@ -4,7 +4,7 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga std -display gtk -drive file=build/main.iso,media=cdrom,if=ide
+EMARGS=-m 512M -smp 1 -vga std -display gtk -cdrom build/main.iso
 EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
 EMARGS+=-d cpu_reset -audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
@@ -43,19 +43,19 @@ LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c $(DISK_DIR)/vfs.c $(SRC_DIR
 LIBS+=$(MEM_DIR)/memmanage.c
 
 # Assembly and Kernel Files
-ASMFILE=boot
+BOOTLOADER=boot
 CFILE=kernel
 
 # Placeholder for additional kernel functionality
 PROGRAM_FILE=programtoload
 
 # Build Targets
-all: assemble compile drive_image addfiles qemu
+all: assemble compile build_boot drive_image addfiles qemu
 
 create_dirs:
 	mkdir -p $(BUILD_DIR) $(BIN_DIR) $(MNT_DIR)
 
-# Create Boot Disk Image
+# Create Boot Disk Image (backup with GRUB)
 drive_image: create_dirs
 	mkdir -p isodir/boot/grub
 	cp $(BUILD_DIR)/$(CFILE).bin isodir/boot/$(CFILE).bin
@@ -66,6 +66,12 @@ drive_image: create_dirs
 assemble: create_dirs
 	$(ASM) -felf32 $(KERNEL_DIR)/kernel_start.asm -o $(BUILD_DIR)/kernel_start.o
 	$(ASM) -fbin $(PROG_DIR)/prgm.asm -o $(BUILD_DIR)/prgm.bin
+
+# Build Bootloader
+build_boot: create_dirs
+	$(ASM) -fbin $(BOOT_DIR)/$(BOOTLOADER).asm -o $(BUILD_DIR)/$(BOOTLOADER).bin
+	$(ASM) -felf32 $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.o
+	$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/stage1.o $(BOOT_DIR)/stage1.c -T $(BOOT_DIR)/linker.ld -ffreestanding -O2 -nostdlib -nodefaultlibs -nostartfiles -Wall -Wextra -Wcast-align -I $(BOOT_DIR)
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c

@@ -123,7 +123,7 @@ typedef struct FAT_Disk {
 // &name[1] - sizeof(lfn_entry_t) = LFN entry
 // Files and directories count as the same thing, attributes tell them apart
 typedef struct PACKED FAT_File {
-    //lfn_entry_t* lfnEntry;
+    //lfn_entry_t lfnEntry;
     char name[11];
     uint8 attributes;               // Attributes of the file
     uint8 _reserved;

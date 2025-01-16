@@ -1,0 +1,55 @@
+"filename", "language", "Markdown", "C", "C++", "NASM Assembly", "Properties", "Makefile", "comment", "blank", "total"
+"/home/andrew/osdev/makefile", "Makefile", 0, 0, 0, 0, 0, 79, 18, 24, 121
+"/home/andrew/osdev/readme.md", "Markdown", 80, 0, 0, 0, 0, 0, 0, 16, 96
+"/home/andrew/osdev/src/VGA/pixel.c", "C", 0, 28, 0, 0, 0, 0, 0, 5, 33
+"/home/andrew/osdev/src/VGA/pixel.h", "C++", 0, 0, 17, 0, 0, 0, 0, 8, 25
+"/home/andrew/osdev/src/VGA/text.c", "C", 0, 231, 0, 0, 0, 0, 4, 42, 277
+"/home/andrew/osdev/src/VGA/text.h", "C++", 0, 0, 11, 0, 0, 0, 0, 8, 19
+"/home/andrew/osdev/src/VGA/vga.c", "C", 0, 515, 0, 0, 0, 0, 46, 33, 594
+"/home/andrew/osdev/src/VGA/vga.h", "C", 0, 59, 0, 0, 0, 0, 19, 25, 103
+"/home/andrew/osdev/src/acpi/acpi.c", "C", 0, 129, 0, 0, 0, 0, 21, 27, 177
+"/home/andrew/osdev/src/acpi/acpi.h", "C++", 0, 0, 120, 0, 0, 0, 4, 18, 142
+"/home/andrew/osdev/src/boot/bios.h", "C++", 0, 0, 21, 0, 0, 0, 3, 8, 32
+"/home/andrew/osdev/src/boot/boot.asm", "NASM Assembly", 0, 0, 0, 227, 0, 0, 70, 85, 382
+"/home/andrew/osdev/src/boot/bootutil.h", "C++", 0, 0, 41, 0, 0, 0, 1, 17, 59
+"/home/andrew/osdev/src/boot/grub.cfg", "Properties", 0, 0, 0, 0, 3, 0, 0, 0, 3
+"/home/andrew/osdev/src/boot/stage1.asm", "NASM Assembly", 0, 0, 0, 189, 0, 0, 39, 59, 287
+"/home/andrew/osdev/src/boot/stage1.c", "C", 0, 12, 0, 0, 0, 0, 1, 3, 16
+"/home/andrew/osdev/src/disk/ata.c", "C", 0, 384, 0, 0, 0, 0, 74, 71, 529
+"/home/andrew/osdev/src/disk/ata.h", "C++", 0, 0, 35, 0, 0, 0, 1, 9, 45
+"/home/andrew/osdev/src/disk/fat.c", "C", 0, 296, 0, 0, 0, 0, 52, 71, 419
+"/home/andrew/osdev/src/disk/fat.h", "C++", 0, 0, 172, 0, 0, 0, 11, 16, 199
+"/home/andrew/osdev/src/disk/vfs.c", "C", 0, 96, 0, 0, 0, 0, 10, 18, 124
+"/home/andrew/osdev/src/disk/vfs.h", "C++", 0, 0, 42, 0, 0, 0, 2, 15, 59
+"/home/andrew/osdev/src/interrupts/idt.c", "C", 0, 33, 0, 0, 0, 0, 0, 6, 39
+"/home/andrew/osdev/src/interrupts/idt.h", "C++", 0, 0, 7, 0, 0, 0, 0, 4, 11
+"/home/andrew/osdev/src/interrupts/irq.c", "C", 0, 59, 0, 0, 0, 0, 0, 11, 70
+"/home/andrew/osdev/src/interrupts/irq.h", "C++", 0, 0, 19, 0, 0, 0, 0, 7, 26
+"/home/andrew/osdev/src/interrupts/isr.c", "C", 0, 201, 0, 0, 0, 0, 19, 15, 235
+"/home/andrew/osdev/src/interrupts/isr.h", "C", 0, 12, 0, 0, 0, 0, 0, 4, 16
+"/home/andrew/osdev/src/kernel/kernel.c", "C", 0, 63, 0, 0, 0, 0, 22, 17, 102
+"/home/andrew/osdev/src/kernel/kernel_start.asm", "NASM Assembly", 0, 0, 0, 168, 0, 0, 1, 30, 199
+"/home/andrew/osdev/src/kernel/kish.c", "C", 0, 176, 0, 0, 0, 0, 11, 29, 216
+"/home/andrew/osdev/src/kernel/multitasking.h", "C++", 0, 0, 39, 0, 0, 0, 8, 9, 56
+"/home/andrew/osdev/src/kernel/smallgame.c", "C", 0, 49, 0, 0, 0, 0, 10, 12, 71
+"/home/andrew/osdev/src/keyboard/keyboard.c", "C", 0, 239, 0, 0, 0, 0, 40, 50, 329
+"/home/andrew/osdev/src/keyboard/keyboard.h", "C++", 0, 0, 151, 0, 0, 0, 6, 18, 175
+"/home/andrew/osdev/src/lib/fpu.c", "C", 0, 13, 0, 0, 0, 0, 0, 2, 15
+"/home/andrew/osdev/src/lib/fpu.h", "C++", 0, 0, 5, 0, 0, 0, 0, 2, 7
+"/home/andrew/osdev/src/lib/io.c", "C", 0, 25, 0, 0, 0, 0, 6, 6, 37
+"/home/andrew/osdev/src/lib/io.h", "C++", 0, 0, 10, 0, 0, 0, 0, 3, 13
+"/home/andrew/osdev/src/lib/math.c", "C", 0, 146, 0, 0, 0, 0, 10, 35, 191
+"/home/andrew/osdev/src/lib/math.h", "C++", 0, 0, 16, 0, 0, 0, 0, 4, 20
+"/home/andrew/osdev/src/lib/stdarg.h", "C++", 0, 0, 7, 0, 0, 0, 0, 5, 12
+"/home/andrew/osdev/src/lib/string.h", "C++", 0, 0, 83, 0, 0, 0, 9, 25, 117
+"/home/andrew/osdev/src/lib/types.h", "C++", 0, 0, 49, 0, 0, 0, 9, 14, 72
+"/home/andrew/osdev/src/lib/util.h", "C++", 0, 0, 33, 0, 0, 0, 2, 13, 48
+"/home/andrew/osdev/src/memory/memmanage.c", "C", 0, 257, 0, 0, 0, 0, 38, 53, 348
+"/home/andrew/osdev/src/memory/memmanage.h", "C++", 0, 0, 55, 0, 0, 0, 4, 11, 70
+"/home/andrew/osdev/src/memory/multiboot.h", "C++", 0, 0, 100, 0, 0, 0, 19, 26, 145
+"/home/andrew/osdev/src/programs/prgm.asm", "NASM Assembly", 0, 0, 0, 14, 0, 0, 4, 4, 22
+"/home/andrew/osdev/src/sound/pcspkr.c", "C", 0, 32, 0, 0, 0, 0, 0, 10, 42
+"/home/andrew/osdev/src/sound/pcspkr.h", "C", 0, 11, 0, 0, 0, 0, 0, 3, 14
+"/home/andrew/osdev/src/time/time.c", "C", 0, 113, 0, 0, 0, 0, 57, 45, 215
+"/home/andrew/osdev/src/time/time.h", "C++", 0, 0, 11, 0, 0, 0, 2, 5, 18
+"Total", "-", 80, 3179, 1044, 598, 3, 79, 653, 1056, 6692

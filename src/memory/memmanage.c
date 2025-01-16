@@ -37,6 +37,9 @@ uintptr_t vgaRegion = NULL;
 uintptr_t heapStart = 0;
 size_t totalPages = 0;
 
+uintptr_t next_free_physaddr = 0;
+uintptr_t next_free_virtaddr = 0;
+
 PageDirectoryEntry ALIGNED(4096) pageDir[1024] = {0};
 PageTable ALIGNED(4096) pageTables[1024] = {0};
 
@@ -86,12 +89,20 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
 }
 
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
-    // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel and return its address
-    for(uintptr_t i = heapStart; i < memSize; i += 4096){
-        PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(i)];
-        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
-        if(!table->entries[PTI(i)].present){
-            return i;
+    // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
+    uintptr_t address = &__kernel_end;
+    for(size_t i = 0; i < 1024; i++){
+        PageDirectoryEntry* dirEntry = &pageDir->entries[i];
+        if(dirEntry->present){
+            PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+            for(size_t j = 0; j < 1024; j++){
+                if(table->entries[j].present){
+                    address = (uintptr_t)table->entries[j].address << 12;
+                    address += 4096;
+                }else{
+                    return address;
+                }
+            }
         }
     }
 }
@@ -234,6 +245,9 @@ void PageKernel(size_t totalmem){
 
     heapStart = vgaRegion + vgaPages * 4096;
 
+    next_free_physaddr = heapStart;
+    next_free_virtaddr = (firstVgaPage[vgaPages - 1].address << 12) + 4096;
+
     uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
 
@@ -288,11 +302,13 @@ void* alloc(size_t size) {
         if (size % 4096 != 0) {
             pagesToAdd++;
         }
-        uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
-        page_t* newPage = palloc(kernel_heap_end, newStart, pagesToAdd, currentDir, false);
-        if (newPage == NULL) {
-            // Out of memory
-            return NULL;
+        for(int i = 0; i < pagesToAdd; i++){
+            uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
+            page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
+            if (newPage == NULL) {
+                // Out of memory
+                return NULL;
+            }
         }
         memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
         kernel_heap_end += size + MEMORY_BLOCK_SIZE;

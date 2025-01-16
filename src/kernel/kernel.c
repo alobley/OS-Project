@@ -85,8 +85,8 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitVGA();
     WriteStr("Dedication OS Version 0.0.1\n");
-    STOP;
     InitializeHardware();
+    STOP;
     if(magic != MULTIBOOT_MAGIC){
         // There was a problem, may not be vital
         WriteStr("WARNING: no multiboot magic number.\n");
