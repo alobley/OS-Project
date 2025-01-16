@@ -72,6 +72,47 @@ void WaitForKeyPress(){
     }
 }
 
+// Linked list of keyboard callbacks from userland applications
+typedef struct KeyboardEntry {
+    KeyboardCallback callback;
+    struct KeyboardEntry* next;
+} KeyboardEntry_t;
+
+KeyboardEntry_t* keyboardCallbacks = NULL;
+
+void InstallKeyboardCallback(KeyboardCallback callback){
+    KeyboardEntry_t* newEntry = (KeyboardEntry_t*)alloc(sizeof(KeyboardEntry_t));
+    newEntry->callback = callback;
+    newEntry->next = NULL;
+
+    if(keyboardCallbacks == NULL){
+        keyboardCallbacks = newEntry;
+    }else{
+        KeyboardEntry_t* entry = keyboardCallbacks;
+        while(entry->next != NULL){
+            entry = entry->next;
+        }
+        entry->next = newEntry;
+    }
+}
+
+void RemoveKeyboardCallback(KeyboardCallback callback){
+    KeyboardEntry_t* entry = keyboardCallbacks;
+    KeyboardEntry_t* previous = NULL;
+
+    while(entry != NULL || entry->callback != callback){
+        previous = entry;
+        entry = entry->next;
+    }
+
+    if(entry == NULL){
+        return;
+    }
+
+    previous->next = entry->next;
+    dealloc(entry);
+}
+
 #pragma GCC push_options
 #pragma GCC optimize("O0")
 void WaitForRelease(uint8 ScanCode){
@@ -89,8 +130,11 @@ void kb_handler(){
     scanCode = inb(PS2_DATA_PORT);
     outb(PIC_EOI, PIC_EOI);
 
+    KeyboardEvent_t event;
+    event.scanCode = scanCode;
+    event.ascii = keyASCII[scanCode];
 
-    // At some point, replace the following code with calling keyboard handlers from applications (just make sure they return to user mode first).
+    // Much of this code is to support older code that hasn't been adapted yet. It will be changed in the future.
     if(scanCode & EVENT_KEYUP){
         // On key release
         if((scanCode ^ EVENT_KEYUP) == LSHIFT || (scanCode ^ EVENT_KEYUP) == RSHIFT){
@@ -98,24 +142,33 @@ void kb_handler(){
             shiftPressed = false;
         }
         keysDown[scanCode ^ EVENT_KEYUP] = false;
-        return;
-    }
+        event.keyUp = true;
+    }else{
+        if(scanCode == LSHIFT || scanCode == RSHIFT){
+            // When shift is pressed
+            shiftPressed = true;
+        }
+        
+        event.keyUp = false;
 
-    if(scanCode == LSHIFT || scanCode == RSHIFT){
-        // When shift is pressed
-        shiftPressed = true;
-    }
-    
-    if(keyASCII[scanCode] != 0){
-        if(shiftPressed){
-            keysDown[scanCode] = true;
-            lastKeyPressed = ASCIIUpper[scanCode];
+        if(keyASCII[scanCode] != 0){
+            if(shiftPressed){
+                keysDown[scanCode] = true;
+                lastKeyPressed = ASCIIUpper[scanCode];
+            }else{
+                keysDown[scanCode] = true;
+                lastKeyPressed = keyASCII[scanCode];
+            }
         }else{
             keysDown[scanCode] = true;
-            lastKeyPressed = keyASCII[scanCode];
         }
-    }else{
-        keysDown[scanCode] = true;
+    }
+
+    // Call the keyboard callbacks installed by userland applications
+    KeyboardEntry_t* entry = keyboardCallbacks;
+    while(entry != NULL){
+        entry->callback(event);
+        entry = entry->next;
     }
 }
 #pragma GCC pop_options

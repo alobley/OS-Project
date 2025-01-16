@@ -152,6 +152,8 @@ static char ASCIIUpper[104] = {
     0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+typedef void (*KeyboardCallback)(KeyboardEvent_t event);
+
 // Struct for the OS to determine the PS/2 hardware
 typedef struct PS2Info {
     bool mouseExists;
@@ -160,6 +162,12 @@ typedef struct PS2Info {
     uint8 keyboardID;
     uint8 scanCodeSet;
 } PS2Info;
+
+typedef struct KeyboardEvent {
+    uint8 scanCode;
+    char ascii;
+    bool keyUp;
+} KeyboardEvent_t;
 
 // Get the last key pressed
 uint8 GetKey();
@@ -171,5 +179,8 @@ bool IsKeyPressed(uint8 scanCode);
 void InitializeKeyboard();
 
 bool MouseExists();
+
+void InstallKeyboardCallback(KeyboardCallback callback);        // Add a keyboard callback to the linked list of keyboard callbacks
+void RemoveKeyboardCallback(KeyboardCallback callback);         // Remove a keyboard callback from the linked list of keyboard callbacks
 
 #endif

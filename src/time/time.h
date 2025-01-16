@@ -12,7 +12,7 @@ typedef void (*TimerCallback)(void);
 uint64 GetTicks();
 void InitializePIT();
 void delay(uint64 ms);
-void AddTimerCallback(TimerCallback callback, uint32 callbackNum, uint32 interval);
+void AddTimerCallback(TimerCallback callback, uint32 interval);
 void RemoveTimerCallback(uint32 callbackNum);
 
 #endif

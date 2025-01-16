@@ -39,7 +39,6 @@
 // This is an entry that contains data for other timers which will be executed when a timer interrupt is called
 typedef struct TimerCallbackEntry{
     TimerCallback callback;             // The function that this timer calls
-    uint32 callbackNum;                 // Identifier for the kernel to manage timers
     uint64 interval;                    // Interval in milliseconds
     uint64 elapsed;                     // Elapsed time in milliseconds
     struct TimerCallbackEntry *next;    // The next timer in the linked list
@@ -55,13 +54,25 @@ static struct{
     uint64 ticks;
 } state;
 
+uint16 numcallbacks = 0;
+
 // Note that new timers can't be passed anything and don't return anything. They're just for code execution at a certain interval.
 // Add a timer callback to the linked list of timer callbacks
-void AddTimerCallback(TimerCallback callback, uint32 callbackNum, uint32 interval){
-    if(callbackNum > MAX_TIMERS){
+void AddTimerCallback(TimerCallback callback, uint32 interval){
+    if(numcallbacks > MAX_TIMERS){
         // This will need to be expanded when I can run applications
         // If the linked list is full, we must return without adding the timer
         return;
+    }
+
+    // Search through the timers to make sure this specific timer is not already in the list
+    TimerCallbackEntry* entry = timerCallbacks;
+    while(entry != NULL){
+        if(entry->callback == callback){
+            // If the timer is already in the list, return without adding it
+            return;
+        }
+        entry = entry->next;
     }
 
     // Create a new linked list entry and allocate the nececcary memory for it
@@ -76,7 +87,6 @@ void AddTimerCallback(TimerCallback callback, uint32 callbackNum, uint32 interva
 
     // Set the values of the new timer entry
     newEntry->callback = callback;
-    newEntry->callbackNum = callbackNum;
     newEntry->interval = interval;
     newEntry->elapsed = 0;
     newEntry->next = NULL;
@@ -92,16 +102,18 @@ void AddTimerCallback(TimerCallback callback, uint32 callbackNum, uint32 interva
         }
         entry->next = newEntry;
     }
+
+    numcallbacks++;
 }
 
 // Remove a given timer callback from the linked list of callbacks
-void RemoveTimerCallback(uint32 callbackNum){
+void RemoveTimerCallback(TimerCallback callback){
     // Set pointers to the linked list
     TimerCallbackEntry* entry = timerCallbacks;
     TimerCallbackEntry* previous = NULL;
 
     // Iterate through the linked list to find the timer we're looking for
-    while(entry != NULL && entry->callbackNum != callbackNum){
+    while(entry != NULL || entry->callback != callback){
         previous = entry;
         entry = entry->next;
     }
