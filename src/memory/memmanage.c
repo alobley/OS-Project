@@ -1,6 +1,12 @@
 #include <memmanage.h>
 #include <vga.h>
 #include <util.h>
+#include <acpi.h>
+
+// For paging the BIOS to another location (or not at all)
+#define BIOS_START 0xF0000
+#define BIOS_END 0xFFFFF
+#define BIOS_SIZE (BIOS_END - BIOS_START + 1)
 
 // NOTE:
 // Virtual address translates directly into a page directory index and page table index. There's nothing else to it. That's what the virtual address means.
@@ -89,6 +95,16 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
     return firstPage;
 }
 
+void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
+    PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr)];
+    PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+    if(table->entries[PTI(virtualAddr)].present){
+        table->entries[PTI(virtualAddr)].present = 0;
+        table->entries[PTI(virtualAddr)].address = 0;
+        numPages--;
+    }
+}
+
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
     uintptr_t address = &__kernel_end;
@@ -109,16 +125,6 @@ uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
 
     // No free memory above the kernel found in the page directory
     return 0;
-}
-
-void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
-    PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr)];
-    PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
-    if(table->entries[PTI(virtualAddr)].present){
-        table->entries[PTI(virtualAddr)].present = 0;
-        table->entries[PTI(virtualAddr)].address = 0;
-        numPages--;
-    }
 }
 
 // Allocate a new page
@@ -311,10 +317,6 @@ void* alloc(size_t size) {
         for(int i = 0; i < pagesToAdd; i++){
             uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
             page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
-            if (newPage == NULL) {
-                // Out of memory
-                return NULL;
-            }
         }
         memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
         kernel_heap_end += size + MEMORY_BLOCK_SIZE;
@@ -328,6 +330,16 @@ void* alloc(size_t size) {
             prev->next = new_block;
         } else {
             kernel_heap = new_block;
+        }
+
+        if(size < pagesToAdd * 4096){
+            // The block does not fill the entire page, so split it
+            memory_block_t* new_block2 = (memory_block_t*)(kernel_heap_end + MEMORY_BLOCK_SIZE + size);
+            new_block2->size = (pagesToAdd * 4096) - size - MEMORY_BLOCK_SIZE;
+            new_block2->next = NULL;
+            new_block2->free = true;
+            new_block2->paged = true;
+            new_block->next = new_block2;
         }
 
         return (void*)((uint8*)new_block + MEMORY_BLOCK_SIZE);
@@ -358,7 +370,7 @@ void dealloc(void* ptr){
     }
 
     if(block->size % 4096 != 0){
-        // The block is not page-aligned
+        // The block is not page-aligned, best not to release it
         return;
     }else{
         // The block is page-aligned

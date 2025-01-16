@@ -65,7 +65,6 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024);
     InitVGA();
     WriteStr("Dedication OS Version 0.0.1\n");
-    printk("This will page fault\n");
     InitializeHardware();
     STOP;
     if(magic != MULTIBOOT_MAGIC){

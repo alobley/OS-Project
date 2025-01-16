@@ -8,7 +8,7 @@ EMARGS=-m 512M -smp 1 -vga std -display gtk -cdrom build/main.iso
 EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
 EMARGS+=-d cpu_reset -audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -d int,exec -no-reboot
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -d int -no-reboot -no-shutdown
 
 # Directories
 SRC_DIR=src
