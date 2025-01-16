@@ -23,6 +23,7 @@ Thumbs.db  # Windows
 # IDE and editor files
 .vscode/
 .idea/
+.VSCodeCounter/
 *.swp
 
 # Cross-compilation files
