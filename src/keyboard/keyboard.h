@@ -152,8 +152,6 @@ static char ASCIIUpper[104] = {
     0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-typedef void (*KeyboardCallback)(KeyboardEvent_t event);
-
 // Struct for the OS to determine the PS/2 hardware
 typedef struct PS2Info {
     bool mouseExists;
@@ -168,6 +166,8 @@ typedef struct KeyboardEvent {
     char ascii;
     bool keyUp;
 } KeyboardEvent_t;
+
+typedef void (*KeyboardCallback)(KeyboardEvent_t event);
 
 // Get the last key pressed
 uint8 GetKey();

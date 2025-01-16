@@ -57,8 +57,8 @@ void LittleGame(){
     VGA_DrawSquare(square);
 
     // Add the timers for the game to the list of timers
-    AddTimerCallback(timer, 0, 17);         // The game's timer processes the game's logic ~60 times per second, making the speed manageable
-    AddTimerCallback(SoundTimer, 1, 100);   // The speaker's timer sets it to beep for 100ms then be quiet for 100ms
+    AddTimerCallback(timer, 17);         // The game's timer processes the game's logic ~60 times per second, making the speed manageable
+    AddTimerCallback(SoundTimer, 100);   // The speaker's timer sets it to beep for 100ms then be quiet for 100ms
 
     // Play until the escape key is pressed
     while(!IsKeyPressed(ESC));

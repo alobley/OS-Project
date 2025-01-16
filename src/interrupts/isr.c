@@ -77,12 +77,12 @@ void syscall_handler(struct Registers *regs){
         case 2:
             // SYS_CREATE_TIMER
             // EBX = callback function pointer
-            // ECX = callback number
-            // EDX = interval
-            AddTimerCallback((TimerCallback)regs->ebx, regs->ecx, regs->edx);
+            // ECX = interval in ms
+            AddTimerCallback((TimerCallback)regs->ebx, regs->ecx);
             break;
         case 3:
             // SYS_REMOVE_TIMER
+            // EBX = pointer to callback function
             RemoveTimerCallback(regs->ebx);
             break;
         case 4:

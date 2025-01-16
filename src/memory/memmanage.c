@@ -26,6 +26,7 @@ typedef struct memory_block {
     size_t size;                 // Size of the memory block
     struct memory_block* next;   // Pointer to the next free block of memory
     bool free;                   // Block free or bot
+    bool paged;                  // Is this block paged?
 } memory_block_t;
 
 #define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
@@ -105,6 +106,9 @@ uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
             }
         }
     }
+
+    // No free memory above the kernel found in the page directory
+    return 0;
 }
 
 void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
@@ -254,6 +258,8 @@ void PageKernel(size_t totalmem){
     kernel_heap = (memory_block_t*)heapStart;
     kernel_heap->size = 4096;
     kernel_heap->next = NULL;
+    kernel_heap->free = true;
+    kernel_heap->paged = true;
     kernel_heap_end = heapStart + 4096;
     KERNEL_FREE_HEAP_BEGIN = heapStart;
     KERNEL_FREE_HEAP_END = memSize;
@@ -277,7 +283,7 @@ void* alloc(size_t size) {
     memory_block_t* prev = NULL;
 
     while (current != NULL) {
-        if (current->free && current->size >= size) {
+        if (current->free && current->size >= size && current->paged) {
             // Suitable free block found
             if (current->size >= size + MEMORY_BLOCK_SIZE + 1) {
                 // Split the block if it's big enough
@@ -316,6 +322,7 @@ void* alloc(size_t size) {
         new_block->size = size;
         new_block->next = NULL;
         new_block->free = false;
+        new_block->paged = true;
 
         if (prev != NULL) {
             prev->next = new_block;
@@ -350,14 +357,14 @@ void dealloc(void* ptr){
         current = current->next;
     }
 
-    return;     // I'm too tired to figure out more paging stuff
-
-    // Check if any pages can be freed (note: don't free pages containing allocated data)
-    current = kernel_heap;
-    while(current != NULL){
-        if(current->free){
-            pfree((uintptr_t)current, currentDir);
+    if(block->size % 4096 != 0){
+        // The block is not page-aligned
+        return;
+    }else{
+        // The block is page-aligned
+        size_t pages = block->size / 4096;
+        for(size_t i = 0; i < pages; i++){
+            pfree((uintptr_t)block + (i * 4096), currentDir);
         }
-        current = current->next;
     }
 }

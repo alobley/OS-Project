@@ -13,6 +13,6 @@ uint64 GetTicks();
 void InitializePIT();
 void delay(uint64 ms);
 void AddTimerCallback(TimerCallback callback, uint32 interval);
-void RemoveTimerCallback(uint32 callbackNum);
+void RemoveTimerCallback(TimerCallback callback);
 
 #endif
