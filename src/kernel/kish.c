@@ -1,28 +1,10 @@
-#include <isr.h>
-#include <irq.h>
-#include <idt.h>
-#include <vga.h>
-#include <keyboard.h>
-#include <memmanage.h>
-#include <time.h>
-#include <fpu.h>
-#include <pcspkr.h>
-#include <string.h>
-#include <ata.h>
-#include <multiboot.h>
-#include <fat.h>
-#include <vfs.h>
-#include <acpi.h>
+#include <kernel.h>
 
 // Very simple CLI shell built into the kernel until I get filesystem and ABI support
 
 extern void LittleGame();
-extern void reboot();
-extern void shutdown();
 extern disk_t* disks[MAX_DRIVES];
 extern fat_disk_t* fatdisks[MAX_DRIVES];
-
-extern int32 ExecuteProgram(void* program);
 
 bool OnOtherDisk = false;
 

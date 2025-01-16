@@ -1,22 +1,4 @@
-#include <isr.h>
-#include <irq.h>
-#include <idt.h>
-#include <vga.h>
-#include <keyboard.h>
-#include <time.h>
-#include <fpu.h>
-#include <pcspkr.h>
-#include <string.h>
-#include <ata.h>
-#include <multiboot.h>
-#include <fat.h>
-#include <vfs.h>
-#include <acpi.h>
-#include <memmanage.h>
-//#include <alloc.h>
-//#include <paging.h>
-
-#define MULTIBOOT_MAGIC 0x2BADB002
+#include <kernel.h>
 
 // To update:
 // Do git add [filename], or git add .
@@ -60,7 +42,7 @@ void InitializeHardware(){
     InitializeDisks();
 }
 
-int32 ExecuteProgram(file_t* program) {
+int32 ExecuteProgram(file_t* program){
     if (program == NULL) {
         printk("Error: Program is NULL!\n");
         return -1;
@@ -77,8 +59,6 @@ int32 ExecuteProgram(file_t* program) {
     memset((void*)0, 0, program->size);
     return result;
 }
-
-extern uint32 __kernel_end;
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
