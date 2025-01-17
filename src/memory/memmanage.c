@@ -84,7 +84,7 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
             table->entries[PTI(virtualAddr + (i * 4096))].accessed = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].dirty = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].pageSize = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].global = 0;
+            table->entries[PTI(virtualAddr + (i * 4096))].global = 1;
             table->entries[PTI(virtualAddr + (i * 4096))].available = 0;
             numPages++;
             if(i == 0){
@@ -290,7 +290,7 @@ void* alloc(size_t size) {
     while (current != NULL) {
         if (current->free && current->size >= size && current->paged) {
             // Suitable free block found
-            if (current->size >= size + MEMORY_BLOCK_SIZE + 1) {
+            if (current->size >= size + (MEMORY_BLOCK_SIZE * 2) + 1 /*Ensure there's enough space for another memory block at the end and at least one byte of data*/) {
                 // Split the block if it's big enough
                 memory_block_t* new_block = (memory_block_t*)((uint8*)current + MEMORY_BLOCK_SIZE + size);
                 new_block->size = current->size - size - MEMORY_BLOCK_SIZE;
@@ -301,6 +301,7 @@ void* alloc(size_t size) {
                 current->next = new_block;
             }
             current->free = false;
+            kernel_heap_end += size + MEMORY_BLOCK_SIZE;
             return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
         }
         prev = current;
@@ -315,33 +316,55 @@ void* alloc(size_t size) {
         }
         for(int i = 0; i < pagesToAdd; i++){
             uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
+            if(newStart == 0){
+                // No memory available or error
+                return NULL;
+            }
             page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
+            if(newPage == NULL){
+                // No memory available or error
+                return NULL;
+            }
         }
-        memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
-        kernel_heap_end += size + MEMORY_BLOCK_SIZE;
+        // If the last block is free, find it and expand it
+        if(prev != NULL && prev->free){
+            prev->size += size;
+            kernel_heap_end += size;
+            return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
+        }else{
+            memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
+            kernel_heap_end += size + MEMORY_BLOCK_SIZE;
 
-        new_block->size = size;
-        new_block->next = NULL;
-        new_block->free = false;
-        new_block->paged = true;
+            new_block->size = size;
+            new_block->next = NULL;
+            new_block->free = false;
+            new_block->paged = true;
 
-        if (prev != NULL) {
-            prev->next = new_block;
-        } else {
-            kernel_heap = new_block;
+            if (prev != NULL) {
+                prev->next = new_block;
+                prev = new_block;                   // Make prev the new block for consistency
+            } else {
+                // Edge case, will likely never happen
+                kernel_heap = new_block;
+                prev = new_block;                   // Prev is used for allocation, so it must be set (yes I know it should be current)
+            }
         }
 
-        if(size < pagesToAdd * 4096){
+        if(size < pagesToAdd * 4096 && (pagesToAdd * 4096) - size > MEMORY_BLOCK_SIZE /*Ensure there's at least enough space for a memory block and one byte*/){
             // The block does not fill the entire page, so split it
             memory_block_t* new_block2 = (memory_block_t*)(kernel_heap_end + MEMORY_BLOCK_SIZE + size);
             new_block2->size = (pagesToAdd * 4096) - size - MEMORY_BLOCK_SIZE;
             new_block2->next = NULL;
             new_block2->free = true;
             new_block2->paged = true;
-            new_block->next = new_block2;
+            prev->next = new_block2;
+        }else if(size < pagesToAdd * 4096){
+            // The block does not fill the entire page, but there's not enough space for a new block
+            // Just make the block bigger
+            prev->size += (pagesToAdd * 4096) - size;
         }
 
-        return (void*)((uint8*)new_block + MEMORY_BLOCK_SIZE);
+        return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
     }
 
     // Out of memory
@@ -370,6 +393,7 @@ void dealloc(void* ptr){
 
     if(block->size % 4096 != 0){
         // The block is not page-aligned, best not to release it
+        // (resize and unpage?)
         return;
     }else{
         // The block is page-aligned

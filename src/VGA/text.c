@@ -203,6 +203,10 @@ void printk(const char *str, ...){
 
     // Allocate 2KB of the kernel's heap to the output buffer, which is the total size of VGA text mode. Strings can not be larger than this.
     char* output = (char* )alloc(2000);
+    if(output == NULL){
+        va_end(args);
+        return;
+    }
 
     int i = 0;
 
