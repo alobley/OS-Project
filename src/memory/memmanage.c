@@ -107,14 +107,13 @@ void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
 
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
-    uintptr_t address = &__kernel_end;
+    uintptr_t address = (((uintptr_t)&__kernel_end) >> 12) << 12;                           // Set it to the kernel's end address (should skip paged memory)
     for(size_t i = 0; i < 1024; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[i];
         if(dirEntry->present){
             PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
             for(size_t j = 0; j < 1024; j++){
-                if(table->entries[j].present){
-                    address = (uintptr_t)table->entries[j].address << 12;
+                if(table->entries[j].present && (table->entries[j].address << 12) == address){
                     address += 4096;
                 }else{
                     return address;
