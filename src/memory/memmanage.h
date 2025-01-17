@@ -66,5 +66,6 @@ size_t GetPages();
 void* alloc(size_t size);
 void dealloc(void* ptr);
 size_t GetTotalMemory();
+void PanicFree();
 
 #endif

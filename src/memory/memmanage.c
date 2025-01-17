@@ -52,8 +52,8 @@ PageTable ALIGNED(4096) pageTables[1024] = {0};
 
 PageDirectory* currentDir;
 
-// Activate a set of new pages in a page directory.
-page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd, PageDirectory* pageDir, bool user){
+// Activate a set of new pages in a page directory. Assumes a full and valid directory.
+page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd /*Add only more than one when certain there is a contiguous block of free virtual addresses*/, PageDirectory* pageDir, bool user){
     // Get the page directory entry
     if (virtualAddr % 4096 != 0 || physicalAddr % 4096 != 0) {
         return NULL; // Addresses must be 4KiB aligned
@@ -61,7 +61,7 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
     page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
-        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);                               // palloc assumes a full, valid page directory
         if(table->entries[PTI(virtualAddr + (i * 4096))].present && dirEntry->present){
             // Page already allocated
             return NULL;
@@ -84,7 +84,7 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
             table->entries[PTI(virtualAddr + (i * 4096))].accessed = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].dirty = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].pageSize = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].global = 1;
+            table->entries[PTI(virtualAddr + (i * 4096))].global = 0;
             table->entries[PTI(virtualAddr + (i * 4096))].available = 0;
             numPages++;
             if(i == 0){
@@ -92,6 +92,9 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd,
             }
         }
     }
+
+    // Tell the CPU there was a change in the page directory
+    asm volatile("invlpg (%0)" :: "r"(virtualAddr) : "memory");
     return firstPage;
 }
 
@@ -100,14 +103,16 @@ void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
     PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
     if(table->entries[PTI(virtualAddr)].present){
         table->entries[PTI(virtualAddr)].present = 0;
-        table->entries[PTI(virtualAddr)].address = 0;
+        table->entries[PTI(virtualAddr)].dirty = 1;         // We assume it has been written to
         numPages--;
     }
+
+    asm volatile("invlpg (%0)" :: "r"(virtualAddr) : "memory");
 }
 
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
-    uintptr_t address = (((uintptr_t)&__kernel_end) >> 12) << 12;                           // Set it to the kernel's end address (should skip paged memory)
+    uintptr_t address = ((((uintptr_t)&__kernel_end) >> 12) << 12) + 4096;                           // Set it to the kernel's end address (should skip paged memory)
     for(size_t i = 0; i < 1024; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[i];
         if(dirEntry->present){
@@ -132,7 +137,7 @@ void AllocatePage(uintptr_t virtualAddr, PageDirectory* pageDir, bool user){
     PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
     if(!dirEntry->present){
         dirEntry->address = (uint32)(&pageTables[PTI(virtualAddr)]) >> 12;
-        dirEntry->present = 1;
+        dirEntry->present = 0;
         dirEntry->readWrite = 1;
         dirEntry->user = user;
         dirEntry->writeThrough = 0;
@@ -198,9 +203,13 @@ size_t GetTotalMemory(){
     return memSize;
 }
 
+// We need the memory map to determine what memory is available
+mboot_mmap_entry_t* memoryMap;
+size_t mmapLen;
+
 // This is important for the kernel heap, and will also page important memory regions such as VGA memory and ACPI tables
 // TODO: make this a higher-half kernel
-void PageKernel(size_t totalmem){
+void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
     totalPages = totalmem / 4096;
     if(totalmem % 4096 != 0){
         totalPages++;
@@ -234,7 +243,7 @@ void PageKernel(size_t totalmem){
         vgaPages++;
     }
     
-    vgaRegion = (uintptr_t)&__kernel_start + kernelSize;
+    vgaRegion = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstVgaPage = palloc(vgaRegion, 0xA0000, vgaPages, &pageDir[0], false);
 
     for(size_t i = 0; i < vgaPages; i++){
@@ -257,7 +266,19 @@ void PageKernel(size_t totalmem){
     next_free_physaddr = heapStart;
     next_free_virtaddr = (firstVgaPage[vgaPages - 1].address << 12) + 4096;
 
+    // Page the memory map to just after the kernel and framebuffer
+    size_t mapPages = mmapLength / 4096;
+    if(mmapLength % 4096 != 0){
+        mapPages++;
+    }
     uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
+    page_t* firstMapPage = palloc(heapStart, startAddr, mapPages, &pageDir[0], false);
+
+    memoryMap = (mboot_mmap_entry_t*)heapStart;
+
+    heapStart += mapPages * 4096;
+
+    startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
 
     kernel_heap = (memory_block_t*)heapStart;
@@ -280,6 +301,17 @@ void PageKernel(size_t totalmem){
     uint32 currentCr0 = 0;
     get_cr0(currentCr0);
     cr0(currentCr0 | 0x80000001);
+}
+
+
+void PanicFree(){
+    // Free all memory
+    memory_block_t* current = kernel_heap;
+    while(current != NULL){
+        memory_block_t* next = current->next;
+        dealloc((void*)((uint8*)current + MEMORY_BLOCK_SIZE));
+        current = next;
+    }
 }
 
 // Allocate memory and return a pointer to it
@@ -391,6 +423,7 @@ void dealloc(void* ptr){
         current = current->next;
     }
 
+    // Not sure if removing pages in this way is a good idea, but even without this code there's faults
     if(block->size % 4096 != 0){
         // The block is not page-aligned, best not to release it
         // (resize and unpage?)

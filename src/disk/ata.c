@@ -381,6 +381,11 @@ disk_t* IdentifyDisk(uint8 diskNum){
     }
 
     uint16* diskBuffer = (uint16*)alloc(512);
+    if(diskBuffer == NULL){
+        // Memory allocation error
+        dealloc(disk);
+        return NULL;
+    }
     memset(diskBuffer, 0, 512);
     disk->infoBuffer = diskBuffer;
     

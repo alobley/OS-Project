@@ -5,6 +5,7 @@
 #include <time/time.h>
 #include <disk/vfs.h>
 #include <keyboard.h>
+#include <memmanage.h>
 
 #define NUM_ISRS 49
 
@@ -215,9 +216,11 @@ void ISRHandler(struct Registers *regs){
 extern void reboot();
 static void ExceptionHandler(struct Registers *regs){
     ClearTerminal();
+    WriteStr("Exception: ");
     WriteStr(exceptions[regs->intNum]);
-    cli;
-    for(;;) hlt;
+    
+    eax(regs->errNum);
+    STOP;
 }
 
 void InitISR(){
