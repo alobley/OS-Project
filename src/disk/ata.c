@@ -401,6 +401,7 @@ disk_t* IdentifyDisk(uint8 diskNum){
 }
 
 // Note: partition-relative LBA implementation may be a good idea
+// The system hangs when I call this function. I'm not sure why.
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
     //printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
     if(disk->populated || !disk->removable){

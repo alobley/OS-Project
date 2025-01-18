@@ -2,6 +2,8 @@
 #include <memmanage.h>
 #include <string.h>
 
+// This is a bare bones VFS implementation. It only supports FAT32 for now, but it will be expanded to support other filesystems.
+
 #define DEFAULT_ROOTDISK 0
 
 uint8 rootDisk = 0;         // The ATA index of the root disk, NOT the VFS index
@@ -33,6 +35,7 @@ void InitializeDisks(){
     }
 }
 
+// Get the root directory of a disk
 directory_t* GetRoot(vfs_disk_t* disk){
     if(disk->fstype == FS_UNSUPPORTED){
         return NULL;
@@ -91,6 +94,7 @@ vfs_disk_t* FindRoot(){
         disk = IdentifyDisk(tryDisk);
     }
     rootDisk = tryDisk;
+
     vfs_disk_t* root = DefineDisk(rootDisk);
 
     root->parent = disk;

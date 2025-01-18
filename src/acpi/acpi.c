@@ -173,5 +173,7 @@ void AcpiShutdown(){
 void AcpiReboot(){
     if(acpiInfo.fadt->header.revision > 1){
         outb(acpiInfo.fadt->resetReg.address, acpiInfo.fadt->resetValue);
+    }else{
+        outw(0x64, 0xFE);
     }
 }

@@ -6,6 +6,7 @@ uintptr_t VGA_TEXT_MODE_START = 0xB8000;
 uintptr_t VGA_PIXEL_MODE_START = 0xA0000;
 
 void InitVGA(){
+	// Get the newly paged VGA framebuffer addresses
 	uint32 textModeOffset = 0xB8000 - 0xA0000;
 	VGA_TEXT_MODE_START = GetVgaRegion() + textModeOffset;
 	VGA_PIXEL_MODE_START = GetVgaRegion();
@@ -117,13 +118,13 @@ static unsigned get_fb_seg(void)
 	{
 	case 0:
 	case 1:
-		seg = 0xA000;
+		seg = VGA_PIXEL_MODE_START;
 		break;
 	case 2:
-		seg = 0xB000;
+		seg = VGA_TEXT_MODE_START;
 		break;
 	case 3:
-		seg = 0xB800;
+		seg = VGA_TEXT_MODE_START;
 		break;
 	}
 	return seg;
@@ -132,6 +133,7 @@ static unsigned get_fb_seg(void)
 #define	_vmemwr(DS,DO,S,N)	memcpy((char *)((DS) * 16 + (DO)), S, N)
 static void vmemwr(unsigned dst_off, unsigned char *src, unsigned count)
 {
+	// Hmmm... This seems to cause a page fault even though the attempted write location is read/write paged and valid. Why?
 	_vmemwr(get_fb_seg(), dst_off, src, count);
 }
 
@@ -212,6 +214,7 @@ void SetTextMode(){
 		outb(VGA_SEQ_DATA, *regs);
 		regs++;
 	}
+	
     /* unlock CRTC registers */
 	outb(VGA_CRTC_INDEX, 0x03);
 	outb(VGA_CRTC_DATA, inb(VGA_CRTC_DATA) | 0x80);
@@ -534,6 +537,7 @@ static void write_font(unsigned char *buf, unsigned font_height)
 	gc6 = inb(VGA_GC_DATA);
     /* turn off even-odd addressing */
 	outb(VGA_GC_DATA, gc6 & ~0x02);
+	
     /* write font to plane P4 */
 	set_plane(2);
     /* write font 0 */

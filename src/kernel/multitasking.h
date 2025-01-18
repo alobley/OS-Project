@@ -3,7 +3,7 @@
 
 #include <types.h>
 #include <idt.h>
-#include <paging.h>
+#include <memmanage.h>
 
 // Experiments and placeholders for multitasking. Not the current primary focus.
 

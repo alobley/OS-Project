@@ -118,6 +118,18 @@ void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
     asm volatile("invlpg (%0)" :: "r"(virtualAddr) : "memory");
 }
 
+page_t* GetPage(uintptr_t virtAddr){
+    PageDirectoryEntry* dirEntry = &currentDir->entries[PDI(virtAddr)];
+    if(dirEntry->present){
+        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+        if(table->entries[PTI(virtAddr)].present){
+            return &table->entries[PTI(virtAddr)];
+        }
+    }
+
+    return NULL;
+}
+
 // We need the memory map to determine what memory is available
 mboot_mmap_entry_t* memoryMap;
 size_t mmapLen;
@@ -261,6 +273,7 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
         firstVgaPage[i].present = 1;
         firstVgaPage[i].global = 1;
         firstVgaPage[i].user = false;
+        firstVgaPage[i].address = (0xA0000 + (i * 4096)) >> 12;
     }
 
     // Remap the BIOS...

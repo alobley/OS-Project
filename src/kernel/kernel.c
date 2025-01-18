@@ -38,9 +38,11 @@ void InitializeHardware(){
     InitIRQ();
     InitializePIT();
     InitializeKeyboard();
-    //InitializeDisks();
+    //InitializeDisks();                // After implementing paging, the system hangs when reading from the disk. Unsure why.
 }
 
+
+// DOES NOT SUPPORT PAGING YET
 int32 ExecuteProgram(file_t* program){
     if (program == NULL) {
         printk("Error: Program is NULL!\n");
@@ -59,20 +61,33 @@ int32 ExecuteProgram(file_t* program){
     return result;
 }
 
+pcb_t* currentProcess = NULL;
+
+void TaskScheduler(){
+    // This is where the task scheduler will go
+}
+
+version_t version = {0, 0, 1};
+
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     InitializeACPI();
+    // Getting paging to work took me FIFTY HOURS. PAGING ISN'T EVEN FULLY IMPLEMENTED YET.
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
-    printk("Dedication OS Version 0.0.1\n");
-    InitializeHardware();
 
-    //STOP;
+    //VGA_SetMode(VGA_MODE_GRAPHICS);
+    VGA_SetMode(VGA_MODE_TEXT);
+
+    printk("Dedication OS Version %u.%u.%u\n", version.major, version.minor, version.patch);
+    InitializeHardware();
 
     // Launch the shell
     int value = CliHandler(multibootInfo);
 
     // After protected memory is done, put a task scheduler here
+
+    // Well, it's done. Time to put a task scheduler here.
 
     reboot();
 

@@ -16,8 +16,15 @@
 #include <vfs.h>
 #include <acpi.h>
 #include <memmanage.h>
+#include "multitasking.h"
 
 #define MULTIBOOT_MAGIC 0x2BADB002
+
+typedef struct version {
+    uint8 major;
+    uint8 minor;
+    uint8 patch;
+} version_t;
 
 extern uint32 __kernel_end;
 extern uint32 __kernel_start;
