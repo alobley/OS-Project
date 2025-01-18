@@ -37,7 +37,7 @@ typedef double float64;
 
 // Strings
 typedef char* string;
-typedef const char cstring;
+typedef const char* cstring;
 
 // Volatile types, typically for hardware access (i.e. MMIO)
 typedef volatile uint32 reg32_t;

@@ -381,8 +381,6 @@ disk_t* IdentifyDisk(uint8 diskNum){
     }
 
     uint16* diskBuffer = (uint16*)alloc(512);
-    eax(diskBuffer);
-    STOP;
     if(diskBuffer == NULL){
         // Memory allocation error
         dealloc(disk);

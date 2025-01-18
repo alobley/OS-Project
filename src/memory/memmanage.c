@@ -27,16 +27,6 @@ uint32 KERNEL_FREE_HEAP_BEGIN;
 uint32 KERNEL_FREE_HEAP_END;
 size_t kernel_heap_end;
 
-
-typedef struct memory_block {
-    size_t size;                 // Size of the memory block
-    struct memory_block* next;   // Pointer to the next free block of memory
-    bool free;                   // Block free or bot
-    bool paged;                  // Is this block paged?
-} memory_block_t;
-
-#define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
-
 memory_block_t* kernel_heap;
 
 size_t memSize = 0;
@@ -324,6 +314,7 @@ void PanicFree(){
 }
 
 // Allocate memory and return a pointer to it
+// How does this ever at any point return 0x44?
 void* alloc(size_t size) {
     memory_block_t* current = kernel_heap;
     memory_block_t* prev = NULL;
@@ -354,6 +345,11 @@ void* alloc(size_t size) {
         current = current->next;
     }
 
+    if(prev == NULL){
+        // If we somehow made it here, something went wrong
+        return NULL;
+    }
+
     // No suitable block found, expand heap
     if (kernel_heap_end + size + MEMORY_BLOCK_SIZE < KERNEL_FREE_HEAP_END) {
         uint32 pagesToAdd = size / 4096;
@@ -361,13 +357,14 @@ void* alloc(size_t size) {
             pagesToAdd++;
         }
         for(int i = 0; i < pagesToAdd; i++){
+            // Make a contiguous block of memory (definitely a positive part of paging)
             uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
-            if(newStart == 0){
+            if(newStart < &__kernel_end){
                 // No memory available or error
                 return NULL;
             }
             page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
-            if(newPage == NULL){
+            if(newPage == NULL && i > 0){
                 // No memory available or error
                 // Create a memory block for the new pages
                 memory_block_t* new_block = (memory_block_t*)(kernel_heap_end);
@@ -379,9 +376,10 @@ void* alloc(size_t size) {
         // If the last block is free, find it and expand it
         if(prev != NULL && prev->free){
             prev->size += size;
-            kernel_heap_end += size;
+            kernel_heap_end += pagesToAdd * 4096;
             return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
         }else{
+            // Otherwise, create a new block
             memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
             kernel_heap_end += size + MEMORY_BLOCK_SIZE;
 
@@ -393,14 +391,17 @@ void* alloc(size_t size) {
             if (prev != NULL) {
                 prev->next = new_block;
                 prev = new_block;                   // Make prev the new block for consistency
-            } else {
+            }else if(new_block != NULL){
                 // Edge case, will likely never happen
                 kernel_heap = new_block;
                 prev = new_block;                   // Prev is used for allocation, so it must be set (yes I know it should be current)
+            }else{
+                // There was an error, return NULL just in case.
+                return NULL;
             }
         }
 
-        if(size < pagesToAdd * 4096 && (pagesToAdd * 4096) - size > MEMORY_BLOCK_SIZE /*Ensure there's at least enough space for a memory block and one byte*/){
+        if(size < pagesToAdd * 4096 && (pagesToAdd * 4096) - size > MEMORY_BLOCK_SIZE + 1 /*Ensure there's at least enough space for a memory block and one byte*/){
             // The block does not fill the entire page, so split it
             memory_block_t* new_block2 = (memory_block_t*)(kernel_heap_end + MEMORY_BLOCK_SIZE + size);
             new_block2->size = (pagesToAdd * 4096) - size - MEMORY_BLOCK_SIZE;
@@ -414,11 +415,12 @@ void* alloc(size_t size) {
             prev->size += (pagesToAdd * 4096) - size;
         }
 
+        kernel_heap_end += pagesToAdd * 4096;
         return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
+    }else{
+        // Out of memory
+        return NULL;
     }
-
-    // Out of memory
-    return NULL;
 }
 
 // Free an allocated pointer

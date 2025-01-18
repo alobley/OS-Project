@@ -128,8 +128,7 @@ uint64 __udivmoddi4(uint64 dividend, uint64 divisor, uint64* rem){
 int64 __divdi3(int64 a, int64 b) {
     // Handle division by zero
     if (b == 0) {
-        // Define your error behavior (e.g., abort, return a special value)
-        return 0; // For demonstration purposes
+        return 0;
     }
 
     int neg = (a < 0) ^ (b < 0); // Result is negative if signs of a and b differ
@@ -153,8 +152,7 @@ int64 __divdi3(int64 a, int64 b) {
 int64 __moddi3(int64 a, int64 b) {
     // Handle division by zero
     if (b == 0) {
-        // Define your error behavior (e.g., abort, return a special value)
-        return 0; // For demonstration purposes
+        return 0;
     }
 
     int neg = (a < 0); // Result is negative if a is negative
@@ -175,8 +173,7 @@ int64 __moddi3(int64 a, int64 b) {
 uint64 __umoddi3(uint64 a, uint64 b) {
     // Handle division by zero
     if (b == 0) {
-        // Define your error behavior (e.g., abort, return a special value)
-        return 0; // For demonstration purposes
+        return 0;
     }
 
     while (a >= b) {

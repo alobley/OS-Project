@@ -39,7 +39,7 @@ void InitializeHardware(){
     InitializePIT();
     //InitializeACPI();
     //InitializeKeyboard();
-    //InitializeDisks();
+    InitializeDisks();
 }
 
 int32 ExecuteProgram(file_t* program){
