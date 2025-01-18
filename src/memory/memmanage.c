@@ -62,6 +62,7 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
     if(pagesToAdd == 0){
         return NULL;
     }
+    size_t oldPages = numPages;
     page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
@@ -95,6 +96,11 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
                 firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
             }
         }
+    }
+
+    if(numPages == oldPages){
+        // We've paged everything we possibly can!
+        return NULL;
     }
 
     // Tell the CPU there was a change in the page directory
@@ -366,6 +372,7 @@ void* alloc(size_t size) {
                 // Create a memory block for the new pages
                 memory_block_t* new_block = (memory_block_t*)(kernel_heap_end);
                 new_block->size = i * 4096;
+                kernel_heap_end += i * 4096;
                 return NULL;
             }
         }
