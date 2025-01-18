@@ -66,6 +66,7 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     InitVGA();
     printk("Dedication OS Version 0.0.1\n");
     InitializeHardware();
+    STOP;
     // Launch the shell
     int value = CliHandler(multibootInfo);
 

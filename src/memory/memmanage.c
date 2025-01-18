@@ -56,12 +56,16 @@ PageDirectory* currentDir;
 page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd /*Add only more than one when certain there is a contiguous block of free virtual addresses*/, PageDirectory* pageDir, bool user){
     // Get the page directory entry
     if (virtualAddr % 4096 != 0 || physicalAddr % 4096 != 0) {
-        return NULL; // Addresses must be 4KiB aligned
+        //virtualAddr = (virtualAddr / 4096) * 4096;
+        //physicalAddr = (physicalAddr / 4096) * 4096;
+    }
+    if(pagesToAdd == 0){
+        return NULL;
     }
     page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
-        PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);                               // palloc assumes a full, valid page directory
+        PageTable* table = (PageTable*)(dirEntry->address << 12);                               // palloc assumes a full, valid page directory
         if(table->entries[PTI(virtualAddr + (i * 4096))].present && dirEntry->present){
             // Page already allocated
             return NULL;
@@ -110,6 +114,9 @@ void pfree(uintptr_t virtualAddr, PageDirectory* pageDir){
     asm volatile("invlpg (%0)" :: "r"(virtualAddr) : "memory");
 }
 
+// We need the memory map to determine what memory is available
+mboot_mmap_entry_t* memoryMap;
+size_t mmapLen;
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
     uintptr_t address = ((((uintptr_t)&__kernel_end) >> 12) << 12) + 4096;                           // Set it to the kernel's end address (should skip paged memory)
@@ -118,7 +125,7 @@ uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
         if(dirEntry->present){
             PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
             for(size_t j = 0; j < 1024; j++){
-                if(table->entries[j].present && (table->entries[j].address << 12) == address){
+                if(table->entries[j].present && (table->entries[j].address << 12) == address || table->entries[j].present && (table->entries[j].address << 12) < address || table->entries[j].readWrite == 0){
                     address += 4096;
                 }else{
                     return address;
@@ -202,10 +209,6 @@ size_t GetPages(){
 size_t GetTotalMemory(){
     return memSize;
 }
-
-// We need the memory map to determine what memory is available
-mboot_mmap_entry_t* memoryMap;
-size_t mmapLen;
 
 // This is important for the kernel heap, and will also page important memory regions such as VGA memory and ACPI tables
 // TODO: make this a higher-half kernel
@@ -319,6 +322,11 @@ void* alloc(size_t size) {
     memory_block_t* current = kernel_heap;
     memory_block_t* prev = NULL;
 
+    if(size == 0){
+        // No memory requested
+        return NULL;
+    }
+
     while (current != NULL) {
         if (current->free && current->size >= size && current->paged) {
             // Suitable free block found
@@ -355,6 +363,9 @@ void* alloc(size_t size) {
             page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
             if(newPage == NULL){
                 // No memory available or error
+                // Create a memory block for the new pages
+                memory_block_t* new_block = (memory_block_t*)(kernel_heap_end);
+                new_block->size = i * 4096;
                 return NULL;
             }
         }
@@ -405,7 +416,7 @@ void* alloc(size_t size) {
 
 // Free an allocated pointer
 void dealloc(void* ptr){
-    if(ptr == NULL){
+    if(ptr == NULL || (uintptr_t)ptr < KERNEL_FREE_HEAP_BEGIN || (uintptr_t)ptr > KERNEL_FREE_HEAP_END){
         // Data does not exist
         return;
     }

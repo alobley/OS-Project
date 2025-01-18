@@ -192,7 +192,7 @@ int16 GetX(){
 }
 
 void printk(const char *str, ...){
-    if(*str == '\0'){
+    if(*str == '\0' || str == NULL){
         return;
     }
     

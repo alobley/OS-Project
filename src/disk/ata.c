@@ -381,11 +381,17 @@ disk_t* IdentifyDisk(uint8 diskNum){
     }
 
     uint16* diskBuffer = (uint16*)alloc(512);
+    while(1){
+        // Mhm yes I sure do love when the CPU just decides it doesn't want to execute these instructions specifically right here
+        printk("Allocated address: 0x%x\n", (uintptr_t)diskBuffer);
+    }
+    STOP;
     if(diskBuffer == NULL){
         // Memory allocation error
         dealloc(disk);
         return NULL;
     }
+
     memset(diskBuffer, 0, 512);
     disk->infoBuffer = diskBuffer;
     
@@ -394,7 +400,6 @@ disk_t* IdentifyDisk(uint8 diskNum){
         disk->infoBuffer[i] = inw(DataPort(disk->base));
     }
 
-    // All disks should be the same
     DetermineAddressing(disk);
 
     return disk;
