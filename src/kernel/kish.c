@@ -57,11 +57,11 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
     }else if(strcmp(cmd, "shutdown")){
         printk("Trying ACPI shutdown...\n");
         AcpiShutdown();
-        if(PS2ControllerExists()){
-            // Fallback if ACPI shutdown fails. QEMU and Bochs only. If ACPI shoutdown fails and the OS is running on real hardware, the computer will not shut down.
-            printk("ACPI shutdown failed. Trying QEMU/Bochs shutdown...\n");
-            shutdown();
-        }
+
+        printk("ACPI shutdown failed. Trying QEMU/Bochs shutdown...\n");
+        //shutdown();
+
+        printk("Shutdown failed. Please press the computer's power button.\n");
 
     }else if(strcmp(cmd, "systest")){
         syscall();
@@ -120,6 +120,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 
     }else if(strcmp(cmd, "memsize")){
         printk("Total memory: %u MiB\n", (GetTotalMemory() / 1024) / 1024);
+        printk("Used memory: %u MiB\n", ((GetPages() * 4096 / 1024)) / 1024);
 
     }else if (strcmp(cmd, "dir")){
         dir();

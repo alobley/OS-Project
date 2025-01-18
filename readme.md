@@ -7,7 +7,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 Kernel Version Alpha 0.0.1 is on the way.
 
 ## System Requirements (subject to change)
-- An i386 processor or newer
+- An i686 processor or newer
 - At least 10MB of RAM
 - A VGA-compatible display
 - PATA/PATAPI compatible storage

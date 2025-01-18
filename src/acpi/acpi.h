@@ -134,6 +134,8 @@ typedef struct ACPIInfo {
     bool exists;
 } ACPIInfo_t;
 
+extern ACPIInfo_t acpiInfo;
+
 void InitializeACPI();
 void AcpiShutdown();
 bool PS2ControllerExists();

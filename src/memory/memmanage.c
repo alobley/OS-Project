@@ -277,9 +277,6 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
     }
 
     // Remap the BIOS...
-    
-    // Remap the ACPI tables
-    ACPIInfo_t acpiInfo = GetACPIInfo();
 
     if(acpiInfo.exists){
         // Remap the RSDP

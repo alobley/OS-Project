@@ -113,7 +113,7 @@ void RemoveTimerCallback(TimerCallback callback){
     TimerCallbackEntry* previous = NULL;
 
     // Iterate through the linked list to find the timer we're looking for
-    while(entry != NULL || entry->callback != callback){
+    while(entry != NULL && entry->callback != callback){
         previous = entry;
         entry = entry->next;
     }

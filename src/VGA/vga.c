@@ -118,13 +118,13 @@ static unsigned get_fb_seg(void)
 	{
 	case 0:
 	case 1:
-		seg = VGA_PIXEL_MODE_START;
+		seg = VGA_PIXEL_MODE_START >> 4;
 		break;
 	case 2:
-		seg = VGA_TEXT_MODE_START;
+		seg = VGA_TEXT_MODE_START >> 4;
 		break;
 	case 3:
-		seg = VGA_TEXT_MODE_START;
+		seg = VGA_TEXT_MODE_START >> 4;
 		break;
 	}
 	return seg;

@@ -5,10 +5,6 @@
 
 ACPIInfo_t acpiInfo = {0};
 
-ACPIInfo_t GetACPIInfo(){
-    return acpiInfo;
-}
-
 bool DoChecksum(char* table, uint32 length){
     uint32 sum = 0;
     for(int i = 0; i < length; i++){
@@ -166,8 +162,7 @@ bool PS2ControllerExists(){
 }
 
 void AcpiShutdown(){
-    // Oooooh magic numbers, what do they mean? They are mysterious.
-    outw((uint32)acpiInfo.fadt->pm1aCtrlBlk, 1 << 13 | 1 << 5 | 1 << 2);
+    
 }
 
 void AcpiReboot(){

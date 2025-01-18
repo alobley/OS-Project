@@ -38,7 +38,7 @@ void InitializeHardware(){
     InitIRQ();
     InitializePIT();
     InitializeKeyboard();
-    //InitializeDisks();                // After implementing paging, the system hangs when reading from the disk. Unsure why.
+    InitializeDisks();                // After implementing paging, the system hangs when reading from the disk. Unsure why.
 }
 
 
@@ -75,9 +75,6 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     // Getting paging to work took me FIFTY HOURS. PAGING ISN'T EVEN FULLY IMPLEMENTED YET.
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
-
-    //VGA_SetMode(VGA_MODE_GRAPHICS);
-    VGA_SetMode(VGA_MODE_TEXT);
 
     printk("Dedication OS Version %u.%u.%u\n", version.major, version.minor, version.patch);
     InitializeHardware();

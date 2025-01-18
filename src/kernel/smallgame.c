@@ -64,8 +64,8 @@ void LittleGame(){
     while(!IsKeyPressed(ESC));
 
     // Be responsible with graphics and timers!
-    RemoveTimerCallback(0);
-    RemoveTimerCallback(1);
+    RemoveTimerCallback(timer);
+    RemoveTimerCallback(SoundTimer);
     PCSP_NoSound();
     VGA_SetMode(VGA_MODE_TEXT);
 }

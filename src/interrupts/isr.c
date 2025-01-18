@@ -215,7 +215,6 @@ void ISRHandler(struct Registers *regs){
 
 extern void reboot();
 static void ExceptionHandler(struct Registers *regs){
-    ClearTerminal();
     WriteStr("Exception: ");
     WriteStr(exceptions[regs->intNum]);
     
