@@ -32,11 +32,11 @@ void shutdown(){
 
 // Initializes all the required components
 void InitializeHardware(){
-    InitIDT();
-    InitISR();
+    //InitIDT();
+    //InitISR();
     InitializeFPU();
-    InitIRQ();
-    InitializePIT();
+    //InitIRQ();
+    //InitializePIT();
     //InitializeACPI();
     //InitializeKeyboard();
     InitializeDisks();

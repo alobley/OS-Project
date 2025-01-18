@@ -270,14 +270,14 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
     if(mmapLength % 4096 != 0){
         mapPages++;
     }
+    //uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
+    //page_t* firstMapPage = palloc(heapStart, startAddr, mapPages, &pageDir[0], false);
+
+    //memoryMap = (mboot_mmap_entry_t*)heapStart;
+
+    //heapStart += mapPages * 4096;
+
     uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
-    page_t* firstMapPage = palloc(heapStart, startAddr, mapPages, &pageDir[0], false);
-
-    memoryMap = (mboot_mmap_entry_t*)heapStart;
-
-    heapStart += mapPages * 4096;
-
-    startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
 
     kernel_heap = (memory_block_t*)heapStart;
@@ -333,12 +333,14 @@ void* alloc(size_t size) {
                 new_block->size = current->size - size - MEMORY_BLOCK_SIZE;
                 new_block->next = current->next;
                 new_block->free = true;
+                new_block->paged = true;
 
                 current->size = size;
                 current->next = new_block;
             }
             current->free = false;
             kernel_heap_end += size + MEMORY_BLOCK_SIZE;
+            WriteStr("Acceptable memory block found and resized\n");
             return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
         }
         prev = current;
@@ -347,6 +349,7 @@ void* alloc(size_t size) {
 
     if(prev == NULL){
         // If we somehow made it here, something went wrong
+        WriteStr("Something went wrong\n");
         return NULL;
     }
 
@@ -361,12 +364,14 @@ void* alloc(size_t size) {
             uintptr_t newStart = FindUnpagedMemoryHigh(currentDir);
             if(newStart < &__kernel_end){
                 // No memory available or error
+                WriteStr("No memory available\n");
                 return NULL;
             }
             page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
             if(newPage == NULL && i > 0){
                 // No memory available or error
                 // Create a memory block for the new pages
+                WriteStr("Not enough memory to allocate, new block created\n");
                 memory_block_t* new_block = (memory_block_t*)(kernel_heap_end);
                 new_block->size = i * 4096;
                 kernel_heap_end += i * 4096;
@@ -377,9 +382,13 @@ void* alloc(size_t size) {
         if(prev != NULL && prev->free){
             prev->size += size;
             kernel_heap_end += pagesToAdd * 4096;
+            WriteStr("Expanded previous block\n");
+            eax((uint32)prev);
+            STOP;
             return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
         }else{
             // Otherwise, create a new block
+            WriteStr("Created new block\n");
             memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
             kernel_heap_end += size + MEMORY_BLOCK_SIZE;
 
@@ -397,6 +406,7 @@ void* alloc(size_t size) {
                 prev = new_block;                   // Prev is used for allocation, so it must be set (yes I know it should be current)
             }else{
                 // There was an error, return NULL just in case.
+                WriteStr("Unknown Error\n");
                 return NULL;
             }
         }
@@ -416,9 +426,11 @@ void* alloc(size_t size) {
         }
 
         kernel_heap_end += pagesToAdd * 4096;
+        WriteStr("Returning fresh new memory block\n");
         return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
     }else{
         // Out of memory
+        WriteStr("Out of memory\n");
         return NULL;
     }
 }
