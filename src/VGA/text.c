@@ -191,9 +191,14 @@ int16 GetX(){
     return currentX;
 }
 
+bool debug = false;
 void printk(const char *str, ...){
     if(*str == '\0' || str == NULL){
         return;
+    }
+
+    if(strcmp(str, "Enter \"help\" into the console for a list of commands.\n")){
+        debug = true;
     }
     
     va_list args;
@@ -203,6 +208,8 @@ void printk(const char *str, ...){
 
     // Allocate 1KB of the kernel's heap to the output buffer, which is the total size of VGA text mode. Strings can not be larger than this.
     char* output = (char* )alloc(1000);
+    memset(output, 0, 1000);
+    
     if(output == NULL){
         va_end(args);
         return;

@@ -19,6 +19,10 @@ void dir(){
     vfs_disk_t* root = disks[ROOT_INDEX];
     directory_t* rootDir = root->mountDir;
     directory_entry_t* current = rootDir->firstFile;
+    if(current == NULL){
+        printk("No files found!\n");
+        return;
+    }
     while(current != NULL){
         printk(current->name);
         printk("  ");
@@ -73,7 +77,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("clear: clears the terminal screen\n");
         printk("fault: intentionally cause an exception (debug)\n");
         printk("reboot: reboots the machine\n");
-        printk("shutdown: shuts down the computer (QEMU/Bochs only)\n");
+        printk("shutdown: shuts down the computer\n");
         printk("lex: loads and executes a program from the disk\n");
         printk("pginfo: show the total number of pages in the system\n");
 
@@ -151,8 +155,8 @@ int CliHandler(mboot_info_t* multibootInfo){
     printk("Kernel-Integrated Shell (KISh)\n");
     printk("Enter \"help\" into the console for a list of commands.\n");
     // Allocate 1000 bytes for a command. That means a max of 1000 characters. Should be more than enough.
-    char* command = (char*)alloc(1000);
-    memset(command, 0, 1000);
+    char* command = (char*)alloc(1001);
+    memset(command, 0, 1001);
 
     int index = 0;
 

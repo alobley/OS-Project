@@ -229,7 +229,6 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
 
         dealloc(buffer);
         buffer = ReadSectors(fatdisk->parent, fatdisk->paramBlock->sectorsPerCluster, fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
-
         // There's another cluster coming up that must be read
         current->cluster = currentCluster;
         current->buffer = buffer;

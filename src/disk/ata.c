@@ -254,7 +254,6 @@ void DetermineAddressing(disk_t* disk){
     }
 }
 
-uint8 numdisksbuffered = 0;
 // PATAPI has NOT been implemented yet in this! It needs to be implemented at some point.
 disk_t* IdentifyDisk(uint8 diskNum){
     disk_t* disk = (disk_t*)alloc(sizeof(disk_t));
@@ -381,13 +380,6 @@ disk_t* IdentifyDisk(uint8 diskNum){
     }
 
     uint16* diskBuffer = (uint16*)alloc(512);
-    WriteStr("Allocated buffer\n");
-    numdisksbuffered++;
-    if(numdisksbuffered == 2){
-        WriteStr("This is the offending disk\n");
-        eax(diskBuffer);
-        STOP;
-    }
 
     if(diskBuffer == NULL){
         // Memory allocation error

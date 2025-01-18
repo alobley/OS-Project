@@ -163,7 +163,7 @@ static void (*stubs[NUM_ISRS])(struct Registers*) = {
     _isr48
 };
 
-static const char *exceptions[32] = {
+static const char* exceptions[32] = {
     "Divide by zero",
     "Debug",
     "NMI",

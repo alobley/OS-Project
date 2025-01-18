@@ -38,7 +38,7 @@ void InitializeHardware(){
     InitIRQ();
     InitializePIT();
     InitializeKeyboard();
-    InitializeDisks();
+    //InitializeDisks();
 }
 
 int32 ExecuteProgram(file_t* program){
@@ -66,7 +66,9 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     InitVGA();
     printk("Dedication OS Version 0.0.1\n");
     InitializeHardware();
-    STOP;
+
+    //STOP;
+
     // Launch the shell
     int value = CliHandler(multibootInfo);
 

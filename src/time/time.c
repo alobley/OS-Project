@@ -199,7 +199,7 @@ static void timer_handler(struct Registers *regs){
     state.ticks++;
 
     // Inform the PIC that the interrupt has ended
-    outb(0x20, PIC_EOI);
+    outb(PIC_EOI, PIC_EOI);
 }
 
 // Note that the PIT is set to 1000hz (1ms between interrupts)
