@@ -256,7 +256,44 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
     }
 
     // Remap the BIOS...
-    // Remap the ACPI tables...
+    
+    // Remap the ACPI tables
+    ACPIInfo_t acpiInfo = GetACPIInfo();
+
+    if(acpiInfo.exists){
+        // Remap the RSDP
+        page_t* rsdpPage = palloc(vgaRegion + (vgaPages * 4096), acpiInfo.rsdpV1, 1, &pageDir[0], false);
+        if(rsdpPage == NULL){
+            return;
+        }
+        rsdpPage->readWrite = 1;
+        rsdpPage->present = 1;
+        rsdpPage->user = false;
+
+        acpiInfo.rsdpV1 = (RSDP_V1_t*)(vgaRegion + (vgaPages * 4096));
+
+        // Remap the RSDT
+        page_t* rsdtPage = palloc(vgaRegion + ((vgaPages +1) * 4096), acpiInfo.rsdt, 1, &pageDir[0], false);
+        if(rsdtPage == NULL){
+            return;
+        }
+        rsdtPage->readWrite = 1;
+        rsdtPage->present = 1;
+        rsdtPage->user = false;
+
+        acpiInfo.rsdt = (RSDT_t*)(vgaRegion + ((vgaPages + 1) * 4096));
+
+        // Remap the FADT
+        page_t* fadtPage = palloc(vgaRegion + ((vgaPages + 2) * 4096), acpiInfo.fadt, 1, &pageDir[0], false);
+        if(fadtPage == NULL){
+            return;
+        }
+        fadtPage->readWrite = 1;
+        fadtPage->present = 1;
+        fadtPage->user = false;
+
+        acpiInfo.fadt = (FADT_t*)(vgaRegion + ((vgaPages + 2) * 4096));
+    }
 
     memSize = totalmem;
 

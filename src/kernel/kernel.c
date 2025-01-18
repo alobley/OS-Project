@@ -32,13 +32,12 @@ void shutdown(){
 
 // Initializes all the required components
 void InitializeHardware(){
-    //InitIDT();
-    //InitISR();
+    InitIDT();
+    InitISR();
     InitializeFPU();
-    //InitIRQ();
-    //InitializePIT();
-    //InitializeACPI();
-    //InitializeKeyboard();
+    InitIRQ();
+    InitializePIT();
+    InitializeKeyboard();
     InitializeDisks();
 }
 
@@ -62,6 +61,7 @@ int32 ExecuteProgram(file_t* program){
 
 // The kernel's main function
 void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
+    InitializeACPI();
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
     printk("Dedication OS Version 0.0.1\n");

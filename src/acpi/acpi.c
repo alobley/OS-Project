@@ -35,7 +35,7 @@ void GetRSDP(){
 
             if(DoChecksum(i, sizeof(RSDP_V1_t)) == false){
                 // Checksum failed
-                printk("RSDP checksum failed.\n");
+                WriteStr("RSDP checksum failed.\n");
                 continue;
             }
 
@@ -47,7 +47,7 @@ void GetRSDP(){
 
                 if(DoChecksum(i, sizeof(RSDP_V2_t)) == false){
                     // Checksum failed
-                    printk("RSDP checksum failed.\n");
+                    WriteStr("RSDP checksum failed.\n");
                     continue;
                 }
 
@@ -55,7 +55,7 @@ void GetRSDP(){
                 acpiInfo.version = 2;
             }else{
                 // Unsupported revision
-                printk("Unsupported RSDP revision.\n");
+                WriteStr("Unsupported RSDP revision.\n");
                 continue;
             }
             acpiInfo.exists = true;
@@ -69,7 +69,7 @@ void GetRSDP(){
 
     if(DoChecksum((char*)ptr, sizeof(RSDP_V1_t)) == false){
         // Checksum failed. There is no ACPI table.
-        printk("RSDP checksum failed. There is no ACPI table.\n");
+        WriteStr("RSDP checksum failed. There is no ACPI table.\n");
         acpiInfo.exists = false;
         return;
     }
@@ -79,7 +79,7 @@ void GetRSDP(){
         // Check the extended checksum
         if(DoChecksum((char*)ptr, sizeof(RSDP_V2_t)) == false){
             // Checksum failed
-            printk("RSDP checksum failed. There is no ACPI table.\n");
+            WriteStr("RSDP checksum failed. There is no ACPI table.\n");
             acpiInfo.exists = false;
             return;
         }
@@ -132,7 +132,7 @@ void InitializeACPI(){
         acpiInfo.xsdt = (XSDT_t*)acpiInfo.rsdpV2->xsdtAddress;
         acpiInfo.fadt = FindFadtVer2((RSDT_t*)acpiInfo.xsdt);
     }else{
-        printk("No valid RSDP found. ACPI is not supported.\n");
+        WriteStr("No valid RSDP found. ACPI is not supported.\n");
         acpiInfo.exists = false;
         return;
     }

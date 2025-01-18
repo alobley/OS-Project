@@ -138,5 +138,6 @@ void InitializeACPI();
 void AcpiShutdown();
 bool PS2ControllerExists();
 void AcpiReboot();
+ACPIInfo_t GetACPIInfo();
 
 #endif
