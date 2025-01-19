@@ -72,7 +72,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         printk("systest: execute a system call\n");
         printk("help: view this screen\n");
         printk("dskchk: scans the system for PATA disks\n");
-        printk("memsize: get the total system RAM in bytes\n");
+        printk("meminfo: Get memory information\n");
         printk("dir: prints all the entries in the working directory\n");
         printk("clear: clears the terminal screen\n");
         printk("fault: intentionally cause an exception (debug)\n");
@@ -118,7 +118,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         // Intentionally cause an exception to test interrupts and exceptions (these are very important)
         asm volatile("int $0x08");
 
-    }else if(strcmp(cmd, "memsize")){
+    }else if(strcmp(cmd, "meminfo")){
         printk("Total memory: %u MiB\n", (GetTotalMemory() / 1024) / 1024);
         printk("Used memory: %u MiB\n", ((GetPages() * 4096 / 1024)) / 1024);
 

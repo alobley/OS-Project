@@ -76,6 +76,8 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
 
+    alloc(4096 * 10);
+
     printk("Dedication OS Version %u.%u.%u\n", version.major, version.minor, version.patch);
     InitializeHardware();
 

@@ -32,7 +32,7 @@ INCLUDES=-I $(SRC_DIR) -I $(LIB_DIR) -I $(INT_DIR) -I $(VGA_DIR) -I $(BOOT_DIR)
 INCLUDES+=-I $(KERNEL_DIR) -I $(MEM_DIR) -I $(TIME_DIR) -I $(KB_DIR) -I $(DISK_DIR) -I $(SOUND_DIR) -I $(SRC_DIR)/acpi
 
 # Compilation Flags
-CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu99 -Wall -Wextra -Wcast-align $(INCLUDES) -march=i686
+CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu99 -Wall -Wextra -Wcast-align $(INCLUDES)
 
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(INT_DIR)/isr.c $(INT_DIR)/idt.c $(INT_DIR)/irq.c

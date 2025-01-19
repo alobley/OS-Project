@@ -166,8 +166,6 @@ fat_disk_t* TryFatFS(disk_t* disk){
     return fatDisk;
 }
 
-
-bool fatreadsec = false;
 // Start it with FAT32 then go to FAT12/16 when it's figured out (I have to figure this out again :despair:)
 // In FAT32, the root directory is a cluster chain, which is itself full of FAT entries. The first cluster is in the BPB.
 // Returns a linked list of clusters that contain the root directory entries
@@ -230,7 +228,6 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
         }
 
         dealloc(buffer);
-        fatreadsec = true;
         buffer = ReadSectors(fatdisk->parent, fatdisk->paramBlock->sectorsPerCluster, fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
         // There's another cluster coming up that must be read
         current->cluster = currentCluster;

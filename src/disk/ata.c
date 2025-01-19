@@ -3,6 +3,7 @@
 #include <util.h>
 #include <memmanage.h>
 #include <vga.h>
+#include <kernel.h>
 
 #define NUM_BUS_PORTS 7
 
@@ -402,6 +403,8 @@ disk_t* IdentifyDisk(uint8 diskNum){
 
 extern bool fatreadsec;
 
+
+extern vfs_disk_t* disks[MAX_DRIVES];
 // Note: partition-relative LBA implementation may be a good idea
 // The system hangs when I call this function. I'm not sure why.
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
@@ -454,6 +457,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
     uint16* buffer = alloc(sectorsToRead * disk->sectorSize);
     if(buffer == NULL){
         // Memory allocation error
+        //STOP;
         return NULL;
     }
 
@@ -521,18 +525,22 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         // Wait for the drive to indicate it's ready to transfer data
         WaitForDrq(disk->base);
 
-        // To the guy from discord: These is just for debugging
         //printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
         //printk("Buffer address: 0x%x\n", buffer);
         //printk("Buffer size: %d\n", sectorsToRead * disk->sectorSize);
 
-        for(int sector = 0; sector < sectorsToRead; sector++){
-            WaitForIdle(disk->base);
+        uint32 offset = 0;
+        for(uint32 sector = 0; sector < sectorsToRead; sector++){
+            //WaitForIdle(disk->base);
             WaitForDrq(disk->base);
             for(int i = 0; i < 256; i++){
                 // Read the sector
-                //printk("Accessing address %u\n", buffer + (sector * 256) + i);
-                buffer[(sector * 256) + i] = inw(DataPort(disk->base));
+                buffer[offset] = inw(DataPort(disk->base));
+                offset++;
+            }
+            if(sectorsToRead > 1){
+                // ...what?
+                for(;;)cli; hlt;
             }
         }
     }else{

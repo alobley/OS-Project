@@ -57,6 +57,7 @@ bool IsPagePresent(uintptr_t virtualAddr, PageDirectory* pageDir){
 // Activate a set of new pages in a page directory. Assumes a full and valid directory.
 page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd /*Add only more than one when certain there is a contiguous block of free virtual addresses*/, PageDirectory* pageDir, bool user){
     // Get the page directory entry
+    bool firstPagePaged = false;
     if(pagesToAdd == 0){
         return NULL;
     }
@@ -65,6 +66,9 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
     for(size_t i = 0; i < pagesToAdd; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
         PageTable* table = (PageTable*)(dirEntry->address << 12);                               // palloc assumes a full, valid page directory
+        if(i == 0){
+            firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
+        }
         if(table->entries[PTI(virtualAddr + (i * 4096))].present && dirEntry->present){
             // Page already allocated
             continue;               // There must be a better way. If it's already allocated, it's probably there for a reason.
@@ -91,15 +95,17 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
             table->entries[PTI(virtualAddr + (i * 4096))].available = 0;
             asm volatile("invlpg (%0)" :: "r"(virtualAddr + (i * 4096)) : "memory");
             numPages++;
-            if(i == 0){
-                firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
-            }
         }
     }
 
     if(numPages == oldPages){
         // We've paged everything we possibly can!
-        return NULL;
+        //STOP;
+        //return NULL;
+    }
+
+    if(firstPage == NULL){
+        STOP;
     }
 
     // Tell the CPU there was a change in the page directory
@@ -139,7 +145,7 @@ uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     for(size_t i = 0; i < 1024; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[i];
         if(dirEntry->present){
-            PageTable* table = (PageTable*)GetPhysicalAddress(dirEntry->address);
+            PageTable* table = (PageTable*)(dirEntry->address << 12);
             for(size_t j = 0; j < 1024; j++){
                 if(table->entries[j].present && (table->entries[j].address << 12) == address || table->entries[j].present && (table->entries[j].address << 12) < address || table->entries[j].readWrite == 0){
                     address += 4096;
@@ -394,14 +400,21 @@ void* alloc(size_t size) {
                 current->next = new_block;
 
                 current->free = false;
-                kernel_heap_end += size + MEMORY_BLOCK_SIZE;
+                //kernel_heap_end += size + MEMORY_BLOCK_SIZE;
                 //WriteStr("Acceptable memory block found and resized\n");
+                return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
+            }else if(current->size == size){
+                // The block is the perfect size
+                current->free = false;
+                //WriteStr("Acceptable memory block found\n");
                 return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
             }
         }
         prev = current;
         current = current->next;
     }
+
+    prev = kernel_heap;
 
     if(prev == NULL){
         // If we somehow made it here, something went wrong
@@ -411,8 +424,8 @@ void* alloc(size_t size) {
 
     // No suitable block found, expand heap
     if (kernel_heap_end + size + MEMORY_BLOCK_SIZE < KERNEL_FREE_HEAP_END) {
-        uint32 pagesToAdd = size / 4096;
-        if (size % 4096 != 0) {
+        uint32 pagesToAdd = (size + MEMORY_BLOCK_SIZE) / 4096;
+        if ((size + MEMORY_BLOCK_SIZE) % 4096 != 0) {
             pagesToAdd++;
         }
         for(int i = 0; i < pagesToAdd + 1; i++){
@@ -432,20 +445,23 @@ void* alloc(size_t size) {
                 new_block->size = i * 4096;
                 kernel_heap_end += i * 4096;
                 return NULL;
+            }else if(newPage == NULL){
+                //WriteStr("Not enough memory to allocate\n");
+                return NULL;
             }
         }
+        
         // If the last block is free, find it and expand it
-        if(prev != NULL && prev->free){
+        if(prev != NULL && prev->free || prev == kernel_heap && prev->free){
             prev->size += size;
             kernel_heap_end += pagesToAdd * 4096;
             //WriteStr("Expanded previous block\n");
-            eax((uint32)prev);
             return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
         }else{
             // Otherwise, create a new block
             //WriteStr("Created new block\n");
             memory_block_t* new_block = (memory_block_t*)kernel_heap_end;
-            kernel_heap_end += size + MEMORY_BLOCK_SIZE;
+            //kernel_heap_end += size + MEMORY_BLOCK_SIZE;
 
             new_block->size = size;
             new_block->next = NULL;
@@ -455,7 +471,7 @@ void* alloc(size_t size) {
             if (prev != NULL) {
                 prev->next = new_block;
                 prev = new_block;                   // Make prev the new block for consistency
-            }else if(new_block != NULL){
+            }else if(new_block != NULL && prev == NULL){
                 // Edge case, will likely never happen
                 kernel_heap = new_block;
                 prev = new_block;                   // Prev is used for allocation, so it must be set (yes I know it should be current)
@@ -477,7 +493,7 @@ void* alloc(size_t size) {
         }else if(size < pagesToAdd * 4096){
             // The block does not fill the entire page, but there's not enough space for a new block
             // Just make the block bigger
-            prev->size += (pagesToAdd * 4096) - size;
+            prev->size = pagesToAdd * 4096;
         }
 
         kernel_heap_end += pagesToAdd * 4096;
