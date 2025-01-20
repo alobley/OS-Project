@@ -111,12 +111,15 @@ directory_t* FATDirToVfsDir(FAT_cluster_t* directory, fat_disk_t* fatdisk, char*
 
 // Get the important filesystem info out of the BPB and return a valid FAT disk if it is in fact valid
 fat_disk_t* TryFatFS(disk_t* disk){
-    if(disk == NULL || (disk->populated == false && disk->removable == true)){
+    if(disk == NULL){
         return NULL;
     }
 
     bpb_t* bpb = NULL;
     bpb = (bpb_t*)ReadSectors(disk, 1, 0);
+    if(bpb == NULL){
+        return NULL;
+    }
 
     fat_disk_t* fatDisk = (fat_disk_t*)alloc(sizeof(fat_disk_t));
     fatDisk->parent = disk;
@@ -169,6 +172,7 @@ fat_disk_t* TryFatFS(disk_t* disk){
 // Start it with FAT32 then go to FAT12/16 when it's figured out (I have to figure this out again :despair:)
 // In FAT32, the root directory is a cluster chain, which is itself full of FAT entries. The first cluster is in the BPB.
 // Returns a linked list of clusters that contain the root directory entries
+// This specific function is having very, very strange issues
 FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
     uint64 rootClusLBA = 0;
     uint64 rootSector = 0;
@@ -195,6 +199,10 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
     void* fileBuffer = NULL;
 
     rootDir = (FAT_cluster_t*)alloc(sizeof(FAT_cluster_t));
+    if(rootDir == NULL){
+        // Memory allocation failure
+        return NULL;
+    }
     FAT_cluster_t* current = rootDir;
 
     uint32 currentCluster = rootCluster;
@@ -207,13 +215,23 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
         char* buffer = ReadSectors(fatdisk->parent, 1, fatSector);
         if(buffer == NULL){
             // Memory allocation failure
+            current = rootDir;
+            while(current != NULL){
+                dealloc(current->buffer);
+                FAT_cluster_t* next = current->next;
+                dealloc(current);
+                current = next;
+            }
             return NULL;
         }
 
         // Get the next cluster in the chain
         uint32 tableValue = *((uint32*)(buffer + fatEntryOffset));
+        dealloc(buffer);
         if(fatdisk->fstype == FS_FAT32){
             tableValue &= 0x0FFFFFFF;
+        }else{
+            tableValue &= 0x0FFFF;
         }
 
         if(tableValue == 0){
@@ -227,21 +245,52 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
             validCluster = false;
         }
 
-        dealloc(buffer);
+        printk("Fatdisk parent: 0x%x\n", fatdisk->parent);
+        printk("Sectors per cluster: %d\n", fatdisk->paramBlock->sectorsPerCluster);
+        printk("First data sector: %d\n", fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
         // It is only and specifically this read in this function that causes the strange bugs. I don't know why.
         buffer = ReadSectors(fatdisk->parent, fatdisk->paramBlock->sectorsPerCluster, fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
-        if(current == NULL){
+        if(buffer == NULL){
+            current = rootDir;
+            while(current != NULL){
+                if(current->buffer != NULL){
+                    // Just in case (although we should never need an if statement here)
+                    dealloc(current->buffer);
+                }else{
+                    printk("Impossible edge case!\n");
+                }
+                FAT_cluster_t* next = current->next;
+                dealloc(current);
+                current = next;
+            }
             // Memory allocation failure
-            printk("We should not be here!\n");
             return NULL;
         }
 
         // There's another cluster coming up that must be read
         current->cluster = currentCluster;
         current->buffer = buffer;
-        current->next = (FAT_cluster_t*)alloc(sizeof(FAT_cluster_t));
-        current = current->next;
-        current->next = NULL;
+        if(validCluster){
+            current->next = (FAT_cluster_t*)alloc(sizeof(FAT_cluster_t));
+            if(current->next == NULL){
+                current = rootDir;
+                while(current != NULL){
+                    if(current->buffer != NULL){
+                        // Just in case (although we should never need an if statement here)
+                        dealloc(current->buffer);
+                    }else{
+                        printk("Impossible edge case!\n");
+                    }
+                    FAT_cluster_t* next = current->next;
+                    dealloc(current);
+                    current = next;
+                }
+            }
+            current = current->next;
+            current->next = NULL;
+        }else{
+            current->next = NULL;
+        }
         currentCluster = tableValue;
     }
 
@@ -309,9 +358,6 @@ file_t* FatSeekFile(fat_disk_t* fatdisk, char* fileName){
                 // The file is an LFN file. Process it like a regular file for now for debugging purposes.
                 WriteStrSize(&file->name, 11);
                 char* ptr = (char*)file;
-                for(int j = 0; j < sizeof(fat_entry_t); j++){
-                    printk("0x%x ", (uint32)((*(ptr + j)) & 0x000000FFU));
-                }
                 lfn_entry_t* lfn = (lfn_entry_t*)((void*)file);
                 file = &lfn->file;
                 if(file->name[0] == DELETED){

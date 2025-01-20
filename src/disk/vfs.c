@@ -15,16 +15,19 @@ char* GetRootDir(){
 }
 
 // An array of pointers to all the ATA disks
-vfs_disk_t* disks[MAX_DRIVES];
+vfs_disk_t* disks[MAX_DRIVES] = {0};
 
-vfs_disk_t* GetDisks(){
-    return &disks[0];
-}
+//vfs_disk_t* GetDisks(){
+    //return &disks[0];
+//}
 
 // It's probably safe not to have to mount other disks, but it's a good idea to have the functionality
 // I'll need a way to copy the kernel files to the disk, so I'll need ISO9660 support and USB support
 void InitializeDisks(){
     disks[0] = FindRoot();
+    if(disks[0] == NULL){
+        return;
+    }
     int accumulator = 0;
     for(int i = 1; i < MAX_DRIVES; i++){
         disks[i] = DefineDisk(accumulator);
@@ -40,31 +43,24 @@ directory_t* GetRoot(vfs_disk_t* disk){
     if(disk->fstype == FS_UNSUPPORTED){
         return NULL;
     }else if(disk->fstype == FS_FAT32){
-        fat_disk_t* fatdisk = alloc(sizeof(fat_disk_t));
-        fatdisk->parent = disk->parent;
-        fatdisk->fstype = disk->fstype;
-        fatdisk->paramBlock = (bpb_t*)ReadSectors(fatdisk->parent, 1, 0);
-        FAT_cluster_t* fatroot = FatReadRootDirectory(fatdisk);
-        return FATDirToVfsDir(fatroot, fatdisk, rootDir);
+        fat_disk_t* fatdisk = TryFatFS(disk->parent);
+        FAT_cluster_t* fatroot = NULL;//FatReadRootDirectory(fatdisk);
+        directory_t* dir = FATDirToVfsDir(fatroot, fatdisk, rootDir);
+        return dir;
     }else{
         // Other FS types (unimplemented)
         return NULL;
     }
 }
 
-vfs_disk_t* DefineDisk(uint8 diskNum){
+vfs_disk_t* DefineDisk(disk_t* parent){
     vfs_disk_t* disk = (vfs_disk_t*)alloc(sizeof(vfs_disk_t));
     if(disk == NULL){
         return NULL;
     }
-    disk->parent = IdentifyDisk(diskNum);
-    if(disk->parent == NULL){
-        // Invalid disk
-        dealloc(disk);
-        return NULL;
-    }
+    disk->parent = parent;
 
-    fat_disk_t* fatdisk =  TryFatFS(disk->parent);
+    fat_disk_t* fatdisk = TryFatFS(disk->parent);
     if(fatdisk == NULL){
         // Invalid disk
         dealloc(disk);
@@ -72,32 +68,37 @@ vfs_disk_t* DefineDisk(uint8 diskNum){
     }
     
     disk->fstype = fatdisk->fstype;
+    dealloc(fatdisk->paramBlock);
     dealloc(fatdisk);
 
     while(disk->fstype == FS_UNSUPPORTED){
         // Try next filesystems... (implement later)
-        dealloc(disk);
         return NULL;
     }
     return disk;
 }
 
 vfs_disk_t* FindRoot(){
-    uint8 tryDisk = DEFAULT_ROOTDISK;
-    disk_t* disk = IdentifyDisk(tryDisk);
-    while(disk->type != PATADISK){
-        // Get the first PATA disk
-        if(tryDisk >= MAX_DRIVES){
+    disk_t* disk;
+    for(int i = 0; i < MAX_DRIVES; i++){
+        disk = IdentifyDisk(i);
+        if(disk == NULL){
             return NULL;
         }
-        tryDisk++;
+        if(disk->type == PATADISK){
+            break;
+        }
         dealloc(disk);
-        disk = IdentifyDisk(tryDisk);
     }
-    rootDisk = tryDisk;
-    vfs_disk_t* root = DefineDisk(rootDisk);
+
+    rootDisk = disk->driveNum;
+    vfs_disk_t* root = DefineDisk(disk);
+    if(root == NULL){
+        return NULL;
+    }
 
     root->parent = disk;
+    //printk("Disk parent address in FindRoot: 0x%x\n", root->parent);
     root->mountDir = GetRoot(root);
     root->mountDir->name = rootDir;
     return root;

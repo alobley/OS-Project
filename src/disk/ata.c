@@ -3,7 +3,6 @@
 #include <util.h>
 #include <memmanage.h>
 #include <vga.h>
-#include <kernel.h>
 
 #define NUM_BUS_PORTS 7
 
@@ -255,6 +254,7 @@ void DetermineAddressing(disk_t* disk){
     }
 }
 
+
 // PATAPI has NOT been implemented yet in this! It needs to be implemented at some point.
 disk_t* IdentifyDisk(uint8 diskNum){
     disk_t* disk = (disk_t*)alloc(sizeof(disk_t));
@@ -381,13 +381,6 @@ disk_t* IdentifyDisk(uint8 diskNum){
     }
 
     uint16* diskBuffer = (uint16*)alloc(512);
-
-    if(diskBuffer == NULL){
-        // Memory allocation error
-        dealloc(disk);
-        return NULL;
-    }
-
     memset(diskBuffer, 0, 512);
     disk->infoBuffer = diskBuffer;
     
@@ -396,24 +389,21 @@ disk_t* IdentifyDisk(uint8 diskNum){
         disk->infoBuffer[i] = inw(DataPort(disk->base));
     }
 
+    // All disks should be the same
     DetermineAddressing(disk);
 
     return disk;
 }
 
-extern bool fatreadsec;
-
-
-extern vfs_disk_t* disks[MAX_DRIVES];
 // Note: partition-relative LBA implementation may be a good idea
-// The system hangs when I call this function. I'm not sure why.
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
+    //printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
     if(disk->populated || !disk->removable){
         // If the disk exists, we can read from it
         // Select the master or slave depending on the drive
         if(disk->slave){
             if(disk->addressing == LBA28){
-                sectorsToRead = (uint8)sectorsToRead;
+                sectorsToRead = (uint8)sectorsToRead & 0xFF;
                 outb(DriveSelect(disk->base), SLAVE_DRIVE | (((uint32)lba >> 24) & 0x0F));
             }else if(disk->addressing == LBA48){
                 // This is shockingly different
@@ -425,7 +415,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             }
         }else{
             if(disk->addressing == LBA28){
-                sectorsToRead = (uint8)sectorsToRead;
+                sectorsToRead = (uint8)sectorsToRead & 0xFF;
                 outb(DriveSelect(disk->base), MASTER_DRIVE | (((uint32)lba >> 24) & 0x0F));
             }else if(disk->addressing == LBA48){
                 // This is shockingly different
@@ -456,7 +446,6 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
     uint16* buffer = alloc(sectorsToRead * disk->sectorSize);
     if(buffer == NULL){
         // Memory allocation error
-        //STOP;
         return NULL;
     }
 
@@ -469,25 +458,37 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         outb(LbaHi(disk->base), ((uint8)(lba >> 16) & 0xFF));
 
         WaitForIdle(disk->base);
+        outb(CmdPort(disk->base), COMMAND_READ_SECTORS);
+
+        int retries = 3;
+        while (retries-- > 0) {
+            for (int i = 0; i < 4; i++) {
+                inb(ErrorPort(disk->base));  // Clear errors
+            }
+
+            if (inb(ErrorPort(disk->base)) == 0) {
+                break;  // No error, proceed
+            }
+
+            if (retries == 0) {
+                dealloc(buffer);
+                return NULL;  // Give up after retries
+            }
+        }
 
         for(int sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
-            for(int i = 0; i < 4; i++){
-                inb(ErrorPort(disk->base));
-            }
-            if(inb(ErrorPort(disk->base)) != 0){
-                return NULL;
-            }
             
             for(int i = 0; i < 256; i++){
                 // Read the sector
-                buffer[(sector * 256) + i] = inw(DataPort(disk->base));
+                buffer[sector * 256 + i] = inw(DataPort(disk->base));
             }
         }
 
         // This is technically twice as long as it needs to be
         DiskDelay(disk->base);
+        return buffer;
     }else if(disk->addressing == LBA48){
         WaitForIdle(disk->base);
 
@@ -517,6 +518,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             }
 
             if (retries == 0) {
+                dealloc(buffer);
                 return NULL;  // Give up after retries
             }
         }
@@ -524,24 +526,20 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         // Wait for the drive to indicate it's ready to transfer data
         WaitForDrq(disk->base);
 
-        //printk("Reading %d sectors from LBA %d\n", sectorsToRead, lba);
-        //printk("Buffer: 0x%x\n", buffer);
-
-        // There's some kind of bug, but I'm not sure what it is or how to fix it. More than one sector and then suddenly everything stops working entirely.
-        uint32 offset = 0;
-        for(uint32 sector = 0; sector < sectorsToRead; sector++){
+        uint32 accumulator = 0;
+        for(uint16 sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
             for(int i = 0; i < 256; i++){
-                buffer[offset] = inw(DataPort(disk->base));
-                //printk("0x%x ", &buffer[offset]);
-                offset++;
+                // Read the sector
+                uint16 data = inw(DataPort(disk->base));
+                buffer[accumulator] = data;
+                accumulator++;
             }
-            
         }
+        return buffer;
     }else{
         // Translate CHS to LBA
+        return NULL;
     }
-
-    return buffer;
 }

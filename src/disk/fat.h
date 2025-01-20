@@ -41,7 +41,7 @@ typedef struct PACKED Extended_Boot_Record {
             uint8 bootCode[420];
             uint16 bootSig;
         } fat32;
-    } ebr_type;
+    } PACKED ebr_type;
 } ebr_t;
 
 typedef struct PACKED BIOS_Parameter_Block {

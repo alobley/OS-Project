@@ -4,11 +4,14 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display gtk -drive file=build/main.iso,format=raw,if=ide
-EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
+EMARGS=-m 512M -smp 1 -vga vmware -display gtk
+EMARGS+=-device ide-hd,drive=disk0,bus=ide.0,unit=0
+EMARGS+=-device ide-cd,drive=disk1,bus=ide.1,unit=0
+EMARGS+=-drive id=disk1,file=build/main.iso,format=raw,if=none
+EMARGS+=-drive id=disk0,file=bin/harddisk.vdi,format=raw,if=none
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -d int -no-reboot -no-shutdown
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -d int -no-reboot -no-shutdown -boot d
 
 # Directories
 SRC_DIR=src
