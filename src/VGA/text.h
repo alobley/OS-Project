@@ -16,4 +16,6 @@ void MoveCursor(uint16 x, uint16 y);
 
 int16 GetX();
 
+void regdump();
+
 #endif

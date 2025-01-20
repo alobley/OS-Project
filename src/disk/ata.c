@@ -449,6 +449,12 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         return NULL;
     }
 
+    if(inb(StatusPort(disk->base)) == FLOATING_BUS){
+        // Floating bus, no disks in this bus
+        dealloc(buffer);
+        return NULL;
+    }
+
     if(disk->addressing == LBA28){
         lba = (uint32)lba;
         outb(FeaturesPort(disk->base), 0x00);
@@ -476,13 +482,15 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             }
         }
 
+        uint32 accumulator = 0;
         for(int sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
             
-            for(int i = 0; i < 256; i++){
+            for(int i = 0; i < disk->sectorSize / 2; i++){
                 // Read the sector
-                buffer[sector * 256 + i] = inw(DataPort(disk->base));
+                buffer[accumulator] = inw(DataPort(disk->base));
+                accumulator++;
             }
         }
 
@@ -530,8 +538,10 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         for(uint16 sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
-            for(int i = 0; i < 256; i++){
+            for(int i = 0; i < disk->sectorSize / 2; i++){
                 // Read the sector
+                printk("0x%x 0x%x 0x%x 0x%x\n", disk, disk->base, disk->ctrl, disk->size);
+                printk("0x%x\n", &buffer[accumulator]);
                 uint16 data = inw(DataPort(disk->base));
                 buffer[accumulator] = data;
                 accumulator++;

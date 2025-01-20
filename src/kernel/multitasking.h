@@ -71,8 +71,6 @@ typedef struct spinlock {
     pcb_t* owner;                               // The process that owns the spinlock
 } spinlock_t;
 
-
-
-extern pcb_t* currentProcess;
+pcb_t* GetCurrentProcess();
 
 #endif

@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
+#include <isr.h>
 
 
 
@@ -285,4 +286,17 @@ void printk(const char *str, ...){
     dealloc(output);
 
     va_end(args);
+}
+
+void regdump(){
+    struct Registers regs;
+    asm volatile("movl %%eax, %0" : "=m" (regs.eax));
+    asm volatile("movl %%ebx, %0" : "=m" (regs.ebx));
+    asm volatile("movl %%ecx, %0" : "=m" (regs.ecx));
+    asm volatile("movl %%edx, %0" : "=m" (regs.edx));
+    asm volatile("movl %%esi, %0" : "=m" (regs.esi));
+    asm volatile("movl %%edi, %0" : "=m" (regs.edi));
+    asm volatile("movl %%ebp, %0" : "=m" (regs.ebp));
+    asm volatile("movl %%esp, %0" : "=m" (regs.esp));
+    printk("eax: %x, ebx: %x, ecx: %x, edx: %x, esi: %x, edi: %x, ebp: %x, esp: %x\n", regs.eax, regs.ebx, regs.ecx, regs.edx, regs.esi, regs.edi, regs.ebp, regs.esp);
 }
