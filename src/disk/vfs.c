@@ -17,7 +17,7 @@ char* GetRootDir(){
 // An array of pointers to all the ATA disks
 vfs_disk_t* disks[MAX_DRIVES];
 
-vfs_disk_t** GetDisks(){
+vfs_disk_t* GetDisks(){
     return &disks[0];
 }
 
@@ -60,6 +60,7 @@ vfs_disk_t* DefineDisk(uint8 diskNum){
     disk->parent = IdentifyDisk(diskNum);
     if(disk->parent == NULL){
         // Invalid disk
+        dealloc(disk);
         return NULL;
     }
 
@@ -69,7 +70,7 @@ vfs_disk_t* DefineDisk(uint8 diskNum){
         dealloc(disk);
         return NULL;
     }
-
+    
     disk->fstype = fatdisk->fstype;
     dealloc(fatdisk);
 
@@ -94,7 +95,6 @@ vfs_disk_t* FindRoot(){
         disk = IdentifyDisk(tryDisk);
     }
     rootDisk = tryDisk;
-
     vfs_disk_t* root = DefineDisk(rootDisk);
 
     root->parent = disk;
@@ -107,8 +107,6 @@ vfs_disk_t* FindRoot(){
 file_t* GetFile(char* filePath){
     vfs_disk_t* disk = disks[DEFAULT_ROOTDISK];
     char* fileName = strtok(filePath, ROOT_MNT);
-
-    //printk(fileName);
 
     if(disk->fstype == FS_UNSUPPORTED){
         return NULL;

@@ -4,9 +4,9 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display gtk -cdrom build/main.iso
+EMARGS=-m 512M -smp 1 -vga vmware -display gtk -drive file=build/main.iso,format=raw,if=ide
 EMARGS+=-drive file=bin/harddisk.vdi,format=raw,if=ide -boot d
-EMARGS+=-d cpu_reset -audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
+EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
 EMARGS+=-device ich9-usb-uhci1 -monitor stdio -d int -no-reboot -no-shutdown
 

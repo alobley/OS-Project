@@ -524,6 +524,9 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         // Wait for the drive to indicate it's ready to transfer data
         WaitForDrq(disk->base);
 
+        //printk("Reading %d sectors from LBA %d\n", sectorsToRead, lba);
+        //printk("Buffer: 0x%x\n", buffer);
+
         // There's some kind of bug, but I'm not sure what it is or how to fix it. More than one sector and then suddenly everything stops working entirely.
         uint32 offset = 0;
         for(uint32 sector = 0; sector < sectorsToRead; sector++){
@@ -531,8 +534,10 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             WaitForDrq(disk->base);
             for(int i = 0; i < 256; i++){
                 buffer[offset] = inw(DataPort(disk->base));
+                //printk("0x%x ", &buffer[offset]);
                 offset++;
             }
+            
         }
     }else{
         // Translate CHS to LBA
