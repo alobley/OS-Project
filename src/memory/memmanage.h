@@ -66,6 +66,7 @@ typedef struct memory_block {
 } memory_block_t;
 
 #define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
+#define PAGE_SIZE 4096
 
 void PageKernel();
 uintptr_t GetVgaRegion();
@@ -76,5 +77,6 @@ void* alloc(size_t size);
 void dealloc(void* ptr);
 size_t GetTotalMemory();
 void PanicFree();
+PageDirectory* GetCurrentPageDir();
 
 #endif

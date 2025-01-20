@@ -42,11 +42,19 @@ void InitializeHardware(){
 }
 
 
-// DOES NOT SUPPORT PAGING YET
-int32 ExecuteProgram(file_t* program){
+int ExecuteProgram(file_t* program){
     if (program == NULL) {
         printk("Error: Program is NULL!\n");
         return -1;
+    }
+
+    // Page the program to virtual address 0 (to avoid overwriting BIOS or already paged VGA memory, will need dynamic size checking, but for now identity map is fine)
+    size_t pages = program->size / PAGE_SIZE;
+    if(program->size % PAGE_SIZE != 0){
+        pages++;
+    }
+    for(size_t i = 0; i < pages; i++){
+        palloc(i * PAGE_SIZE, i * PAGE_SIZE, 1, GetCurrentPageDir(), false);
     }
 
     // Copy the program to physical address 0
@@ -60,8 +68,6 @@ int32 ExecuteProgram(file_t* program){
     memset((void*)0, 0, program->size);
     return result;
 }
-
-pcb_t* currentProcess = NULL;
 
 void TaskScheduler(){
     // This is where the task scheduler will go

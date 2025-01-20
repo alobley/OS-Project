@@ -217,10 +217,10 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
         }
 
         if(tableValue == 0){
-            // The cluster is empty
+            // The next cluster is empty
             validCluster = false;
         }else if(tableValue == 0x0FFFFFF7){
-            // Bad cluster (need better handling in the future but this is for reading)
+            // Bad next cluster (need better handling in the future but this is for reading)
             validCluster = false;
         }else if(tableValue >= 0x0FFFFFF8){
             // We have reached the end of the cluster chain
@@ -229,6 +229,12 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
 
         dealloc(buffer);
         buffer = ReadSectors(fatdisk->parent, fatdisk->paramBlock->sectorsPerCluster, fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
+        if(current == NULL){
+            // Memory allocation failure
+            printk("We should not be here!\n");
+            return NULL;
+        }
+
         // There's another cluster coming up that must be read
         current->cluster = currentCluster;
         current->buffer = buffer;

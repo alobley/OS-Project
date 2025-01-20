@@ -64,16 +64,16 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
     size_t oldPages = numPages;
     page_t* firstPage = NULL;
     for(size_t i = 0; i < pagesToAdd; i++){
-        PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * 4096))];
+        PageDirectoryEntry* dirEntry = &pageDir->entries[PDI(virtualAddr + (i * PAGE_SIZE))];
         PageTable* table = (PageTable*)(dirEntry->address << 12);                               // palloc assumes a full, valid page directory
         if(i == 0){
-            firstPage = &table->entries[PTI(virtualAddr + (i * 4096))];
+            firstPage = &table->entries[PTI(virtualAddr + (i * PAGE_SIZE))];
         }
-        if(table->entries[PTI(virtualAddr + (i * 4096))].present && dirEntry->present){
+        if(table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].present && dirEntry->present){
             // Page already allocated
             continue;               // There must be a better way. If it's already allocated, it's probably there for a reason.
         }else{
-            table->entries[PTI(virtualAddr + (i * 4096))].present = 1;                                      // This page is active
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].present = 1;                                      // This page is active
             dirEntry->present = 1;
             dirEntry->user = user;
             dirEntry->readWrite = 1;
@@ -83,17 +83,17 @@ page_t* palloc(uintptr_t virtualAddr, uintptr_t physicalAddr, size_t pagesToAdd 
             dirEntry->dirty = 0;
             dirEntry->pageSize = 0;
             dirEntry->available = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].address = (physicalAddr + (i * 4096)) >> 12;      // The physical memory location of the page
-            table->entries[PTI(virtualAddr + (i * 4096))].user = user;
-            table->entries[PTI(virtualAddr + (i * 4096))].readWrite = 1;
-            table->entries[PTI(virtualAddr + (i * 4096))].writeThrough = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].cacheDisabled = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].accessed = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].dirty = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].pageSize = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].global = 0;
-            table->entries[PTI(virtualAddr + (i * 4096))].available = 0;
-            asm volatile("invlpg (%0)" :: "r"(virtualAddr + (i * 4096)) : "memory");
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].address = (physicalAddr + (i * PAGE_SIZE)) >> 12;      // The physical memory location of the page
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].user = user;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].readWrite = 1;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].writeThrough = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].cacheDisabled = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].accessed = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].dirty = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].pageSize = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].global = 0;
+            table->entries[PTI(virtualAddr + (i * PAGE_SIZE))].available = 0;
+            asm volatile("invlpg (%0)" :: "r"(virtualAddr + (i * PAGE_SIZE)) : "memory");
             numPages++;
         }
     }
@@ -141,14 +141,14 @@ mboot_mmap_entry_t* memoryMap;
 size_t mmapLen;
 uintptr_t FindUnpagedMemoryHigh(PageDirectory* pageDir){
     // Find a 4KiB-aligned region of physical memory that is not paged and above the kernel. Search the entire page directory.
-    uintptr_t address = ((((uintptr_t)&__kernel_end) >> 12) << 12) + 4096;                           // Set it to the kernel's end address (should skip paged memory)
+    uintptr_t address = ((((uintptr_t)&__kernel_end) >> 12) << 12) + PAGE_SIZE;                           // Set it to the kernel's end address (should skip paged memory)
     for(size_t i = 0; i < 1024; i++){
         PageDirectoryEntry* dirEntry = &pageDir->entries[i];
         if(dirEntry->present){
             PageTable* table = (PageTable*)(dirEntry->address << 12);
             for(size_t j = 0; j < 1024; j++){
                 if(table->entries[j].present && (table->entries[j].address << 12) == address || table->entries[j].present && (table->entries[j].address << 12) < address || table->entries[j].readWrite == 0){
-                    address += 4096;
+                    address += PAGE_SIZE;
                 }else{
                     return address;
                 }
@@ -213,7 +213,7 @@ PageDirectory* AllocatePageDirectory(size_t virtualAddr, void* start, bool user)
         dir->entries[i].available = 0;
         for(int j = 0; j < 1024; j++){
             // Allocate the pages from the first given physical address and the first given virtual address
-            AllocatePage(virtualAddr + (i * sizeof(pageTables) * 1024) + (j * 4096), dir, user);
+            AllocatePage(virtualAddr + (i * sizeof(pageTables) * 1024) + (j * PAGE_SIZE), dir, user);
         }
     }
 
@@ -232,17 +232,21 @@ size_t GetTotalMemory(){
     return memSize;
 }
 
+PageDirectory* GetCurrentPageDir(){
+    return currentDir;
+}
+
 // This is important for the kernel heap, and will also page important memory regions such as VGA memory and ACPI tables
 // TODO: make this a higher-half kernel
 void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
-    totalPages = totalmem / 4096;
-    if(totalmem % 4096 != 0){
+    totalPages = totalmem / PAGE_SIZE;
+    if(totalmem % PAGE_SIZE != 0){
         totalPages++;
     }
 
     // Make sure to include the kernel's page directory in the mapping
-    size_t kernelPages = ((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) / 4096;
-    if(((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) % 4096 != 0){
+    size_t kernelPages = ((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) / PAGE_SIZE;
+    if(((uintptr_t)&__kernel_end - (uintptr_t)&__kernel_start) % PAGE_SIZE != 0){
         kernelPages++;
     }
 
@@ -260,11 +264,11 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
 
     // Map VGA memory to right after the kernel memory
     //size_t vgaSize = VGA_PIXEL_MODE_SIZE + VGA_TEXT_MODE_SIZE;
-    size_t kernelSize = kernelPages * 4096;
+    size_t kernelSize = kernelPages * PAGE_SIZE;
     
 
-    size_t vgaPages = (1024 * 256) / 4096;
-    if(VGA_REGION_SIZE % 4096 != 0){
+    size_t vgaPages = (1024 * 256) / PAGE_SIZE;
+    if(VGA_REGION_SIZE % PAGE_SIZE != 0){
         vgaPages++;
     }
     
@@ -279,14 +283,14 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
         firstVgaPage[i].present = 1;
         firstVgaPage[i].global = 1;
         firstVgaPage[i].user = false;
-        firstVgaPage[i].address = (0xA0000 + (i * 4096)) >> 12;
+        firstVgaPage[i].address = (0xA0000 + (i * PAGE_SIZE)) >> 12;
     }
 
     // Remap the BIOS...
 
     if(acpiInfo.exists){
         // Remap the RSDP
-        page_t* rsdpPage = palloc(vgaRegion + (vgaPages * 4096), acpiInfo.rsdpV1, 1, &pageDir[0], false);
+        page_t* rsdpPage = palloc(vgaRegion + (vgaPages * PAGE_SIZE), acpiInfo.rsdpV1, 1, &pageDir[0], false);
         if(rsdpPage == NULL){
             return;
         }
@@ -294,10 +298,10 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
         rsdpPage->present = 1;
         rsdpPage->user = false;
 
-        acpiInfo.rsdpV1 = (RSDP_V1_t*)(vgaRegion + (vgaPages * 4096));
+        acpiInfo.rsdpV1 = (RSDP_V1_t*)(vgaRegion + (vgaPages * PAGE_SIZE));
 
         // Remap the RSDT
-        page_t* rsdtPage = palloc(vgaRegion + ((vgaPages +1) * 4096), acpiInfo.rsdt, 1, &pageDir[0], false);
+        page_t* rsdtPage = palloc(vgaRegion + ((vgaPages +1) * PAGE_SIZE), acpiInfo.rsdt, 1, &pageDir[0], false);
         if(rsdtPage == NULL){
             return;
         }
@@ -305,10 +309,10 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
         rsdtPage->present = 1;
         rsdtPage->user = false;
 
-        acpiInfo.rsdt = (RSDT_t*)(vgaRegion + ((vgaPages + 1) * 4096));
+        acpiInfo.rsdt = (RSDT_t*)(vgaRegion + ((vgaPages + 1) * PAGE_SIZE));
 
         // Remap the FADT
-        page_t* fadtPage = palloc(vgaRegion + ((vgaPages + 2) * 4096), acpiInfo.fadt, 1, &pageDir[0], false);
+        page_t* fadtPage = palloc(vgaRegion + ((vgaPages + 2) * PAGE_SIZE), acpiInfo.fadt, 1, &pageDir[0], false);
         if(fadtPage == NULL){
             return;
         }
@@ -316,20 +320,20 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
         fadtPage->present = 1;
         fadtPage->user = false;
 
-        acpiInfo.fadt = (FADT_t*)(vgaRegion + ((vgaPages + 2) * 4096));
+        acpiInfo.fadt = (FADT_t*)(vgaRegion + ((vgaPages + 2) * PAGE_SIZE));
     }
 
     memSize = totalmem;
 
-    heapStart = vgaRegion + vgaPages * 4096;
-    heapStart += 4096 * 3;      // Make sure the heap starts after the ACPI tables
+    heapStart = vgaRegion + vgaPages * PAGE_SIZE;
+    heapStart += PAGE_SIZE * 3;      // Make sure the heap starts after the ACPI tables
 
     next_free_physaddr = heapStart;
-    next_free_virtaddr = (firstVgaPage[vgaPages - 1].address << 12) + 4096;
+    next_free_virtaddr = (firstVgaPage[vgaPages - 1].address << 12) + PAGE_SIZE;
 
     // Page the memory map to just after the kernel and framebuffer
-    size_t mapPages = mmapLength / 4096;
-    if(mmapLength % 4096 != 0){
+    size_t mapPages = mmapLength / PAGE_SIZE;
+    if(mmapLength % PAGE_SIZE != 0){
         mapPages++;
     }
     uintptr_t startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
@@ -337,23 +341,23 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
 
     memoryMap = (mboot_mmap_entry_t*)heapStart;
 
-    heapStart += mapPages * 4096;
+    heapStart += mapPages * PAGE_SIZE;
 
     startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
 
     kernel_heap = (memory_block_t*)heapStart;
-    kernel_heap->size = 4096;
+    kernel_heap->size = PAGE_SIZE;
     kernel_heap->next = NULL;
     kernel_heap->free = true;
     kernel_heap->paged = true;
-    kernel_heap_end = heapStart + 4096;
+    kernel_heap_end = heapStart + PAGE_SIZE;
     KERNEL_FREE_HEAP_BEGIN = heapStart;
     KERNEL_FREE_HEAP_END = memSize;
 
     // Map the rest of the memory
     size_t remainingPages = totalPages - kernelPages - vgaPages;
-    uint32 lowmemPages = (uintptr_t)&__kernel_start / 4096;
+    uint32 lowmemPages = (uintptr_t)&__kernel_start / PAGE_SIZE;
 
     currentDir = &pageDir[0];
 
@@ -424,8 +428,8 @@ void* alloc(size_t size) {
 
     // No suitable block found, expand heap
     if (kernel_heap_end + size + MEMORY_BLOCK_SIZE < KERNEL_FREE_HEAP_END) {
-        uint32 pagesToAdd = (size + MEMORY_BLOCK_SIZE) / 4096;
-        if ((size + MEMORY_BLOCK_SIZE) % 4096 != 0) {
+        uint32 pagesToAdd = (size + MEMORY_BLOCK_SIZE) / PAGE_SIZE;
+        if ((size + MEMORY_BLOCK_SIZE) % PAGE_SIZE != 0) {
             pagesToAdd++;
         }
         for(int i = 0; i < pagesToAdd + 1; i++){
@@ -436,14 +440,14 @@ void* alloc(size_t size) {
                 //WriteStr("No memory available\n");
                 return NULL;
             }
-            page_t* newPage = palloc(kernel_heap_end + (i * 4096), newStart, 1, currentDir, false);
+            page_t* newPage = palloc(kernel_heap_end + (i * PAGE_SIZE), newStart, 1, currentDir, false);
             if(newPage == NULL && i > 0){
                 // No memory available or error
                 // Create a memory block for the new pages
                 //WriteStr("Not enough memory to allocate, new block created\n");
                 memory_block_t* new_block = (memory_block_t*)(kernel_heap_end);
-                new_block->size = i * 4096;
-                kernel_heap_end += i * 4096;
+                new_block->size = i * PAGE_SIZE;
+                kernel_heap_end += i * PAGE_SIZE;
                 return NULL;
             }else if(newPage == NULL){
                 //WriteStr("Not enough memory to allocate\n");
@@ -454,7 +458,7 @@ void* alloc(size_t size) {
         // If the last block is free, find it and expand it
         if(prev != NULL && prev->free || prev == kernel_heap && prev->free){
             prev->size += size;
-            kernel_heap_end += pagesToAdd * 4096;
+            kernel_heap_end += pagesToAdd * PAGE_SIZE;
             //WriteStr("Expanded previous block\n");
             return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
         }else{
@@ -482,21 +486,21 @@ void* alloc(size_t size) {
             }
         }
 
-        if(size < pagesToAdd * 4096 && (pagesToAdd * 4096) - size > MEMORY_BLOCK_SIZE + 1 /*Ensure there's at least enough space for a memory block and one byte*/){
+        if(size < pagesToAdd * PAGE_SIZE && (pagesToAdd * PAGE_SIZE) - size > MEMORY_BLOCK_SIZE + 1 /*Ensure there's at least enough space for a memory block and one byte*/){
             // The block does not fill the entire page, so split it
             memory_block_t* new_block2 = (memory_block_t*)(kernel_heap_end + MEMORY_BLOCK_SIZE + size);
-            new_block2->size = (pagesToAdd * 4096) - size - MEMORY_BLOCK_SIZE;
+            new_block2->size = (pagesToAdd * PAGE_SIZE) - size - MEMORY_BLOCK_SIZE;
             new_block2->next = NULL;
             new_block2->free = true;
             new_block2->paged = true;
             prev->next = new_block2;
-        }else if(size < pagesToAdd * 4096){
+        }else if(size < pagesToAdd * PAGE_SIZE){
             // The block does not fill the entire page, but there's not enough space for a new block
             // Just make the block bigger
-            prev->size = pagesToAdd * 4096;
+            prev->size = pagesToAdd * PAGE_SIZE;
         }
 
-        kernel_heap_end += pagesToAdd * 4096;
+        kernel_heap_end += pagesToAdd * PAGE_SIZE;
         //WriteStr("Returning fresh new memory block\n");
         return (void*)((uint8*)prev + MEMORY_BLOCK_SIZE);
     }else{
@@ -529,15 +533,15 @@ void dealloc(void* ptr){
     return;
 
     // Not sure if removing pages in this way is a good idea, but even without this code there's faults
-    if(block->size % 4096 != 0){
+    if(block->size % PAGE_SIZE != 0){
         // The block is not page-aligned, best not to release it
         // (resize and unpage?)
         return;
     }else{
         // The block is page-aligned
-        size_t pages = block->size / 4096;
+        size_t pages = block->size / PAGE_SIZE;
         for(size_t i = 0; i < pages; i++){
-            pfree((uintptr_t)block + (i * 4096), currentDir);
+            pfree((uintptr_t)block + (i * PAGE_SIZE), currentDir);
         }
     }
 }

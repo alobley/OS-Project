@@ -408,7 +408,6 @@ extern vfs_disk_t* disks[MAX_DRIVES];
 // Note: partition-relative LBA implementation may be a good idea
 // The system hangs when I call this function. I'm not sure why.
 uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low byte is used*/, uint64 lba){
-    //printk("Reading %d sectors at LBA %llu\n", sectorsToRead, lba);
     if(disk->populated || !disk->removable){
         // If the disk exists, we can read from it
         // Select the master or slave depending on the drive
@@ -526,14 +525,11 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         WaitForDrq(disk->base);
 
         // There's some kind of bug, but I'm not sure what it is or how to fix it. More than one sector and then suddenly everything stops working entirely.
-
         uint32 offset = 0;
         for(uint32 sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
             for(int i = 0; i < 256; i++){
-                // Read the sector
-                printk("Writing to 0x%x\n", &buffer[offset]);
                 buffer[offset] = inw(DataPort(disk->base));
                 offset++;
             }

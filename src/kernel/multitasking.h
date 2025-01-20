@@ -53,4 +53,26 @@ typedef struct Process_Control_Block {
     struct Process_Control_Block* next;         // The next process in the list
 } pcb_t;
 
+typedef struct ProcessQueue {
+    pcb_t* first;                               // The first process in the queue (waiting the shortest amount of time)
+    pcb_t* next;                                // The next process in the queue
+    pcb_t* last;                                // The last process in the queue (waiting the longest amount of time)
+} process_queue_t;
+
+typedef struct mutex {
+    volatile bool locked;                       // If the mutex is locked
+    pcb_t* owner;                               // The process that owns the mutex
+    process_queue_t waiting;                    // The processes waiting for the mutex
+} mutex_t;
+
+// First come first serve spinlock. The first process that tries to lock the spinlock gets it.
+typedef struct spinlock {
+    volatile bool locked;                       // If the spinlock is locked
+    pcb_t* owner;                               // The process that owns the spinlock
+} spinlock_t;
+
+
+
+extern pcb_t* currentProcess;
+
 #endif

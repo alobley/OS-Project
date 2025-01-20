@@ -10,6 +10,7 @@ bool OnOtherDisk = false;
 
 // Execute a syscall to see what happens
 void syscall(){
+    eax(0);
     asm volatile("int %0" :: "Nd" (SYSCALL_INT));
 }
 
@@ -17,7 +18,15 @@ char* workingDir = ROOT_MNT;
 
 void dir(){
     vfs_disk_t* root = disks[ROOT_INDEX];
+    if(root == NULL){
+        printk("No root disk found!\n");
+        return;
+    }
     directory_t* rootDir = root->mountDir;
+    if(rootDir == NULL){
+        printk("Invalid or corrupt root directory!\n");
+        return;
+    }
     directory_entry_t* current = rootDir->firstFile;
     if(current == NULL){
         printk("No files found!\n");
@@ -59,7 +68,7 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
         AcpiShutdown();
 
         printk("ACPI shutdown failed. Trying QEMU/Bochs shutdown...\n");
-        //shutdown();
+        shutdown();
 
         printk("Shutdown failed. Please press the computer's power button.\n");
 
@@ -120,7 +129,16 @@ void ProcessCommand(const char* cmd, mboot_info_t* multibootInfo){
 
     }else if(strcmp(cmd, "meminfo")){
         printk("Total memory: %u MiB\n", (GetTotalMemory() / 1024) / 1024);
-        printk("Used memory: %u MiB\n", ((GetPages() * 4096 / 1024)) / 1024);
+        uint32 usedMem = GetPages() * PAGE_SIZE;
+        if(usedMem == 0){
+            printk("Memory error!\n");
+            return;
+        }
+        usedMem /= 1024;
+        uint32 remainder = usedMem % 1024;
+        usedMem /= 1024;
+        remainder = (remainder * 10) / 1024;
+        printk("Used memory: %u.%u MiB\n", usedMem, remainder);
 
     }else if (strcmp(cmd, "dir")){
         dir();
