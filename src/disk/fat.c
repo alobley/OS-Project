@@ -228,6 +228,7 @@ FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
         }
 
         dealloc(buffer);
+        // It is only and specifically this read in this function that causes the strange bugs. I don't know why.
         buffer = ReadSectors(fatdisk->parent, fatdisk->paramBlock->sectorsPerCluster, fatdisk->firstDataSector + (currentCluster - 2) * fatdisk->paramBlock->sectorsPerCluster);
         if(current == NULL){
             // Memory allocation failure
