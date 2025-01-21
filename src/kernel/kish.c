@@ -33,7 +33,8 @@ void dir(){
         return;
     }
     while(current != NULL){
-        printk(current->name);
+        //printk("0x%x\n0x%x\n", current, &current->name);
+        printk(&current->name);
         printk("  ");
         current = current->next;
     }

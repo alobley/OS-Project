@@ -51,7 +51,7 @@ typedef struct vfs_disk{
 #define ROOT_MNT "/"
 
 vfs_disk_t* FindRoot();
-vfs_disk_t* DefineDisk(disk_t* parent);
+vfs_disk_t* DefineDisk(uint8 diskNum);
 file_t* GetFile(char* fileName);
 void DeallocFile(file_t* file);
 void InitializeDisks();

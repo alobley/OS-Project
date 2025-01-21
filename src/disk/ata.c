@@ -403,7 +403,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         // Select the master or slave depending on the drive
         if(disk->slave){
             if(disk->addressing == LBA28){
-                sectorsToRead = (uint8)sectorsToRead & 0xFF;
+                sectorsToRead = (uint8)sectorsToRead;
                 outb(DriveSelect(disk->base), SLAVE_DRIVE | (((uint32)lba >> 24) & 0x0F));
             }else if(disk->addressing == LBA48){
                 // This is shockingly different
@@ -415,7 +415,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             }
         }else{
             if(disk->addressing == LBA28){
-                sectorsToRead = (uint8)sectorsToRead & 0xFF;
+                sectorsToRead = (uint8)sectorsToRead;
                 outb(DriveSelect(disk->base), MASTER_DRIVE | (((uint32)lba >> 24) & 0x0F));
             }else if(disk->addressing == LBA48){
                 // This is shockingly different
@@ -449,11 +449,7 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         return NULL;
     }
 
-    if(inb(StatusPort(disk->base)) == FLOATING_BUS){
-        // Floating bus, no disks in this bus
-        dealloc(buffer);
-        return NULL;
-    }
+    printk("Hello\n");
 
     if(disk->addressing == LBA28){
         lba = (uint32)lba;
@@ -464,39 +460,27 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         outb(LbaHi(disk->base), ((uint8)(lba >> 16) & 0xFF));
 
         WaitForIdle(disk->base);
+
         outb(CmdPort(disk->base), COMMAND_READ_SECTORS);
 
-        int retries = 3;
-        while (retries-- > 0) {
-            for (int i = 0; i < 4; i++) {
-                inb(ErrorPort(disk->base));  // Clear errors
-            }
-
-            if (inb(ErrorPort(disk->base)) == 0) {
-                break;  // No error, proceed
-            }
-
-            if (retries == 0) {
-                dealloc(buffer);
-                return NULL;  // Give up after retries
-            }
-        }
-
-        uint32 accumulator = 0;
         for(int sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
+            for(int i = 0; i < 4; i++){
+                inb(ErrorPort(disk->base));
+            }
+            if(inb(ErrorPort(disk->base)) != 0){
+                return NULL;
+            }
             
-            for(int i = 0; i < disk->sectorSize / 2; i++){
+            for(int i = 0; i < 256; i++){
                 // Read the sector
-                buffer[accumulator] = inw(DataPort(disk->base));
-                accumulator++;
+                buffer[sector * 256 + i] = inw(DataPort(disk->base));
             }
         }
 
         // This is technically twice as long as it needs to be
         DiskDelay(disk->base);
-        return buffer;
     }else if(disk->addressing == LBA48){
         WaitForIdle(disk->base);
 
@@ -526,7 +510,6 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
             }
 
             if (retries == 0) {
-                dealloc(buffer);
                 return NULL;  // Give up after retries
             }
         }
@@ -534,22 +517,17 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         // Wait for the drive to indicate it's ready to transfer data
         WaitForDrq(disk->base);
 
-        uint32 accumulator = 0;
-        for(uint16 sector = 0; sector < sectorsToRead; sector++){
+        for(int sector = 0; sector < sectorsToRead; sector++){
             WaitForIdle(disk->base);
             WaitForDrq(disk->base);
-            for(int i = 0; i < disk->sectorSize / 2; i++){
+            for(int i = 0; i < 256; i++){
                 // Read the sector
-                printk("0x%x 0x%x 0x%x 0x%x\n", disk, disk->base, disk->ctrl, disk->size);
-                printk("0x%x\n", &buffer[accumulator]);
-                uint16 data = inw(DataPort(disk->base));
-                buffer[accumulator] = data;
-                accumulator++;
+                buffer[sector * 256 + i] = inw(DataPort(disk->base));
             }
         }
-        return buffer;
     }else{
         // Translate CHS to LBA
-        return NULL;
     }
+
+    return buffer;
 }

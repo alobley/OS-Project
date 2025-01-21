@@ -82,8 +82,9 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
 
-    InitializeHardware();
+    //ReadSectors(IdentifyDisk(0), 8, 8208);
 
+    InitializeHardware();
     printk("Dedication OS Version %u.%u.%u\n", version.major, version.minor, version.patch);
 
     // Launch the shell
