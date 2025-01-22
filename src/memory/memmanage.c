@@ -14,6 +14,8 @@
 extern uint32 __kernel_end;
 extern uint32 __kernel_start;
 
+memory_block_t* kernel_heap = NULL;
+
 size_t numPages = 0;
 
 uint32 KERNEL_FREE_HEAP_BEGIN;
@@ -27,19 +29,6 @@ size_t totalPages = 0;
 
 //uintptr_t next_free_physaddr = 0;
 //uintptr_t next_free_virtaddr = 0;
-
-typedef struct memory_block {
-    uint32 magic;
-    bool free;
-    size_t size;
-    struct memory_block* next;
-    uint32 checksum;
-} memory_block_t;
-
-memory_block_t* kernel_heap = NULL;
-
-#define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
-#define MEMBLOCK_MAGIC 0xDEADBEEF
 
 PageDirectoryEntry ALIGNED(4096) pageDir[1024] = {0};
 PageTable ALIGNED(4096) pageTables[1024] = {0};
@@ -343,18 +332,12 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
 
     startAddr = FindUnpagedMemoryHigh(&pageDir[0]);
     page_t* firstHeapPage = palloc(heapStart, startAddr, 1, &pageDir[0], false);
-
-    kernel_heap = (memory_block_t*)heapStart;
-    kernel_heap->size = PAGE_SIZE;
-    kernel_heap->next = NULL;
-    kernel_heap->free = true;
-    kernel_heap->magic = MEMBLOCK_MAGIC;
-    kernel_heap_end = heapStart + PAGE_SIZE;
-    KERNEL_FREE_HEAP_BEGIN = heapStart;
-    KERNEL_FREE_HEAP_END = memSize;
+    if(firstHeapPage == NULL){
+        WriteStr("Failed to allocate heap page\n");
+    }
 
     // Map the rest of the memory
-    //size_t remainingPages = totalPages - kernelPages - vgaPages;
+    //size_t remainingPages = totalPages - kernelPages - vgaPages - acpiPages - mapPages - 1;
     //uint32 lowmemPages = (uintptr_t)&__kernel_start / PAGE_SIZE;
 
     currentDir = &pageDir[0];
@@ -364,6 +347,15 @@ void PageKernel(size_t totalmem, mboot_mmap_entry_t* mmap, size_t mmapLength){
     uint32 currentCr0 = 0;
     get_cr0(currentCr0);
     cr0(currentCr0 | 0x80000001);
+
+    kernel_heap = (memory_block_t*)heapStart;
+    kernel_heap->size = PAGE_SIZE;
+    kernel_heap->next = NULL;
+    kernel_heap->free = true;
+    kernel_heap->magic = MEMBLOCK_MAGIC;
+    kernel_heap_end = heapStart + PAGE_SIZE;
+    KERNEL_FREE_HEAP_BEGIN = heapStart;
+    KERNEL_FREE_HEAP_END = memSize;
 }
 
 
@@ -380,21 +372,22 @@ void PanicFree(){
 // Allocate memory and return a pointer to it
 void* alloc(size_t size) {
     // Get the kernel's first heap memory block
-    // Why is it all 0? The address is correct, but the memory is all 0.
     memory_block_t* current = kernel_heap;
     memory_block_t* previous = NULL;
     while(current != NULL){
         if(current->magic != MEMBLOCK_MAGIC){
             // There was a memory corruption or invalid allocation
-            WriteStr("Memory block magic number invalid, fixing\n");
+            //WriteStr("Memory block magic number invalid, fixing\n");
             // Attempt to fix the error (may deallocate further free blocks, but if this is corrupted they're inaccessible anyways)
             current->magic = MEMBLOCK_MAGIC;
-            current->size = size + MEMORY_BLOCK_SIZE;
+            current->next = NULL;
+            current->free = false;
             // Check if there are enough allocated pages at this location
-            size_t pagesToAdd = current->size / PAGE_SIZE;
-            if(current->size % PAGE_SIZE != 0){
+            size_t pagesToAdd = (size + MEMORY_BLOCK_SIZE) / PAGE_SIZE;
+            if((size + MEMORY_BLOCK_SIZE) % PAGE_SIZE != 0){
                 pagesToAdd++;
             }
+            current->size = pagesToAdd * PAGE_SIZE;
             for(size_t i = 0; i < pagesToAdd; i++){
                 // This should skip over pages that are already allocated
                 palloc((uintptr_t)current + (i * PAGE_SIZE), FindUnpagedMemoryHigh(currentDir), 1, currentDir, false);
@@ -405,25 +398,26 @@ void* alloc(size_t size) {
         if(current->free && current->size > size + MEMORY_BLOCK_SIZE + 1 /*Make sure the size is right and there's enough space for another memory block and at least one byte*/){
             // The block is free and large enough
             memory_block_t* newBlock = (memory_block_t*)((uint8*)current + MEMORY_BLOCK_SIZE + size);
-            newBlock->size = current->size - size - MEMORY_BLOCK_SIZE;
+            newBlock->size = (current->size - size) - MEMORY_BLOCK_SIZE;
             newBlock->free = true;
             newBlock->next = current->next;
             newBlock->magic = MEMBLOCK_MAGIC;
             current->size = size;
             current->free = false;
             current->next = newBlock;
-            WriteStr("Found block, split it\n");
+            //WriteStr("Found block, split it\n");
             return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
         }else if(current->free && current->size >= size){
             // The block is free and the right size
             // If there is not enough space for another block but it's too big, just allocate the whole block
             current->free = false;
-            WriteStr("Found block, allocating whole block\n");
+            //WriteStr("Found block, allocating whole block\n");
             return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
         }
-        if(current->next == NULL && current->free && current->size > size + MEMORY_BLOCK_SIZE){
+        if(current->next == NULL && current->free && current->size < size + MEMORY_BLOCK_SIZE){
             // The current block is free and the last block, but it's not large enough
-            current->size += size - current->size;
+            //WriteStr("Last block is too small, allocating new block\n");
+            current->size = size + MEMORY_BLOCK_SIZE;
             size_t pagesToAdd = current->size / PAGE_SIZE;
             if(current->size % PAGE_SIZE != 0){
                 pagesToAdd++;
@@ -433,45 +427,51 @@ void* alloc(size_t size) {
             }
             if(pagesToAdd * PAGE_SIZE > current->size + MEMORY_BLOCK_SIZE + 1){
                 // The block is too large
-                WriteStr("Block is too large, splitting\n");
+                //WriteStr("Block is too large, splitting\n");
                 memory_block_t* newBlock = (memory_block_t*)((uint8*)current + MEMORY_BLOCK_SIZE + size);
                 newBlock->size = (pagesToAdd * PAGE_SIZE) - size - MEMORY_BLOCK_SIZE;
                 newBlock->free = true;
                 newBlock->next = NULL;
                 newBlock->magic = MEMBLOCK_MAGIC;
-                current->size = size;
+                current->size = size + MEMORY_BLOCK_SIZE;
                 current->next = newBlock;
             }else if(pagesToAdd * PAGE_SIZE > current->size){
                 // Too big, but not enough for another block
-                WriteStr("Block is too big, allocating whole block\n");
-                current->free = false;
+                //WriteStr("Block is too big, allocating whole block\n");
                 current->size += (pagesToAdd * PAGE_SIZE) - current->size;
+            }else{
+                // Just right
+                //WriteStr("Block is just right\n");
+                current->size = pagesToAdd * PAGE_SIZE;
+                current->next = NULL;
             }
+            current->free = false;
+            current->magic = MEMBLOCK_MAGIC;
             kernel_heap_end += pagesToAdd * PAGE_SIZE;
             return (void*)((uint8*)current + MEMORY_BLOCK_SIZE);
         }
         previous = current;
-        if(current->next != NULL){
-            current = current->next;;
-        }
+        current = current->next;
     }
+
+    current = previous;
 
     if(kernel_heap_end >= KERNEL_FREE_HEAP_END || kernel_heap_end + size + MEMORY_BLOCK_SIZE >= KERNEL_FREE_HEAP_END){
         // Out of memory
-        WriteStr("Out of memory\n");
+        //WriteStr("Out of memory\n");
         return NULL;
     }
 
     // No free memory block found, allocate a new one
-    WriteStr("No free memory block found, allocating new block\n");
+    //WriteStr("No free memory block found, allocating new block\n");
     size_t pagesToAdd = (size + MEMORY_BLOCK_SIZE) / PAGE_SIZE;
     if((size + MEMORY_BLOCK_SIZE) % PAGE_SIZE != 0){
         pagesToAdd++;
     }
     for(size_t i = 0; i < pagesToAdd; i++){
-        palloc(kernel_heap_end + (i + 4096), FindUnpagedMemoryHigh(currentDir), 1, currentDir, false);
+        palloc(kernel_heap_end + (i * PAGE_SIZE), FindUnpagedMemoryHigh(currentDir), 1, currentDir, false);
     }
-    memory_block_t* newBlock = (memory_block_t*)FindUnpagedMemoryHigh(currentDir);
+    memory_block_t* newBlock = kernel_heap_end;
     newBlock->size = size;
     newBlock->free = false;
     newBlock->next = NULL;
@@ -490,6 +490,8 @@ void dealloc(void* ptr){
     if(block->magic != MEMBLOCK_MAGIC){
         // Invalid memory block
         WriteStr("Invalid memory block, adjusting heap\n");
+        eax(block);
+        STOP;
     }else{
         // Free the block
         block->free = true;
@@ -497,7 +499,7 @@ void dealloc(void* ptr){
 
     // Coalesce adjacent free blocks
     memory_block_t* current = kernel_heap;
-    while(current != NULL){
+    while(current != NULL && current->next != NULL){
         if(current->free && current->next != NULL && current->next->free){
             // Coalesce the blocks
             current->size += current->next->size + MEMORY_BLOCK_SIZE;

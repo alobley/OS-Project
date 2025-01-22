@@ -50,6 +50,17 @@ typedef struct ALIGNED(4096) PageTable {
     page_t entries[1024];
 } PageTable;
 
+typedef struct memory_block {
+    uint32 magic;
+    bool free;
+    size_t size;
+    struct memory_block* next;
+    uint32 checksum;
+} memory_block_t;
+
+#define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
+#define MEMBLOCK_MAGIC 0xDEADBEEF
+
 #define GetPhysicalAddress(address) ((address) * 0x1000)             // Get the physical address from a page table entry pointer
 #define AddressToEntryPointer(address) ((address) >> 12)             // Convert a physical address to a page table entry pointer
 

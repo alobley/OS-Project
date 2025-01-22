@@ -85,7 +85,7 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
 
     for(int i = 0; i < 80; i++){
         // This is a test of the memory manager
-        uint16* buffer = (uint16*)alloc(0x100000);
+        void* buffer = (void*)alloc(0x100000);
         memset(buffer, 0, 0x100000);
         dealloc(buffer);
     }
