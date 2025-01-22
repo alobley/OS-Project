@@ -449,8 +449,6 @@ uint16* ReadSectors(disk_t* disk, uint16 sectorsToRead /*For LBA28 only the low 
         return NULL;
     }
 
-    printk("Hello\n");
-
     if(disk->addressing == LBA28){
         lba = (uint32)lba;
         outb(FeaturesPort(disk->base), 0x00);

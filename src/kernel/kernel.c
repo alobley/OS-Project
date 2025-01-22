@@ -38,7 +38,7 @@ void InitializeHardware(){
     InitIRQ();
     InitializePIT();
     InitializeKeyboard();
-    InitializeDisks();               // Reading more than one sector from the disk causes the strangest bug I've ever seen
+    //InitializeDisks();               // Reading more than one sector from the disk causes the strangest bug I've ever seen
 }
 
 
@@ -81,10 +81,15 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     // Getting paging to work took me FIFTY HOURS. PAGING ISN'T EVEN FULLY IMPLEMENTED YET.
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
     InitVGA();
-
-    //ReadSectors(IdentifyDisk(0), 8, 8208);
-
     InitializeHardware();
+
+    for(int i = 0; i < 80; i++){
+        // This is a test of the memory manager
+        uint16* buffer = (uint16*)alloc(0x100000);
+        memset(buffer, 0, 0x100000);
+        dealloc(buffer);
+    }
+
     printk("Dedication OS Version %u.%u.%u\n", version.major, version.minor, version.patch);
 
     // Launch the shell

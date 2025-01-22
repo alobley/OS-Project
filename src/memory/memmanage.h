@@ -58,14 +58,6 @@ typedef struct ALIGNED(4096) PageTable {
 
 #define KERNEL_VIRTADDR 0xC0000000      // Don't use this yet
 
-typedef struct memory_block {
-    size_t size;                 // Size of the memory block
-    struct memory_block* next;   // Pointer to the next free block of memory
-    bool free;                   // Block free or bot
-    bool paged;                  // Is this block paged?
-} memory_block_t;
-
-#define MEMORY_BLOCK_SIZE (sizeof(memory_block_t))
 #define PAGE_SIZE 4096
 
 void PageKernel();

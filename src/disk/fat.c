@@ -30,11 +30,11 @@ void ClearFatDirectory(FAT_cluster_t* fatClus){
 }
 
 // Takes a linked list of FAT directory entries and turns them into a linked list of VFS entries
-directory_t* FATDirToVfsDir(FAT_cluster_t* directory, fat_disk_t* fatdisk, char* name){
+directory_t* FATDirToVfsDir(FAT_cluster_t* directory, fat_disk_t* fatdisk, char* dirname){
     // Convert a FAT directory to a VFS directory
     FAT_cluster_t* current = directory;
     directory_t* vfsDir = (directory_t*)alloc(sizeof(directory_t));
-    vfsDir->name = name;
+    vfsDir->name = dirname;
     vfsDir->firstFile = alloc(sizeof(directory_entry_t));
     directory_entry_t* currentEntry = vfsDir->firstFile;
 
