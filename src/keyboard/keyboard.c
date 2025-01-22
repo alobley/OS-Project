@@ -7,6 +7,7 @@
 #include <time.h>
 #include <util.h>
 #include <acpi.h>
+#include <memmanage.h>
 
 #define KEYBOARD_ISR 0x21
 #define KEYBOARD_IRQ 1

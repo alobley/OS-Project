@@ -46,14 +46,9 @@ _start:
 
     push ebx
     push eax
-    push .end      ; I'll make my own call instruction!
 
-    ; For some reason using the call instruction will always, without fail, cause the first argument to be 0x10.
     jmp 0x8:kernel_main
 .end:
-    cli
-    hlt
-    jmp .end
 
 
 section .text.interrupts

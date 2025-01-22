@@ -41,7 +41,7 @@ directory_t* GetRoot(vfs_disk_t* disk){
         fatdisk->parent = disk->parent;
         fatdisk->fstype = disk->fstype;
         fatdisk->paramBlock = (bpb_t*)ReadSectors(fatdisk->parent, 1, 0);
-        FAT_cluster_t* fatroot = ReadRootDirectory(fatdisk);
+        FAT_cluster_t* fatroot = FatReadRootDirectory(fatdisk);
         return FATDirToVfsDir(fatroot, fatdisk, rootDir);
     }else{
         // Other FS types (unimplemented)

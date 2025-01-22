@@ -9,7 +9,7 @@ EMARGS+=-cdrom build/main.iso
 EMARGS+=-hda bin/harddisk.vdi 
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int -no-reboot -no-shutdown
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-d int -no-reboot -no-shutdown
 
 # Directories
 SRC_DIR=src
@@ -34,7 +34,7 @@ INCLUDES+=-I $(KERNEL_DIR) -I $(MEM_DIR) -I $(TIME_DIR) -I $(KB_DIR) -I $(DISK_D
 INCLUDES+=-I $(SRC_DIR)/pci
 
 # Compilation Flags
-CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu17 -Xlinker -z -Xlinker stack-size=65536 $(INCLUDES)
+CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu17 -g -fno-builtin-memset $(INCLUDES)
 
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(INT_DIR)/isr.c $(INT_DIR)/idt.c $(INT_DIR)/irq.c

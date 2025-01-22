@@ -76,7 +76,7 @@ void TaskScheduler(){
 version_t version = {0, 0, 1};
 
 // The kernel's main function
-void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
+void NORETURN kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     InitializeACPI();
     // Getting paging to work took me FIFTY HOURS. PAGING ISN'T EVEN FULLY IMPLEMENTED YET.
     PageKernel((multibootInfo->memLower + multibootInfo->memUpper + 1024) * 1024, multibootInfo->mmapAddr, multibootInfo->mmapLen);
@@ -86,7 +86,11 @@ void kernel_main(uint32 magic, mboot_info_t* multibootInfo){
     for(int i = 0; i < 80; i++){
         // This is a test of the memory manager
         void* buffer = (void*)alloc(0x100000);
-        memset(buffer, 0, 0x100000);
+        if(buffer == NULL){
+            printk("Out of memory\n");
+            STOP;
+        }
+        memset(buffer, 0xFF, 0x100000);
         dealloc(buffer);
     }
 

@@ -169,7 +169,7 @@ fat_disk_t* TryFatFS(disk_t* disk){
 // Start it with FAT32 then go to FAT12/16 when it's figured out (I have to figure this out again :despair:)
 // In FAT32, the root directory is a cluster chain, which is itself full of FAT entries. The first cluster is in the BPB.
 // Returns a linked list of clusters that contain the root directory entries
-FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk){
+FAT_cluster_t* FatReadRootDirectory(fat_disk_t* fatdisk){
     uint64 rootClusLBA = 0;
     uint64 rootSector = 0;
     uint64 rootCluster = 0;
@@ -244,7 +244,7 @@ FAT_cluster_t* ReadRootDirectory(fat_disk_t* fatdisk){
 
 // Find and load a whole file from the filesystem. Single-directory for now. TODO: add multiple directories and VFS support
 file_t* FatSeekFile(fat_disk_t* fatdisk, char* fileName){
-    FAT_cluster_t* rootDir = ReadRootDirectory(fatdisk);
+    FAT_cluster_t* rootDir = FatReadRootDirectory(fatdisk);
 
     if(fatdisk->fstype == FS_UNSUPPORTED){
         return NULL;

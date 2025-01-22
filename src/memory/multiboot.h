@@ -42,7 +42,8 @@
 
 typedef struct MemoryMapEntry{
     uint32 size;
-    uint64 addr;
+    uint32 baseLow;
+    uint32 baseHigh;
     uint64 length;
     uint32 type;
 } PACKED mboot_mmap_entry_t;
