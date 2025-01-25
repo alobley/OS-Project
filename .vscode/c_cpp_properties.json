@@ -1,0 +1,38 @@
+{
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "Launch Kernel",
+            "program": "${workspaceFolder}/build/kernel.bin",
+            "preLaunchTask": "build",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src/boot/gnu-efi/inc"
+            ]
+        },
+        {
+            "name": "EFI Application",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-clang-x64"
+        }
+    ],
+    "inputs": [
+        {
+            "type": "promptString",
+            "id": "kernelFile",
+            "description": "Path to your kernel binary"
+        }
+    ],
+    "version": 4
+}

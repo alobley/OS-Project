@@ -1,103 +1,87 @@
-# Compiler and Assembler
 ASM=nasm
-CCOM=i686-elf-gcc
-ARCH=i386
+CC=gcc
+ARCH=x86_64
 
-# QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display gtk
-EMARGS+=-cdrom build/main.iso 
-EMARGS+=-hda bin/harddisk.vdi 
-EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
-EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-d int -no-reboot -no-shutdown
+EMARGS=-m 8G -smp 4 -vga none -display gtk -cpu qemu64 -enable-kvm
+EMARGS+=-machine q35,accel=kvm -device vmware-svga,vgamem_mb=512 -device ich9-intel-hda -device hda-output 
+EMARGS+=-netdev user,id=net0,hostfwd=tcp::2222-:22 -device e1000,netdev=net0 -device usb-ehci,id=usb-bus -device usb-tablet -device usb-kbd -device usb-mouse
+EMARGS+=-drive file=bin/drive.img,format=raw,if=none,id=drive-sata0 -device ich9-ahci,id=ahci -device ide-hd,drive=drive-sata0,bus=ahci.0 
+EMARGS+=-L /usr/share/edk2/x64/ -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd 
+EMARGS+=-drive if=pflash,format=raw,unit=1,file=bin/OVMF_VARS.fd -d int #-no-reboot -no-shutdown
 
-# Directories
-SRC_DIR=src
+BOOT_FILE=boot64
+KERNEL_FILE=kernel
+
 BUILD_DIR=build
 BIN_DIR=bin
+SRC_DIR=src
+BOOT_DIR=$(SRC_DIR)/boot
 MNT_DIR=mnt
 LIB_DIR=$(SRC_DIR)/lib
-INT_DIR=$(SRC_DIR)/interrupts
-VGA_DIR=$(SRC_DIR)/VGA
-BOOT_DIR=$(SRC_DIR)/boot
-KERNEL_DIR=$(SRC_DIR)/kernel
-MEM_DIR=$(SRC_DIR)/memory
-TIME_DIR=$(SRC_DIR)/time
-KB_DIR=$(SRC_DIR)/keyboard
-DISK_DIR=$(SRC_DIR)/disk
-SOUND_DIR=$(SRC_DIR)/sound
-PROG_DIR=$(SRC_DIR)/programs
 
-# Include Directories
-INCLUDES=-I $(SRC_DIR) -I $(LIB_DIR) -I $(INT_DIR) -I $(VGA_DIR) -I $(BOOT_DIR)
-INCLUDES+=-I $(KERNEL_DIR) -I $(MEM_DIR) -I $(TIME_DIR) -I $(KB_DIR) -I $(DISK_DIR) -I $(SOUND_DIR) -I $(SRC_DIR)/acpi
-INCLUDES+=-I $(SRC_DIR)/pci
+EFI_DIR=$(SRC_DIR)/boot
 
-# Compilation Flags
-CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=gnu17 -g -fno-builtin-memset $(INCLUDES)
+EFIBIN=BOOTX64.EFI
 
-# Libraries to Link
-LIBS=$(BUILD_DIR)/kernel_start.o $(INT_DIR)/isr.c $(INT_DIR)/idt.c $(INT_DIR)/irq.c
-LIBS+=$(LIB_DIR)/io.c $(LIB_DIR)/fpu.c $(VGA_DIR)/vga.c $(VGA_DIR)/pixel.c
-LIBS+=$(TIME_DIR)/time.c $(KB_DIR)/keyboard.c $(LIB_DIR)/math.c
-LIBS+=$(DISK_DIR)/ata.c $(DISK_DIR)/fat.c $(SOUND_DIR)/pcspkr.c $(VGA_DIR)/text.c
-LIBS+=$(KERNEL_DIR)/smallgame.c $(KERNEL_DIR)/kish.c $(DISK_DIR)/vfs.c $(SRC_DIR)/acpi/acpi.c
-LIBS+=$(MEM_DIR)/memmanage.c $(SRC_DIR)/pci/pci.c $(SRC_DIR)/pci/pcie.c $(KERNEL_DIR)/multitasking.c
+# Use clang for the EFI bootloader because it is easier to build using it.
+BOOT_CC=clang -target x86_64-unknown-windows -fuse-ld=lld-link -nostdlib -Wl,-subsystem:efi_application -Wl,-entry:efi_main -I$(EFI_DIR)
+BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -nostdlib #-Werror
 
-# Assembly and Kernel Files
-BOOTLOADER=boot
-CFILE=kernel
+KERNEL_CFLAGS=-ffreestanding -m64 -O2 -Wall -Wextra -Werror -I$(SRC_DIR)/kernel -I$(LIB_DIR) -fno-stack-protector -fno-stack-check -mno-red-zone -nostdlib --std=gnu17
 
-# Placeholder for additional kernel functionality
-PROGRAM_FILE=programtoload
+all: dirs compile_boot assemble compile_kernel copy qemu
 
-# Build Targets
-all: assemble compile build_boot drive_image addfiles qemu
+compile_boot:
+	@echo "Compiling bootloader..."
+	@$(BOOT_CC) $(BOOT_CFLAGS) $(EFI_DIR)/boot64.c $(EFI_DIR)/efi.c -o $(BUILD_DIR)/BOOTX64.EFI
 
-create_dirs:
-	mkdir -p $(BUILD_DIR) $(BIN_DIR) $(MNT_DIR)
+assemble:
+	@echo "Assembling kernel assembly..."
+	@$(ASM) -f elf64 $(SRC_DIR)/kernel/kstart.asm -o $(BUILD_DIR)/kstart.o
 
-# Create Boot Disk Image (backup with GRUB)
-drive_image: create_dirs
-	mkdir -p isodir/boot/grub
-	cp $(BUILD_DIR)/$(CFILE).bin isodir/boot/$(CFILE).bin
-	cp $(BOOT_DIR)/grub.cfg isodir/boot/grub/grub.cfg
-	grub-mkrescue -o build/main.iso isodir
+compile_kernel:
+	@echo "Compiling and linking kernel..."
+	@$(CC) -m64 -c $(SRC_DIR)/kernel/kernel.c -o $(BUILD_DIR)/kernel.o $(KERNEL_CFLAGS)
+	@$(CC) -m64 -T linker.ld -o $(BUILD_DIR)/kernel.elf -ffreestanding -O2 -nostdlib $(BUILD_DIR)/kernel.o $(BUILD_DIR)/kstart.o
+	@echo "Done."
 
-# Assemble Kernel Startup
-assemble: create_dirs
-	$(ASM) -felf32 $(KERNEL_DIR)/kernel_start.asm -o $(BUILD_DIR)/kernel_start.o
-	$(ASM) -fbin $(PROG_DIR)/prgm.asm -o $(BUILD_DIR)/prgm.bin
+copy:
+	@echo "Copying files..."
+	@sudo losetup --offset 1048576 --sizelimit 46934528 -P /dev/loop0 bin/drive.img
+	@sudo mount /dev/loop0 $(MNT_DIR)
+	@sudo rm -rf $(MNT_DIR)/*
+	@sudo mkdir -p $(MNT_DIR)/EFI/BOOT
+	@sudo cp $(BUILD_DIR)/$(EFIBIN) $(MNT_DIR)/EFI/BOOT/$(EFIBIN)
+#sudo cp $(BUILD_DIR)/$(EFIBIN) $(MNT_DIR)/$(EFIBIN)
+	@sudo cp $(BUILD_DIR)/kernel.elf $(MNT_DIR)/KERNEL.ELF
+	@sudo umount $(MNT_DIR)
+	@sudo losetup -d /dev/loop0
+	@echo "Done."
 
-# Build Bootloader
-build_boot: create_dirs
-	$(ASM) -fbin $(BOOT_DIR)/$(BOOTLOADER).asm -o $(BUILD_DIR)/$(BOOTLOADER).bin
-	$(ASM) -felf32 $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.o
-	$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BUILD_DIR)/stage1.o $(BOOT_DIR)/stage1.c -T $(BOOT_DIR)/linker.ld -ffreestanding -O2 -nostdlib -nodefaultlibs -nostartfiles -Wall -Wextra -Wcast-align -I $(BOOT_DIR)
+qemu:
+	@echo "Running QEMU..."
+	@qemu-system-$(ARCH) $(EMARGS)
 
-# Compile Kernel
-compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
-	$(CCOM) -o $(BUILD_DIR)/$(CFILE).bin $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
+dirs:
+	@echo "Creating directories..."
+	@mkdir -p bin
+	@mkdir -p build
+	@mkdir -p mnt
+	@echo "Done."
 
-# Run QEMU
-qemu: create_dirs $(BUILD_DIR)/main.iso
-	qemu-system-$(ARCH) $(EMARGS)
+ovmf:
+	cp /usr/share/edk2/x64/OVMF_VARS.4m.fd bin/OVMF_VARS.fd
 
-# Add Files to Virtual Disk
-addfiles: create_dirs
-	sudo mount -o loop,rw bin/harddisk.vdi mnt
-	sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
-	sudo umount mnt
-	sync
+# gdisk commands: o, y, n, 1, 2048, 93716, ef00, w, y
+drive:
+	dd if=/dev/zero of=bin/drive.img bs=512 count=93716
+	sudo gdisk bin/drive.img
+	sudo losetup --offset 1048576 --sizelimit 46934528 -P /dev/loop0 bin/drive.img
+	sudo mkdosfs -F 32 /dev/loop0
+	sudo losetup -d /dev/loop0
 
-# Create the Hard Drive Image, for some reason .qcow2 doesn't show sectors properly.
-hard_drive: create_dirs
-	qemu-img create -f raw $(BIN_DIR)/harddisk.vdi 2G
-	mkfs.fat -F 32 $(BIN_DIR)/harddisk.vdi
-
-# Clean Build Artifacts
 clean:
-	rm -rf build/*
-	rm -rf isodir/*
-	@echo "An error is expected here if no disks were mounted."
-	sudo umount mnt
+	@echo "If this results in an error, then the disk likely wasn't unmounted."
+	@rm -rf $(BUILD_DIR)/*
+	@sudo umount $(MNT_DIR)
+	@sudo losetup -d /dev/loop0

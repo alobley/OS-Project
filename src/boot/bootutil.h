@@ -1,98 +1,97 @@
 #ifndef BOOTUTIL_H
-#define BOOTUTIL_H
+#define BOOTUTIL_H 1
 
-#define STOP __asm__("cli\nhlt")
+#define PACKED __attribute__((packed))
 
-#define clc __asm__("clc")
+typedef unsigned char uint8;
+typedef unsigned short uint16;
+typedef unsigned int uint32;
+typedef unsigned long long uint64;
 
-// Register manipulation
-#define getax(val) __asm__("mov %%ax, %0" : "=r"(val))
-#define setax(val) __asm__("mov %0, %%ax" : : "r"(val))
-
-#define getbx(val) __asm__("mov %%bx, %0" : "=r"(val))
-#define setbx(val) __asm__("mov %0, %%bx" : : "r"(val))
-
-#define getcx(val) __asm__("mov %%cx, %0" : "=r"(val))
-#define setcx(val) __asm__("mov %0, %%cx" : : "r"(val))
-
-#define getdx(val) __asm__("mov %%dx, %0" : "=r"(val))
-#define setdx(val) __asm__("mov %0, %%dx" : : "r"(val))
-
-#define getsi(val) __asm__("mov %%si, %0" : "=r"(val))
-#define setsi(val) __asm__("mov %0, %%si" : : "r"(val))
-
-#define getdi(val) __asm__("mov %%di, %0" : "=r"(val))
-#define setdi(val) __asm__("mov %0, %%di" : : "r"(val))
-
-#define getbp(val) __asm__("mov %%bp, %0" : "=r"(val))
-#define setbp(val) __asm__("mov %0, %%bp" : : "r"(val))
-
-#define getsp(val) __asm__("mov %%sp, %0" : "=r"(val))
-#define setsp(val) __asm__("mov %0, %%sp" : : "r"(val))
-
-#define setes(val) __asm__("mov %0, %%es" : : "r"(val))
-#define setfs(val) __asm__("mov %0, %%fs" : : "r"(val))
-#define setgs(val) __asm__("mov %0, %%gs" : : "r"(val))
-#define setss(val) __asm__("mov %0, %%ss" : : "r"(val))
-#define setds(val) __asm__("mov %0, %%ds" : : "r"(val))
-#define setcs(val) __asm__("mov %0, %%cs" : : "r"(val))
-
-#define getflags(val) __asm__("pushf\npop %0" : "=r"(val))
-#define carryflag(eflags) (eflags & 0x1)
+typedef signed char int8;
+typedef signed short int16;
+typedef signed int int32;
+typedef signed long long int64;
 
 typedef unsigned char bool;
 #define true 1
 #define false 0
 
-typedef unsigned char uint8;
-typedef unsigned short uint16;
-typedef unsigned long uint32;
-typedef unsigned long long uint64;
+typedef uint8 byte;
+typedef uint16 word;
+typedef uint32 dword;
+typedef uint64 qword;
 
-typedef signed char int8;
-typedef signed short int16;
-typedef signed long int32;
-typedef signed long long int64;
+/* For reference in the kernel (best not to use this in the bootloader)
+typedef enum {
+    EfiReservedMemoryType      = 0,  // Reserved memory (e.g., firmware, I/O)
+    EfiLoaderCode              = 1,  // Code used by the bootloader
+    EfiLoaderData              = 2,  // Data used by the bootloader
+    EfiBootServicesCode        = 3,  // Code used by UEFI boot services
+    EfiBootServicesData        = 4,  // Data used by UEFI boot services
+    EfiRuntimeServicesCode     = 5,  // Code used by UEFI runtime services
+    EfiRuntimeServicesData     = 6,  // Data used by UEFI runtime services
+    EfiConventionalMemory      = 7,  // Usable memory (can be used by OS)
+    EfiUnusableMemory          = 8,  // Memory that is unusable (e.g., hardware failure)
+    EfiACPIReclaimMemory       = 9,  // Memory used by ACPI tables and reclaimable by OS
+    EfiACPINVSMemory           = 10, // Memory for non-volatile storage used by ACPI
+    EfiMemoryMappedIO          = 11, // Memory mapped I/O
+    EfiMemoryMappedIOPortSpace = 12, // I/O Port Space
+    EfiPalCode                 = 13, // Processor-specific code (used by PAL)
+    EfiPersistentMemory        = 14  // Memory intended to be persistent across boots (e.g., NVRAM)
+    EfiUnacceptedMemory        = 15  // Memory that is unaccepted by the OS (if applicable)
+} EFI_MEMORY_TYPE;
 
-typedef unsigned long size_t;
+typedef struct {
+    uint32                          Type;           // Field size is 32 bits followed by 32 bit pad
+    uint32                          Pad;
+    void*                           PhysicalStart;  // Field size is 64 bits
+    void*                           VirtualStart;   // Field size is 64 bits
+    uint64                          NumberOfPages;  // Field size is 64 bits
+    uint64                          Attribute;      // Field size is 64 bits
+} EFI_MEMORY_DESCRIPTOR;
 
-typedef struct fat12_entry {
-    char filename[8];
-    char ext[3];
-    char attributes;
-    char reserved;
-    char creation_time_tenths;
-    uint16 creation_time;
-    uint16 creation_date;
-    uint16 last_access_date;
-    uint16 first_cluster_high;
-    uint16 last_mod_time;
-    uint16 last_mod_date;
-    uint16 first_cluster_low;
-    uint32 file_size;
-} __attribute__((packed)) fat12_entry_t;
+typedef struct memory_map {
+    EFI_MEMORY_DESCRIPTOR* memoryMap;       // Pointer to the memory map array
+    size_t memoryMapSize;                   // Number of entries in the memory map
+    uint32 memoryMapDescriptorSize;         // Size of a memory descriptor
+} memory_map_t;
 
-typedef struct fat12_boot_sector {
-    char jmp[3];
-    char oem[8];
-    uint16 bytes_per_sector;
-    uint8 sectors_per_cluster;
-    uint16 reserved_sectors;
-    uint8 fat_count;
-    uint16 root_dir_entries;
-    uint16 total_sectors;
-    uint8 media_descriptor;
-    uint16 sectors_per_fat;
-    uint16 sectors_per_track;
-    uint16 heads;
-    uint32 hidden_sectors;
-    uint32 total_sectors_large;
-    uint8 driveNum;
-    uint8 reserved;
-    uint8 signature;
-    uint32 volume_id;
-    char volume_label[11];
-    char fs_type[8];
-} __attribute__((packed)) fat12_boot_sector_t;
+// The struct passed to the kernel
+typedef struct Boot_Utilities {
+    // Screen output
+    void* framebuffer;                      // UEFI framebuffer
+    void* backBuffer;                       // Back buffer allocated by the bootloader for double-buffering
+    uint32 screenWidth;                     // Screen width in pixels
+    uint32 screenHeight;                    // Screen height in pixels
+    uint32 screenBpp;                       // Screen bytes per pixel
 
-#endif
+    // Memory
+    void* pageTables;                       // Pointer to an aligned region of memory for the page tables (nothing is there though)
+    memory_map_t memmap;                    // Memory map
+    size_t totalmem;                        // Total memory in bytes the system has
+    uintptr_t kernelBase;                   // Starting address of the kernel
+
+    // ACPI tables
+    uint8 acpiRevision;                     // ACPI version
+    void* rsdp;
+    void* xsdt;
+    void* madt;
+    void* fadt;
+    void* dsdt;
+    void* ssdt;
+    void* hpet;
+    void* mcfg;
+
+    // System configuration
+    uint32 cpuCount;                        // Number of CPU cores
+    uint32 cpuSpeed;                        // CPU speed in MHz
+
+    // Misc UEFI
+    EFI_SYSTEM_TABLE* st;                   // System table
+} bootutil_t;
+*/
+
+#define BGRA(r, g, b, a) ((a << 24) | (r << 16) | (g << 8) | b)
+
+#endif // BOOTUTIL_H

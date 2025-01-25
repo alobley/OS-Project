@@ -1,0 +1,30 @@
+{
+    "files.associations": {
+        "vga.h": "c",
+        "pcspkr.h": "c",
+        "isr.h": "c",
+        "charconv": "c",
+        "chrono": "c",
+        "optional": "c",
+        "format": "c",
+        "ratio": "c",
+        "system_error": "c",
+        "array": "c",
+        "functional": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "*.tcc": "c",
+        "algorithm": "c",
+        "limits": "c",
+        "*.inc": "c",
+        "cstring": "c",
+        "bitset": "c",
+        "string_view": "c",
+        "hash_map": "c",
+        "hash_set": "c",
+        "initializer_list": "c",
+        "span": "c",
+        "cfloat": "cpp"
+    }
+}
