@@ -1,0 +1,40 @@
+# Compiled object files
+*.o
+*.a
+
+# Executables
+*.out
+*.exe
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Build output
+/bin/
+/build/
+/isodir/
+/mnt/
+
+# Operating system files
+.DS_Store  # macOS
+Thumbs.db  # Windows
+
+# IDE and editor files
+.vscode/
+.idea/
+.VSCodeCounter/
+*.swp
+
+# Cross-compilation files
+*.bin
+*.iso
+*.img
+*.o
+*.elf
+*.vdi
+*.qcow2
+
+# Generated files
+*.map
+*.d
