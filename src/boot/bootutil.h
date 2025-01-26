@@ -1,6 +1,9 @@
 #ifndef BOOTUTIL_H
 #define BOOTUTIL_H 1
 
+#include "efi.h"
+#include <stdarg.h>
+
 #define PACKED __attribute__((packed))
 
 typedef unsigned char uint8;
@@ -12,10 +15,6 @@ typedef signed char int8;
 typedef signed short int16;
 typedef signed int int32;
 typedef signed long long int64;
-
-typedef unsigned char bool;
-#define true 1
-#define false 0
 
 typedef uint8 byte;
 typedef uint16 word;

@@ -25,7 +25,7 @@ EFIBIN=BOOTX64.EFI
 
 # Use clang for the EFI bootloader because it is easier to build using it.
 BOOT_CC=clang -target x86_64-unknown-windows -fuse-ld=lld-link -nostdlib -Wl,-subsystem:efi_application -Wl,-entry:efi_main -I$(EFI_DIR)
-BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -Wno-varargs -Werror
+BOOT_CFLAGS=-std=c23 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -Wno-varargs -Werror
 
 KERNEL_CFLAGS=-ffreestanding -m64 -O2 -Wall -Wextra -Werror -I$(SRC_DIR)/kernel -I$(LIB_DIR) -fno-stack-protector -fno-stack-check -mno-red-zone -nostdlib --std=gnu17
 
@@ -42,7 +42,7 @@ assemble:
 compile_kernel:
 	@echo "Compiling and linking kernel..."
 	@$(CC) -m64 -c $(SRC_DIR)/kernel/kernel.c -o $(BUILD_DIR)/kernel.o $(KERNEL_CFLAGS)
-	@$(CC) -m64 -T linker.ld -o $(BUILD_DIR)/kernel.elf -ffreestanding -O2 -nostdlib $(BUILD_DIR)/kernel.o $(BUILD_DIR)/kstart.o
+	@$(CC) -T linker.ld -o $(BUILD_DIR)/kernel.elf -ffreestanding -O2 -nostdlib $(BUILD_DIR)/kernel.o $(BUILD_DIR)/kstart.o -fno-pie -no-pie -fno-pic
 	@echo "Done."
 
 copy:

@@ -13,21 +13,37 @@
  * Dependencies: UEFI-supported compiler (Recommended: clang)
 *********************************************************************************************************************/
 #include "bootutil.h"
-#include "efi.h"
-#include <stdarg.h>
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
+#define COLOR_THEME_COLORFUL EFI_TEXT_ATTR(EFI_YELLOW, EFI_BLUE)                           // Default color theme
+#define COLOR_THEME_DARK EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK)                               // Dark color theme (classic)
+
+#define COLORFUL_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BLUE, EFI_CYAN)                           // Default highlighted text color
+#define DARK_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BACKGROUND_LIGHTGRAY, EFI_BLACK)                             // Dark highlighted text color
+
+UINT16 currentTheme = COLOR_THEME_COLORFUL;
+UINT16 currentHilight = COLORFUL_HILIGHT_COLOR;
+
 void printf(CHAR16* fmt, ...);
+BOOLEAN PrintNum(UINTN num, UINT8 base, BOOLEAN s);
 
 EFI_SYSTEM_TABLE* st;
 EFI_HANDLE image;
 
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* cout;
 EFI_SIMPLE_TEXT_INPUT_PROTOCOL* cin;
+EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* cerr;
+
+EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
 
 EFI_BOOT_SERVICES* bs;
 EFI_RUNTIME_SERVICES* rs;
+
+INT32 originalTextMode = 0;
+INT32 bestMode = 0;
+
+BOOLEAN isGraphicsMode = TRUE;
 
 // Wait for any key to be pressed and return it
 EFI_INPUT_KEY GetKey(void){
@@ -76,6 +92,39 @@ void PrintConsoleAttributes(void){
     }
 }
 
+// Find the highest available text mode and switch to it
+EFI_STATUS SetHighestTextMode(){
+    UINTN maxCols = 0;
+    UINTN maxRows = 0;
+    UINTN cols = 0;
+    UINTN rows = 0;
+    EFI_STATUS status = EFI_SUCCESS;
+
+    originalTextMode = cout->Mode->Mode;
+
+    for(INT32 i = 0; i < cout->Mode->MaxMode; i++){
+        cout->QueryMode(cout, i, &cols, &rows);
+        if(cols == 0 || rows == 0 || EFI_ERROR(status)){
+            continue;
+        }
+
+        if(cols > maxCols && rows > maxRows){
+            maxCols = cols;
+            maxRows = rows;
+            bestMode = i;
+        }
+    }
+
+    status = cout->SetMode(cout, bestMode);
+    if(EFI_ERROR(status)){
+        // Go back to default mode
+        cout->SetMode(cout, originalTextMode);
+        status = EFI_UNSUPPORTED;
+    }
+
+    return status;
+}
+
 EFI_STATUS SetTextMode(UINTN rows){
     EFI_INPUT_KEY key;
     key.ScanCode = 0;
@@ -83,13 +132,13 @@ EFI_STATUS SetTextMode(UINTN rows){
     UINTN lastMode = cout->Mode->Mode;
     EFI_STATUS status = EFI_SUCCESS;
 
-    while(true){
-        cout->ClearScreen(st->ConOut);
+    while(TRUE){
+        cout->ClearScreen(cout);
         PrintConsoleAttributes();
         printf(u"\r\nSelect Text Mode 0-%d: %d", cout->Mode->MaxMode - 1, lastMode);
 
         // Move the cursor back one space
-        cout->SetCursorPosition(cout, cout->Mode->CursorColumn - 1, cout->Mode->CursorRow);
+        //cout->SetCursorPosition(cout, cout->Mode->CursorColumn - 1, cout->Mode->CursorRow);
 
         cout->SetCursorPosition(cout, 0, rows - 1);
         printf(u"ESC = Exit");
@@ -120,19 +169,135 @@ EFI_STATUS SetTextMode(UINTN rows){
     return status;
 }
 
+EFI_STATUS SetGraphicsMode(void){
+    UINTN cols = 0;
+    UINTN rows = 0;
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = NULL;
+    UINTN modeSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+    EFI_STATUS status = 0;
+
+    INT32 numOptions = 0;
+    INT32 currentOption = 0;
+
+    INT32 printStart = 0;
+
+    cout->QueryMode(cout, cout->Mode->Mode, &cols, &rows);
+    if(!isGraphicsMode){
+        cout->ClearScreen(cout);
+        printf(u"Graphics mode is not supported on this system!\r\n");
+        cout->SetCursorPosition(cout, 0, rows - 1);
+        printf(u"ESC = Exit");
+
+        while(TRUE) {
+            EFI_INPUT_KEY key = GetKey();
+            if(key.ScanCode == KEY_ESC){
+                return EFI_UNSUPPORTED;
+            }
+        }
+    }
+    
+    while(TRUE){
+        cout->ClearScreen(cout);
+        cout->OutputString(cout, u"Graphics mode information:\r\n");
+
+        //status = gop->QueryMode(gop, gop->Mode->Mode, &modeSize, &info);
+        if(EFI_ERROR(status)){
+            cout->OutputString(cout, u"Failed to query graphics mode information!\r\n");
+            cout->SetCursorPosition(cout, 0, rows - 1);
+            cout->OutputString(cout, u"ESC = Exit");
+
+            gk:
+            EFI_INPUT_KEY key = GetKey();
+            if(key.ScanCode == KEY_ESC){
+                return EFI_UNSUPPORTED;
+            }
+            goto gk;
+        }
+
+        printf(u"     Max Mode: %d\r\n", gop->Mode->MaxMode);
+        printf(u"     Current Mode: %d\r\n", gop->Mode->Mode);
+        printf(u"     Screen Dimensions: %ux%u\r\n", gop->Mode->Info->HorizontalResolution, gop->Mode->Info->VerticalResolution);
+        printf(u"     Framebuffer Address: 0x%x\r\n", gop->Mode->FrameBufferBase);
+        printf(u"     Framebuffer Size: %u Bytes\r\n", gop->Mode->FrameBufferSize);
+        printf(u"     Pixel Format: %d\r\n", gop->Mode->Info->PixelFormat);
+        printf(u"     Pixels Per Scan Line: %u\r\n", gop->Mode->Info->PixelsPerScanLine);
+
+        numOptions = gop->Mode->MaxMode;
+        cout->OutputString(cout, u"Available GOP Modes:\r\n");
+
+        // Get the number of columns and rows for the menu
+        UINTN cols = 0;
+        UINTN rows = 0;
+        cout->QueryMode(cout, cout->Mode->Mode, &cols, &rows);
+
+        // Get the screen dimensions for text mode
+        UINTN topRow = cout->Mode->CursorRow + 2;
+        UINTN bottomRow = rows - 2;             // Leave room for controls at the bottom
+
+        for(INT32 i = printStart; i < numOptions; i++){
+            gop->QueryMode(gop, i, &modeSize, &info);
+            if((i + topRow) - printStart > bottomRow){
+                break;
+            }
+            if(i == currentOption){
+                cout->SetAttribute(cout, currentHilight);
+                printf(u"     Graphics Mode %d: (%ux%u)\r\n", i, info->HorizontalResolution, info->VerticalResolution);
+                cout->SetAttribute(cout, currentTheme);
+            }else{
+                printf(u"     Graphics Mode %d: (%ux%u)\r\n", i, info->HorizontalResolution, info->VerticalResolution);
+            }
+        }
+
+        cout->SetCursorPosition(cout, 0, rows - 1);
+        printf(u"ESC = Go Back   Up/Down = Navigate   Enter = Select");
+
+        EFI_INPUT_KEY key = GetKey();
+        
+        switch(key.ScanCode){
+            case KEY_ESC:
+                // Escape key pressed, return to main menu
+                return EFI_SUCCESS;
+            case KEY_UP:
+                // Move the cursor up
+                if(currentOption > 0){
+                    currentOption--;
+                }else{
+                    break;
+                }
+
+                if(currentOption < printStart){
+                    printStart--;
+                }
+                break;
+            case KEY_DOWN:
+                // Move the cursor down
+                if(currentOption < numOptions - 1){
+                    currentOption++;
+                }else{
+                    break;
+                }
+
+                // Scroll down to show the next menu option
+                if((UINTN)currentOption > bottomRow - topRow){
+                    printStart++;
+                }
+                break;
+            default:
+                if(key.UnicodeChar == u'\r'){
+                    // The user pressed the enter key (selected a choice)
+                    gop->SetMode(gop, currentOption);
+                    cout->ClearScreen(cout);
+                }
+                break;
+        }
+    }
+    return status;
+}
+
 void Shutdown(void){
     rs->ResetSystem(EfiResetShutdown, EFI_SUCCESS, 0, NULL);
     __builtin_unreachable();
 }
-
-#define COLOR_THEME_COLORFUL EFI_TEXT_ATTR(EFI_YELLOW, EFI_BLUE)                           // Default color theme
-#define COLOR_THEME_DARK EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK)                               // Dark color theme (classic)
-
-#define COLORFUL_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BLUE, EFI_CYAN)                           // Default highlighted text color
-#define DARK_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BACKGROUND_LIGHTGRAY, EFI_BLACK)                             // Dark highlighted text color
-
-UINT16 currentTheme = COLOR_THEME_COLORFUL;
-UINT16 currentHilight = COLORFUL_HILIGHT_COLOR;
 
 static CHAR16* themes[] = {
     u"1. Colorful (Default)",
@@ -174,8 +339,8 @@ static CHAR16* menuOptions[] = {
     u"Change Text Mode",
     u"Set Graphics Mode",
     u"Change Color Theme",
-    u"Shutdown",
     u"Reboot",
+    u"Shutdown",
     u"Exit"
 };
 
@@ -187,9 +352,23 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
     image = ImageHandle;
     bs = SystemTable->BootServices;
     rs = SystemTable->RuntimeServices;
+    cerr = SystemTable->StdErr;
 
-    cout->Reset(SystemTable->ConOut, false);
+    EFI_GUID gopGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+
+    if(EFI_ERROR(bs->LocateProtocol(&gopGuid, NULL, (VOID**)&gop))){
+        isGraphicsMode = FALSE;
+    }
+
+    cout->Reset(SystemTable->ConOut, FALSE);
     cout->SetAttribute(SystemTable->ConOut, currentTheme);
+
+    SetHighestTextMode();
+
+    UINTN cols = 0;
+    UINTN rows = 0;
+    cout->QueryMode(cout, cout->Mode->Mode, &cols, &rows);
+    cout->SetCursorPosition(cout, 0, 0);
 
     EFI_INPUT_KEY key;
     key.ScanCode = 0;
@@ -197,13 +376,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
 
     UINT8 selectedOption = 0;
 
-    bool exit = false;
+    BOOLEAN exit = FALSE;
     while(!exit){
         cout->ClearScreen(cout);
 
-        // Print keybinds
-        UINTN cols = 0;
-        UINTN rows = 0;
+        cols = 0;
+        rows = 0;
         cout->QueryMode(cout, cout->Mode->Mode, &cols, &rows);
         cout->SetCursorPosition(cout, 0, 0);
 
@@ -248,12 +426,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                     switch(selectedOption){
                         case 0:
                             // Boot Dedication OS
-                            printf(u"Booting Dedication OS...\r\n");
+                            cout->OutputString(cout, u"Booting Dedication OS...\r\n");
 
-                            printf(u"Sorry! This OS doesn't exist yet!\r\n");
+                            cout->OutputString(cout, u"Sorry! This OS doesn't exist yet!\r\n");
 
                             cout->SetCursorPosition(cout, 0, rows - 1);
-                            printf(u"ESC = Exit");
+                            cout->OutputString(cout, u"ESC = Exit");
 
                             key = GetKey();
 
@@ -264,12 +442,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                             break;
                         case 2:
                             // Set Graphics Mode
-                            cout->OutputString(cout, u"Graphics mode not supported yet\r\n");
-
-                            cout->SetCursorPosition(cout, 0, rows - 1);
-                            printf(u"ESC = Exit");
-
-                            key = GetKey();
+                            SetGraphicsMode();
 
                             break;
                         case 3:
@@ -278,37 +451,74 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
 
                             break;
                         case 4:
+                            // Reboot
+                            cout->OutputString(cout, u"Rebooting...\r\n");
+                            rs->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
+                            __builtin_unreachable();
+
+                            break;
+                        case 5:
                             // Shutdown
                             cout->OutputString(cout, u"Shutting down...\r\n");
                             Shutdown();
 
                             break;
-                        case 5:
-                            // Reboot
-                            cout->OutputString(cout, u"Rebooting...\r\n");
-                            rs->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
-
-                            break;
                         case 6:
                             // Exit
-                            exit = true;
+                            exit = TRUE;
 
+                            break;
+                        default:
                             break;
                     }
                 }
                 break;
         }
-
-        //SetTextMode();
     }
 
     return EFI_SUCCESS;
 }
 
+// Print a number to the screen
+BOOLEAN PrintNum(UINTN num, UINT8 base, BOOLEAN s){
+    static CHAR16* digits = u"0123456789ABCDEF";
+    // Include 64-bit binary support
+    CHAR16 buffer[65];
+    UINTN i = 0;
 
-// Print a formatted string to the screen
-// Yes, I know it's bad.
-// This function is huge so I'll declare a prototype and leave it at the bottom of the file.
+    if(base > 16){
+        printf(u"Invalid base: %d\r\n", (INT32)base);
+        return FALSE;
+    }
+
+    // Check if the number is negative
+    if(s && (INTN)num < 0){
+        cout->OutputString(cout, u"-");
+        num = -(INTN)num;
+    }
+    
+    // Convert the number to a string
+    do {
+        buffer[i++] = digits[num % base];
+        num /= base;
+    } while(num > 0);
+
+    // Null-terminate the string
+    buffer[i] = u'\0';
+
+    // Reverse the buffer
+    for(UINTN j = 0; j < i / 2; j++){
+        CHAR16 temp = buffer[j];
+        buffer[j] = buffer[i - j - 1];
+        buffer[i - j - 1] = temp;
+    }
+
+    cout->OutputString(cout, buffer);
+
+    return TRUE;
+}
+
+// Print a formatted string to stdout
 void printf(CHAR16* fmt, ...){
     CHAR16 c[2];
     c[0] = u'\0', c[1] = u'\0';
@@ -327,32 +537,7 @@ void printf(CHAR16* fmt, ...){
                 case u'd': {
                     // Print a signed 32-bit integer
                     INT32 num = va_arg(args, INT32);
-                    CHAR16 numStr[21];
-                    UINTN j = 0;
-                    if(num >= 0){
-                        do{
-                            numStr[j] = u'0' + num % 10;
-                            num /= 10;
-                            j++;
-                        } while(num > 0);
-                    }else{
-                        // The number is negative
-                        num = -num;
-                        do{
-                            numStr[j] = u'0' + num % 10;
-                            num /= 10;
-                            j++;
-                        } while(num > 0);
-                        numStr[j] = u'-';
-                        j++;
-                    }
-                    numStr[j] = u'\0';
-                    for(UINTN k = 0; k < j / 2; k++){
-                        CHAR16 temp = numStr[k];
-                        numStr[k] = numStr[j - k - 1];
-                        numStr[j - k - 1] = temp;
-                    }
-                    cout->OutputString(cout, numStr);
+                    PrintNum((UINTN)num, 10, TRUE);
                     break;
                 }
                 case u'c': {
@@ -368,26 +553,8 @@ void printf(CHAR16* fmt, ...){
                 }
                 case u'x': {
                     // Print a hexadecimal number
-                    UINTN num = va_arg(args, UINTN);
-                    CHAR16 numStr[21];
-                    UINTN j = 0;
-                    do{
-                        UINTN digit = num % 16;
-                        if(digit < 10){
-                            numStr[j] = u'0' + digit;
-                        } else {
-                            numStr[j] = u'A' + digit - 10;
-                        }
-                        num /= 16;
-                        j++;
-                    } while(num > 0);
-                    numStr[j] = u'\0';
-                    for(UINTN k = 0; k < j / 2; k++){
-                        CHAR16 temp = numStr[k];
-                        numStr[k] = numStr[j - k - 1];
-                        numStr[j - k - 1] = temp;
-                    }
-                    cout->OutputString(cout, numStr);
+                    UINT32 num = va_arg(args, UINT32);
+                    PrintNum((UINTN)num, 16, TRUE);
                     break;
                 }
                 case u'%': {
@@ -398,97 +565,47 @@ void printf(CHAR16* fmt, ...){
                 }
                 case u'u': {
                     // Print an unsigned 32-bit integer
-                    UINTN num = va_arg(args, UINTN);
-                    CHAR16 numStr[21];
-                    UINTN j = 0;
-                    do{
-                        numStr[j] = u'0' + num % 10;
-                        num /= 10;
-                        j++;
-                    }while(num > 0);
-                    numStr[j] = u'\0';
-                    for(UINTN k = 0; k < j / 2; k++){
-                        CHAR16 temp = numStr[k];
-                        numStr[k] = numStr[j - k - 1];
-                        numStr[j - k - 1] = temp;
-                    }
-                    cout->OutputString(cout, numStr);
+                    UINT32 num = va_arg(args, UINT32);
+                    PrintNum((UINTN)num, 10, TRUE);
+                    break;
+                }
+                case u'o': {
+                    // Print an octal number
+                    UINT32 num = va_arg(args, UINT32);
+                    PrintNum(num, 8, TRUE);
+                    break;
+                }
+                case u'b': {
+                    // Print a binary number (not standard but helpful)
+                    UINT32 num = va_arg(args, UINT32);
+                    PrintNum(num, 2, TRUE);
                     break;
                 }
                 case u'l': {
+                    i++;
                     // Potential long integer
-                    if(fmt[i + 1] == u'd'){
+                    if(fmt[i] == u'd'){
                         // Print a signed 64-bit integer
-                        i++;
                         INT64 num = va_arg(args, INT64);
-                        CHAR16 numStr[21];
-                        UINTN j = 0;
-                        if(num >= 0){
-                            do{
-                                numStr[j] = u'0' + num % 10;
-                                num /= 10;
-                                j++;
-                            } while(num > 0);
-                        }else{
-                            // The number is negative
-                            num = -num;
-                            do{
-                                numStr[j] = u'0' + num % 10;
-                                num /= 10;
-                                j++;
-                            } while(num > 0);
-                            numStr[j] = u'-';
-                            j++;
-                        }
-                        numStr[j] = u'\0';
-                        for(UINTN k = 0; k < j / 2; k++){
-                            CHAR16 temp = numStr[k];
-                            numStr[k] = numStr[j - k - 1];
-                            numStr[j - k - 1] = temp;
-                        }
-                        cout->OutputString(cout, numStr);
-                    } else if(fmt[i + 1] == u'x'){
+                        PrintNum((UINTN)num, 10, TRUE);
+                    } else if(fmt[i] == u'x'){
                         // Print a hexadecimal number (specifically 64-bit, but a UINTN on AMD64 is 64-bit)
-                        i++;
                         UINT64 num = va_arg(args, UINT64);
-                        CHAR16 numStr[21];
-                        UINTN j = 0;
-                        do{
-                            UINTN digit = num % 16;
-                            if(digit < 10){
-                                numStr[j] = u'0' + digit;
-                            } else {
-                                numStr[j] = u'A' + digit - 10;
-                            }
-                            num /= 16;
-                            j++;
-                        } while(num > 0);
-                        numStr[j] = u'\0';
-                        for(UINTN k = 0; k < j / 2; k++){
-                            CHAR16 temp = numStr[k];
-                            numStr[k] = numStr[j - k - 1];
-                            numStr[j - k - 1] = temp;
-                        }
-                        cout->OutputString(cout, numStr);
-                    } else if(fmt[i + 1] == u'u'){
+                        PrintNum((UINTN)num, 16, TRUE);                // While many don't need the cast, it's best practice to include it.
+                    } else if(fmt[i] == u'u'){
                         // Print an unsigned 64-bit integer
-                        i++;
                         UINT64 num = va_arg(args, UINT64);
-                        CHAR16 numStr[21];
-                        UINTN j = 0;
-                        do{
-                            numStr[j] = u'0' + num % 10;
-                            num /= 10;
-                            j++;
-                        } while(num > 0);
-                        numStr[j] = u'\0';
-                        for(UINTN k = 0; k < j / 2; k++){
-                            CHAR16 temp = numStr[k];
-                            numStr[k] = numStr[j - k - 1];
-                            numStr[j - k - 1] = temp;
-                        }
-                        cout->OutputString(cout, numStr);
+                        PrintNum((UINTN)num, 10, TRUE);
+                    } else if(fmt[i] == u'o'){
+                        // Print an octal number
+                        UINT64 num = va_arg(args, UINT64);
+                        PrintNum((UINTN)num, 8, TRUE);
+                    } else if(fmt[i] == u'b'){
+                        // Print a binary number
+                        UINT64 num = va_arg(args, UINT64);
+                        PrintNum((UINTN)num, 2, TRUE);
                     } else {
+                        // Invalid or unsupported format specifier
                         cout->OutputString(cout, u"Invalid format specifier\r\n");
                     }
                     break;
