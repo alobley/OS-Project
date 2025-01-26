@@ -25,7 +25,7 @@ EFIBIN=BOOTX64.EFI
 
 # Use clang for the EFI bootloader because it is easier to build using it.
 BOOT_CC=clang -target x86_64-unknown-windows -fuse-ld=lld-link -nostdlib -Wl,-subsystem:efi_application -Wl,-entry:efi_main -I$(EFI_DIR)
-BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -nostdlib #-Werror
+BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -nostdlib -Wno-varargs -Werror
 
 KERNEL_CFLAGS=-ffreestanding -m64 -O2 -Wall -Wextra -Werror -I$(SRC_DIR)/kernel -I$(LIB_DIR) -fno-stack-protector -fno-stack-check -mno-red-zone -nostdlib --std=gnu17
 
@@ -33,7 +33,7 @@ all: dirs compile_boot assemble compile_kernel copy qemu
 
 compile_boot:
 	@echo "Compiling bootloader..."
-	@$(BOOT_CC) $(BOOT_CFLAGS) $(EFI_DIR)/boot64.c $(EFI_DIR)/efi.c -o $(BUILD_DIR)/BOOTX64.EFI
+	@$(BOOT_CC) $(BOOT_CFLAGS) $(EFI_DIR)/boot64.c -o $(BUILD_DIR)/BOOTX64.EFI
 
 assemble:
 	@echo "Assembling kernel assembly..."
