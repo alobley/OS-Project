@@ -11,10 +11,9 @@ node_modules/
 vendor/
 
 # Build output
-/bin/
-/build/
-/isodir/
-/mnt/
+bin/
+build/
+mnt/
 
 # Operating system files
 .DS_Store  # macOS
