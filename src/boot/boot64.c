@@ -16,6 +16,8 @@
 #include "efi.h"
 #include <stdarg.h>
 
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+
 void printf(CHAR16* fmt, ...);
 
 EFI_SYSTEM_TABLE* st;
@@ -25,7 +27,7 @@ EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* cout;
 EFI_SIMPLE_TEXT_INPUT_PROTOCOL* cin;
 
 EFI_BOOT_SERVICES* bs;
-void* runtimeService;
+EFI_RUNTIME_SERVICES* rs;
 
 // Wait for any key to be pressed and return it
 EFI_INPUT_KEY GetKey(void){
@@ -74,6 +76,109 @@ void PrintConsoleAttributes(void){
     }
 }
 
+EFI_STATUS SetTextMode(UINTN rows){
+    EFI_INPUT_KEY key;
+    key.ScanCode = 0;
+    key.UnicodeChar = u'\0';
+    UINTN lastMode = cout->Mode->Mode;
+    EFI_STATUS status = EFI_SUCCESS;
+
+    while(true){
+        cout->ClearScreen(st->ConOut);
+        PrintConsoleAttributes();
+        printf(u"\r\nSelect Text Mode 0-%d: %d", cout->Mode->MaxMode - 1, lastMode);
+
+        // Move the cursor back one space
+        cout->SetCursorPosition(cout, cout->Mode->CursorColumn - 1, cout->Mode->CursorRow);
+
+        cout->SetCursorPosition(cout, 0, rows - 1);
+        printf(u"ESC = Exit");
+
+        // Main loop
+        key = GetKey();
+
+        UINTN thisMode = key.UnicodeChar - u'0';
+        if(thisMode >= 0 && thisMode < (UINTN)cout->Mode->MaxMode){
+            EFI_STATUS status = cout->SetMode(cout, thisMode);
+            if(EFI_ERROR(status)){
+                cout->SetMode(cout, lastMode);                                      // Revert to the last mode
+                if(status == EFI_DEVICE_ERROR){
+                    printf(u"\r\nUnsupported mode 0x%x\r\n", status);
+                }else if(status == EFI_UNSUPPORTED){
+                    printf(u"\r\nInvalid mode 0x%x\r\n", status);
+                }
+            }else{
+                lastMode = thisMode;
+            }
+        }
+
+        if(key.ScanCode == KEY_ESC){
+            // The user pressed the escape key, shut down the system
+            break;
+        }
+    }
+    return status;
+}
+
+void Shutdown(void){
+    rs->ResetSystem(EfiResetShutdown, EFI_SUCCESS, 0, NULL);
+    __builtin_unreachable();
+}
+
+#define COLOR_THEME_COLORFUL EFI_TEXT_ATTR(EFI_YELLOW, EFI_BLUE)                           // Default color theme
+#define COLOR_THEME_DARK EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK)                               // Dark color theme (classic)
+
+#define COLORFUL_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BLUE, EFI_CYAN)                           // Default highlighted text color
+#define DARK_HILIGHT_COLOR EFI_TEXT_ATTR(EFI_BACKGROUND_LIGHTGRAY, EFI_BLACK)                             // Dark highlighted text color
+
+UINT16 currentTheme = COLOR_THEME_COLORFUL;
+UINT16 currentHilight = COLORFUL_HILIGHT_COLOR;
+
+static CHAR16* themes[] = {
+    u"1. Colorful (Default)",
+    u"2. Dark"
+};
+
+void ChangeTheme(UINTN rows){
+    while(1){
+        cout->SetAttribute(cout, currentTheme);
+        cout->ClearScreen(cout);
+        printf(u"Select a color theme:\r\n");
+        for(UINTN i = 0; i < ARRAY_SIZE(themes); i++){
+            printf(themes[i]);
+            printf(u"\r\n");
+        }
+
+        cout->SetCursorPosition(cout, 0, rows - 1);
+        printf(u"ESC = Exit   1-2 = Select Theme");
+
+        EFI_INPUT_KEY key = GetKey();
+        if(key.UnicodeChar == u'1'){
+            currentTheme = COLOR_THEME_COLORFUL;
+            currentHilight = COLORFUL_HILIGHT_COLOR;
+        }
+        
+        if(key.UnicodeChar == u'2'){
+            currentTheme = COLOR_THEME_DARK;
+            currentHilight = DARK_HILIGHT_COLOR;
+        }
+        
+        if(key.ScanCode == KEY_ESC){
+            break;
+        }
+    }
+}
+
+static CHAR16* menuOptions[] = {
+    u"Boot Dedication OS",
+    u"Change Text Mode",
+    u"Set Graphics Mode",
+    u"Change Color Theme",
+    u"Shutdown",
+    u"Reboot",
+    u"Exit"
+};
+
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable){
     // Set the global variables
     st = SystemTable;
@@ -81,49 +186,120 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
     cin = SystemTable->ConIn;
     image = ImageHandle;
     bs = SystemTable->BootServices;
+    rs = SystemTable->RuntimeServices;
 
     cout->Reset(SystemTable->ConOut, false);
+    cout->SetAttribute(SystemTable->ConOut, currentTheme);
 
     EFI_INPUT_KEY key;
     key.ScanCode = 0;
     key.UnicodeChar = u'\0';
 
-    UINTN lastMode = cout->Mode->Mode;
+    UINT8 selectedOption = 0;
 
     bool exit = false;
     while(!exit){
-        cout->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_YELLOW, EFI_BLUE));
-        cout->ClearScreen(SystemTable->ConOut);
-        PrintConsoleAttributes();
-        printf(u"\r\nSelect Text Mode 0-%d: %d", cout->Mode->MaxMode - 1, lastMode);
+        cout->ClearScreen(cout);
 
-        while(true){
-            // Main loop
-            key = GetKey();
+        // Print keybinds
+        UINTN cols = 0;
+        UINTN rows = 0;
+        cout->QueryMode(cout, cout->Mode->Mode, &cols, &rows);
+        cout->SetCursorPosition(cout, 0, 0);
 
-            UINTN thisMode = key.UnicodeChar - u'0';
-            if(thisMode >= 0 && thisMode < (UINTN)cout->Mode->MaxMode){
-                EFI_STATUS status = cout->SetMode(cout, (UINTN)(key.UnicodeChar - u'0'));
-                if(EFI_ERROR(status)){
-                    cout->SetMode(cout, lastMode);                          // Revert to the last mode
-                    if(status == EFI_DEVICE_ERROR){
-                        printf(u"\r\nUnsupported mode 0x%x\r\n", status);
-                    }else if(status == EFI_UNSUPPORTED){
-                        printf(u"\r\nInvalid mode 0x%x\r\n", status);
-                    }
-                }else{
-                    lastMode = thisMode;
-                }
-                break;
-            }
-
-            if(key.ScanCode == 0x17){
-                // The user pressed the escape key
-                printf(u"\r\nShutting Down...\r\n");
-                exit = true;
-                break;
+        // Print the rest of the menu options
+        for(UINTN i = 0; i < ARRAY_SIZE(menuOptions); i++){
+            if(i != selectedOption){
+                printf(u"%s\r\n", menuOptions[i]);
+            }else{
+                cout->SetAttribute(cout, currentHilight);
+                printf(menuOptions[selectedOption]);
+                printf(u"\r\n");
+                cout->SetAttribute(cout, currentTheme);
             }
         }
+
+        cout->SetCursorPosition(cout, 0, rows - 1);
+        printf(u"ESC = Shutdown   Up/Down = Navigate   Enter = Select");
+
+        key = GetKey();
+
+        switch(key.ScanCode){
+            case KEY_ESC:
+                // Escape key pressed, return to UEFI interface
+                Shutdown();
+                break;
+            case KEY_UP:
+                // Move the cursor up
+                if(selectedOption > 0){
+                    selectedOption--;
+                }
+                break;
+            case KEY_DOWN:
+                // Move the cursor down
+                if(selectedOption < ARRAY_SIZE(menuOptions) - 1){
+                    selectedOption++;
+                }
+                break;
+            default:
+                if(key.UnicodeChar == u'\r'){
+                    // The user pressed the enter key (selected a choice)
+                    cout->ClearScreen(cout);
+                    switch(selectedOption){
+                        case 0:
+                            // Boot Dedication OS
+                            printf(u"Booting Dedication OS...\r\n");
+
+                            printf(u"Sorry! This OS doesn't exist yet!\r\n");
+
+                            cout->SetCursorPosition(cout, 0, rows - 1);
+                            printf(u"ESC = Exit");
+
+                            key = GetKey();
+
+                            break;
+                        case 1:
+                            // Change Text Mode
+                            SetTextMode(rows);
+                            break;
+                        case 2:
+                            // Set Graphics Mode
+                            cout->OutputString(cout, u"Graphics mode not supported yet\r\n");
+
+                            cout->SetCursorPosition(cout, 0, rows - 1);
+                            printf(u"ESC = Exit");
+
+                            key = GetKey();
+
+                            break;
+                        case 3:
+                            // Change Color Theme
+                            ChangeTheme(rows);
+
+                            break;
+                        case 4:
+                            // Shutdown
+                            cout->OutputString(cout, u"Shutting down...\r\n");
+                            Shutdown();
+
+                            break;
+                        case 5:
+                            // Reboot
+                            cout->OutputString(cout, u"Rebooting...\r\n");
+                            rs->ResetSystem(EfiResetWarm, EFI_SUCCESS, 0, NULL);
+
+                            break;
+                        case 6:
+                            // Exit
+                            exit = true;
+
+                            break;
+                    }
+                }
+                break;
+        }
+
+        //SetTextMode();
     }
 
     return EFI_SUCCESS;
@@ -131,6 +307,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
 
 
 // Print a formatted string to the screen
+// Yes, I know it's bad.
 // This function is huge so I'll declare a prototype and leave it at the bottom of the file.
 void printf(CHAR16* fmt, ...){
     CHAR16 c[2];

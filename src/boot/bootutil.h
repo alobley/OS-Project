@@ -22,6 +22,8 @@ typedef uint16 word;
 typedef uint32 dword;
 typedef uint64 qword;
 
+#define NULL ((void*)0)
+
 #define asm __asm__
 
 /* For reference in the kernel (best not to use this in the bootloader)

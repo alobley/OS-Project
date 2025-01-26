@@ -186,6 +186,40 @@ typedef struct EFI_SIMPLE_TEXT_INPUT_PROTOCOL {
     EFI_EVENT WaitForKey;
 } EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
 
+
+// Runtime Services
+typedef enum {
+    EfiResetCold,
+    EfiResetWarm,
+    EfiResetShutdown,
+    EfiResetPlatformSpecific
+} EFI_RESET_TYPE;
+
+typedef VOID (EFIAPI *EFI_RESET_SYSTEM)(
+    IN EFI_RESET_TYPE ResetType,
+    IN EFI_STATUS ResetStatus,
+    IN UINTN DataSize,
+    IN CHAR16* ResetData OPTIONAL
+);
+
+typedef struct {
+    EFI_TABLE_HEADER Hdr;
+    void* GetTime;
+    void* SetTime;
+    void* GetWakeupTime;
+    void* SetWakeupTime;
+    void* SetVirtualAddressMap;
+    void* ConvertPointer;
+    void* GetVariable;
+    void* GetNextVariableName;
+    void* SetVariable;
+    void* GetNextHighMonotonicCount;
+    EFI_RESET_SYSTEM ResetSystem;
+    void* UpdateCapsule;
+    void* QueryCapsuleCapabilities;
+    void* QueryVariableInfo;
+} EFI_RUNTIME_SERVICES;
+
 // Boot services
 
 typedef EFI_STATUS (EFIAPI *EFI_WAIT_FOR_EVENT)(
@@ -253,8 +287,7 @@ typedef struct _EFI_SYSTEM_TABLE {
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut;
     EFI_HANDLE StandardErrorHandle;
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* StdErr;
-    //EFI_RUNTIME_SERVICES* RuntimeServices;
-    void* RuntimeServices;
+    EFI_RUNTIME_SERVICES* RuntimeServices;
     EFI_BOOT_SERVICES* BootServices;
     UINTN NumberOfTableEntries;
     //EFI_CONFIGURATION_TABLE* ConfigurationTable;
@@ -294,5 +327,10 @@ typedef EFI_STATUS (EFIAPI *EFI_IMAGE_ENTRY_POINT)(
 #define EFI_BACKGROUND_LIGHTGRAY 0x70
 
 #define EFI_TEXT_ATTR(Foreground, Background) ((Foreground) | ((Background) << 4))
+
+// TODO: Look at the spec and replace with typedef enum or something
+#define KEY_UP 0x01
+#define KEY_DOWN 0x02
+#define KEY_ESC 0x17
 
 #endif

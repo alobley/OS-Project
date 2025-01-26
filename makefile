@@ -7,7 +7,7 @@ EMARGS+=-machine q35,accel=kvm -device vmware-svga,vgamem_mb=512 -device ich9-in
 EMARGS+=-netdev user,id=net0,hostfwd=tcp::2222-:22 -device e1000,netdev=net0 -device usb-ehci,id=usb-bus -device usb-tablet -device usb-kbd -device usb-mouse
 EMARGS+=-drive file=bin/drive.img,format=raw,if=none,id=drive-sata0 -device ich9-ahci,id=ahci -device ide-hd,drive=drive-sata0,bus=ahci.0 
 EMARGS+=-L /usr/share/edk2/x64/ -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd 
-EMARGS+=-drive if=pflash,format=raw,unit=1,file=bin/OVMF_VARS.fd -d int #-no-reboot -no-shutdown
+EMARGS+=-d int #-no-reboot -no-shutdown
 
 BOOT_FILE=boot64
 KERNEL_FILE=kernel
@@ -25,7 +25,7 @@ EFIBIN=BOOTX64.EFI
 
 # Use clang for the EFI bootloader because it is easier to build using it.
 BOOT_CC=clang -target x86_64-unknown-windows -fuse-ld=lld-link -nostdlib -Wl,-subsystem:efi_application -Wl,-entry:efi_main -I$(EFI_DIR)
-BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -nostdlib -Wno-varargs -Werror
+BOOT_CFLAGS=-std=c17 -Wall -Wextra -Wpedantic -mno-red-zone -ffreestanding -Wno-varargs -Werror
 
 KERNEL_CFLAGS=-ffreestanding -m64 -O2 -Wall -Wextra -Werror -I$(SRC_DIR)/kernel -I$(LIB_DIR) -fno-stack-protector -fno-stack-check -mno-red-zone -nostdlib --std=gnu17
 
