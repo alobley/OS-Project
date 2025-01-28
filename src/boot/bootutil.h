@@ -25,6 +25,11 @@ typedef uint64 qword;
 
 #define asm __asm__
 
+typedef struct {
+    UINTN rows;
+    UINTN cols;
+} timer_context_t;
+
 /* For reference in the kernel (best not to use this in the bootloader)
 typedef enum {
     EfiReservedMemoryType      = 0,  // Reserved memory (e.g., firmware, I/O)
@@ -95,6 +100,6 @@ typedef struct Boot_Utilities {
 } bootutil_t;
 */
 
-#define BGRA(r, g, b, a) ((a << 24) | (r << 16) | (g << 8) | b)
+#define BGR(b, g, r) (r | (g << 8) | b << 16)
 
 #endif // BOOTUTIL_H

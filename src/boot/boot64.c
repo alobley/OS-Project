@@ -2,7 +2,7 @@
  * File: boot64.c
  * Author: xWatexx (aka alobley)
  * Created: 01/25/2025
- * Last Modified: 01/25/2025
+ * Last Modified: 01/28/2025
  * Version: 0.1 Alpha
  * 
  * Description:
@@ -45,6 +45,9 @@ INT32 bestMode = 0;
 
 BOOLEAN isGraphicsMode = TRUE;
 
+timer_context_t context;
+EFI_EVENT timerEvent;
+
 // Wait for any key to be pressed and return it
 EFI_INPUT_KEY GetKey(void){
     EFI_EVENT events[1];
@@ -64,6 +67,37 @@ EFI_INPUT_KEY GetKey(void){
     return key;
 }
 
+void EFIAPI PrintDateTime(EFI_EVENT event, VOID* context){
+    (VOID)event;
+    timer_context_t* ctx = (timer_context_t*)context;
+
+    // Save current cursor position
+    UINT32 col = cout->Mode->CursorColumn;
+    UINT32 row = cout->Mode->CursorRow;
+
+    cout->SetCursorPosition(cout, ctx->cols - 20, ctx->rows - 1);
+
+    EFI_TIME time;
+    rs->GetTime(&time, NULL);
+
+    UINT8 hour = time.Hour;
+
+    if(time.Hour > 12){
+        hour -= 12;
+    }
+
+    printf(u"%c%d-%c%d-%d %c%d:%c%d:%c%d", 
+           time.Month < 10 ? u'0' : u'\0', time.Month, 
+           time.Day < 10 ? u'0' : u'\0', time.Day, 
+           time.Year, 
+           hour < 10 ? u'0' : u'\0', hour, 
+           time.Minute < 10 ? u'0' : u'\0', time.Minute, 
+           time.Second < 10 ? u'0' : u'\0', time.Second);
+
+    // Restore cursor position
+    cout->SetCursorPosition(cout, col, row);
+}
+
 void PrintConsoleAttributes(void){
     UINTN cols = 0;
     UINTN rows = 0;
@@ -73,7 +107,7 @@ void PrintConsoleAttributes(void){
     // Print the current console info to the screen
     printf(u"Console Info:\r\n");
     printf(u"     Current Text Mode: %d (%dx%d)\r\n", cout->Mode->Mode, cols, rows);
-    printf(u"     Max Mode: %d\r\n", cout->Mode->MaxMode);
+    printf(u"     Max Mode: %d\r\n", cout->Mode->MaxMode - 1);
     printf(u"     Attribute: 0x%x\r\n", cout->Mode->Attribute);
     printf(u"     Cursor Column: %d\r\n", cout->Mode->CursorColumn);
     printf(u"     Cursor Row: %d\r\n", cout->Mode->CursorRow);
@@ -108,7 +142,7 @@ EFI_STATUS SetHighestTextMode(){
             continue;
         }
 
-        if(cols > maxCols && rows > maxRows){
+        if(cols > maxCols || rows > maxRows){
             maxCols = cols;
             maxRows = rows;
             bestMode = i;
@@ -134,8 +168,10 @@ EFI_STATUS SetTextMode(UINTN rows){
 
     while(TRUE){
         cout->ClearScreen(cout);
+        cout->QueryMode(cout, cout->Mode->Mode, NULL, &rows);
         PrintConsoleAttributes();
         printf(u"\r\nSelect Text Mode 0-%d: %d", cout->Mode->MaxMode - 1, lastMode);
+        PrintDateTime(timerEvent, (VOID*)&context);
 
         // Move the cursor back one space
         //cout->SetCursorPosition(cout, cout->Mode->CursorColumn - 1, cout->Mode->CursorRow);
@@ -158,6 +194,7 @@ EFI_STATUS SetTextMode(UINTN rows){
                 }
             }else{
                 lastMode = thisMode;
+                cout->QueryMode(cout, cout->Mode->Mode, &context.cols, &context.rows);
             }
         }
 
@@ -169,6 +206,16 @@ EFI_STATUS SetTextMode(UINTN rows){
     return status;
 }
 
+UINTN WaitFail(){
+    EFI_INPUT_KEY key = GetKey();
+    while(key.ScanCode != KEY_ESC){
+        key = GetKey();
+    }
+    return EFI_UNSUPPORTED;
+}
+
+
+// TODO: Optimize this function
 EFI_STATUS SetGraphicsMode(void){
     UINTN cols = 0;
     UINTN rows = 0;
@@ -195,10 +242,30 @@ EFI_STATUS SetGraphicsMode(void){
             }
         }
     }
+
+    cout->OutputString(cout, u"Graphics mode information:\r\n");
+    printf(u"     Max Mode: %d\r\n", gop->Mode->MaxMode - 1);
+    printf(u"     Current Mode: %d\r\n", gop->Mode->Mode);
+    printf(u"     Screen Dimensions: %ux%u\r\n", gop->Mode->Info->HorizontalResolution, gop->Mode->Info->VerticalResolution);
+    printf(u"     Framebuffer Address: 0x%x\r\n", gop->Mode->FrameBufferBase);
+    printf(u"     Framebuffer Size: %u Bytes\r\n", gop->Mode->FrameBufferSize);
+    printf(u"     Pixel Format: %d\r\n", gop->Mode->Info->PixelFormat);
+    printf(u"     Pixels Per Scan Line: %u\r\n", gop->Mode->Info->PixelsPerScanLine);
+    cout->OutputString(cout, u"Available GOP Modes:\r\n");
+    PrintDateTime(timerEvent, (VOID*)&context);
+
+    UINT32 savedCursorColumn = cout->Mode->CursorColumn;
+    UINT32 savedCursorRow = cout->Mode->CursorRow;
     
     while(TRUE){
-        cout->ClearScreen(cout);
-        cout->OutputString(cout, u"Graphics mode information:\r\n");
+        cout->SetCursorPosition(cout, savedCursorColumn, savedCursorRow);
+        // Clear only the part of the screen where the menu will be
+        for(UINTN i = savedCursorRow; i < rows - 2; i++){
+            cout->SetCursorPosition(cout, 0, i);
+            // It only needs to be as long as the longest string
+            cout->OutputString(cout, u"                                                                                   ");
+        }
+        cout->SetCursorPosition(cout, savedCursorColumn, savedCursorRow);
 
         //status = gop->QueryMode(gop, gop->Mode->Mode, &modeSize, &info);
         if(EFI_ERROR(status)){
@@ -206,24 +273,10 @@ EFI_STATUS SetGraphicsMode(void){
             cout->SetCursorPosition(cout, 0, rows - 1);
             cout->OutputString(cout, u"ESC = Exit");
 
-            gk:
-            EFI_INPUT_KEY key = GetKey();
-            if(key.ScanCode == KEY_ESC){
-                return EFI_UNSUPPORTED;
-            }
-            goto gk;
+            return WaitFail();
         }
 
-        printf(u"     Max Mode: %d\r\n", gop->Mode->MaxMode);
-        printf(u"     Current Mode: %d\r\n", gop->Mode->Mode);
-        printf(u"     Screen Dimensions: %ux%u\r\n", gop->Mode->Info->HorizontalResolution, gop->Mode->Info->VerticalResolution);
-        printf(u"     Framebuffer Address: 0x%x\r\n", gop->Mode->FrameBufferBase);
-        printf(u"     Framebuffer Size: %u Bytes\r\n", gop->Mode->FrameBufferSize);
-        printf(u"     Pixel Format: %d\r\n", gop->Mode->Info->PixelFormat);
-        printf(u"     Pixels Per Scan Line: %u\r\n", gop->Mode->Info->PixelsPerScanLine);
-
         numOptions = gop->Mode->MaxMode;
-        cout->OutputString(cout, u"Available GOP Modes:\r\n");
 
         // Get the number of columns and rows for the menu
         UINTN cols = 0;
@@ -233,6 +286,8 @@ EFI_STATUS SetGraphicsMode(void){
         // Get the screen dimensions for text mode
         UINTN topRow = cout->Mode->CursorRow + 2;
         UINTN bottomRow = rows - 2;             // Leave room for controls at the bottom
+
+        // Clear only the area where the menu will be
 
         for(INT32 i = printStart; i < numOptions; i++){
             gop->QueryMode(gop, i, &modeSize, &info);
@@ -286,7 +341,8 @@ EFI_STATUS SetGraphicsMode(void){
                 if(key.UnicodeChar == u'\r'){
                     // The user pressed the enter key (selected a choice)
                     gop->SetMode(gop, currentOption);
-                    cout->ClearScreen(cout);
+                    EFI_GRAPHICS_OUTPUT_BLT_PIXEL px = {0x98, 0, 0, 0};
+                    gop->Blt(gop, &px, EfiBltVideoFill, 0, 0, 0, 0, gop->Mode->Info->HorizontalResolution, gop->Mode->Info->VerticalResolution, 0);
                 }
                 break;
         }
@@ -308,6 +364,7 @@ void ChangeTheme(UINTN rows){
     while(1){
         cout->SetAttribute(cout, currentTheme);
         cout->ClearScreen(cout);
+        PrintDateTime(timerEvent, (VOID*)&context);
         printf(u"Select a color theme:\r\n");
         for(UINTN i = 0; i < ARRAY_SIZE(themes); i++){
             printf(themes[i]);
@@ -344,6 +401,8 @@ static CHAR16* menuOptions[] = {
     u"Exit"
 };
 
+
+// TODO: Open CFG file for configuration, allow booting of other OSes, and allow for setting themes in the CFG file
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable){
     // Set the global variables
     st = SystemTable;
@@ -353,6 +412,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
     bs = SystemTable->BootServices;
     rs = SystemTable->RuntimeServices;
     cerr = SystemTable->StdErr;
+
+    // Disable watchdog timer
+    bs->SetWatchdogTimer(0, 0, 0, NULL);
 
     EFI_GUID gopGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 
@@ -376,6 +438,14 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
 
     UINT8 selectedOption = 0;
 
+    context.rows = rows;
+    context.cols = cols;
+
+    // Timer event setup for putting the current date and time onto the screen
+    bs->CreateEvent(EVT_TIMER | EVT_NOTIFY_SIGNAL, TPL_CALLBACK, PrintDateTime, (VOID*)&context, &timerEvent);
+
+    bs->SetTimer(timerEvent, TimerPeriodic, 10000000); // 1 second
+
     BOOLEAN exit = FALSE;
     while(!exit){
         cout->ClearScreen(cout);
@@ -396,6 +466,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                 cout->SetAttribute(cout, currentTheme);
             }
         }
+
+        PrintDateTime(timerEvent, (VOID*)&context);
 
         cout->SetCursorPosition(cout, 0, rows - 1);
         printf(u"ESC = Shutdown   Up/Down = Navigate   Enter = Select");
@@ -429,6 +501,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                             cout->OutputString(cout, u"Booting Dedication OS...\r\n");
 
                             cout->OutputString(cout, u"Sorry! This OS doesn't exist yet!\r\n");
+
+                            PrintDateTime(timerEvent, (VOID*)&context);
 
                             cout->SetCursorPosition(cout, 0, rows - 1);
                             cout->OutputString(cout, u"ESC = Exit");
@@ -476,6 +550,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
         }
     }
 
+    // Clean up
+    bs->CloseEvent(timerEvent);
     return EFI_SUCCESS;
 }
 
@@ -543,10 +619,6 @@ void printf(CHAR16* fmt, ...){
                 case u'c': {
                     // Print a character
                     CHAR16 ch = va_arg(args, CHAR16);
-                    if(ch == u'\0'){
-                        // Edge case: null character
-                        cout->OutputString(cout, u"None");
-                    }
                     c[0] = ch;
                     cout->OutputString(cout, c);
                     break;

@@ -3,11 +3,11 @@ CC=gcc
 ARCH=x86_64
 
 EMARGS=-m 8G -smp 4 -vga none -display gtk -cpu qemu64 -enable-kvm
-EMARGS+=-machine q35,accel=kvm -device vmware-svga,vgamem_mb=512 -device ich9-intel-hda -device hda-output 
+EMARGS+=-machine q35,accel=kvm -device vmware-svga,vgamem_mb=128 -device ich9-intel-hda -device hda-output
 EMARGS+=-netdev user,id=net0,hostfwd=tcp::2222-:22 -device e1000,netdev=net0 -device usb-ehci,id=usb-bus -device usb-tablet -device usb-kbd -device usb-mouse
-EMARGS+=-drive file=bin/drive.img,format=raw,if=none,id=drive-sata0 -device ich9-ahci,id=ahci -device ide-hd,drive=drive-sata0,bus=ahci.0 
-EMARGS+=-L /usr/share/edk2/x64/ -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd 
-EMARGS+=-d int #-no-reboot -no-shutdown
+EMARGS+=-drive file=bin/drive.img,format=raw,if=none,id=drive-sata0 -device ich9-ahci,id=ahci -device ide-hd,drive=drive-sata0,bus=ahci.0
+EMARGS+=-L /usr/share/edk2/x64/ -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
+EMARGS+=-rtc base=localtime,clock=host -parallel none #-d int -no-reboot -no-shutdown
 
 BOOT_FILE=boot64
 KERNEL_FILE=kernel

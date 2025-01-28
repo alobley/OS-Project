@@ -2,7 +2,7 @@
  * File: efi.h
  * Author: xWatexx (aka alobley)
  * Created: 01/25/2025
- * Last Modified: 01/25/2025
+ * Last Modified: 01/28/2025
  * Version: 0.1 Alpha
  * 
  * Description:
@@ -25,6 +25,29 @@
 typedef unsigned char BOOLEAN;
 #define FALSE 0
 #define TRUE 1
+
+#define EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL 0x00000001
+#define EFI_OPEN_PROTOCOL_GET_PROTOCOL 0x00000002
+#define EFI_OPEN_PROTOCOL_TEST_PROTOCOL 0x00000004
+#define EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER 0x00000008
+#define EFI_OPEN_PROTOCOL_BY_DRIVER 0x00000010
+#define EFI_OPEN_PROTOCOL_EXCLUSIVE 0x00000020
+
+#define EVT_TIMER 0x80000000
+#define EVT_RUNTIME 0x40000000
+#define EVT_NOTIFY_WAIT 0x00000100
+#define EVT_NOTIFY_SIGNAL 0x00000200
+#define EVT_SIGNAL_EXIT_BOOT_SERVICES 0x00000201
+#define EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE 0x60000202
+
+#define TPL_APPLICATION 4
+#define TPL_CALLBACK 8
+#define TPL_NOTIFY 16
+#define TPL_HIGH_LEVEL 31
+
+#define EFI_TIME_ADJUST_DAYLIGHT 0x01
+#define EFI_TIME_IN_DAYLIGHT 0x02
+#define EFI_UNSPECIFIED_TIMEZONE 0x07FF
 
 typedef signed long long INTN;
 typedef unsigned long long UINTN;
@@ -50,6 +73,14 @@ typedef UINT64 EFI_VIRTUAL_ADDRESS;
 
 typedef void VOID;
 
+typedef VOID* EFI_HANDLE;
+
+typedef VOID* EFI_EVENT;
+
+typedef UINT64 EFI_LBA;
+
+typedef UINTN EFI_TPL;
+
 typedef struct _EFI_GUID {
     UINT32 TimeLow;
     UINT16 TimeMid;
@@ -62,6 +93,9 @@ typedef struct _EFI_GUID {
 #define EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID \
     {0x9042a9de, 0x23dc, 0x4a38, 0x96, 0xfb, {0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}}
 
+#define EFI_SIMPLE_POINTER_PROTOCOL_GUID \
+    {0x31878c87, 0x0b75, 0x11d5, 0x9a, 0x4f, {0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d}}
+
 typedef UINTN EFI_STATUS;
 
 #define EFI_SUCCESS 0ULL
@@ -73,19 +107,12 @@ typedef UINTN EFI_STATUS;
 #define EFI_UNSUPPORTED ENCODE_ERROR(3)
 #define EFI_DEVICE_ERROR ENCODE_ERROR(7)
 
-typedef VOID* EFI_HANDLE;
-
-typedef VOID* EFI_EVENT;
 #define EVT_TIMER 0x80000000
 #define EVT_RUNTIME 0x40000000
 #define EVT_NOTIFY_WAIT 0x00000100
 #define EVT_NOTIFY_SIGNAL 0x00000200
 #define EVT_SIGNAL_EXIT_BOOT_SERVICES 0x00000201
 #define EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE 0x60000202
-
-typedef UINT64 EFI_LBA;
-
-typedef UINTN EFI_TPL;
 
 typedef struct _EFI_TABLE_HEADER {
     UINT64 Signature;
@@ -94,6 +121,50 @@ typedef struct _EFI_TABLE_HEADER {
     UINT32 CRC32;
     UINT32 Reserved;
 } EFI_TABLE_HEADER;
+
+// Simple pointer protocol
+typedef struct EFI_SIMPLE_POINTER_PROTOCOL EFI_SIMPLE_POINTER_PROTOCOL;
+
+typedef struct {
+    UINT64 ResolutionX;
+    UINT64 ResolutionY;
+    UINT64 ResolutionZ;
+    BOOLEAN LeftButton;
+    BOOLEAN RightButton;
+} EFI_SIMPLE_POINTER_MODE;
+
+typedef EFI_STATUS (EFIAPI *EFI_SIMPLE_POINTER_RESET)(
+    IN EFI_SIMPLE_POINTER_PROTOCOL* This,
+    IN BOOLEAN ExtendedVerification
+);
+
+typedef struct {
+    INT32 RelativeMovementX;
+    INT32 RelativeMovementY;
+    INT32 RelativeMovementZ;
+    BOOLEAN LeftButton;
+    BOOLEAN RightButton;
+} EFI_SIMPLE_POINTER_STATE;
+
+typedef EFI_STATUS (EFIAPI *EFI_SIMPLE_POINTER_GET_STATE)(
+    IN EFI_SIMPLE_POINTER_PROTOCOL* This,
+    IN OUT EFI_SIMPLE_POINTER_STATE* State
+);
+
+typedef struct {
+    UINT64 ResolutionX;
+    UINT64 ResolutionY;
+    UINT64 ResolutionZ;
+    BOOLEAN LeftButton;
+    BOOLEAN RightButton;
+} EFI_SIMPLE_INPUT_MODE;
+
+typedef struct EFI_SIMPLE_POINTER_PROTOCOL {
+    EFI_SIMPLE_POINTER_RESET Reset;
+    EFI_SIMPLE_POINTER_GET_STATE GetState;
+    EFI_EVENT WaitForInput;
+    EFI_SIMPLE_INPUT_MODE* Mode;
+} EFI_SIMPLE_POINTER_PROTOCOL;
 
 
 // Text output protocol
@@ -291,8 +362,33 @@ typedef VOID (EFIAPI *EFI_RESET_SYSTEM)(
 );
 
 typedef struct {
+    UINT16 Year;
+    UINT8 Month;
+    UINT8 Day;
+    UINT8 Hour;
+    UINT8 Minute;
+    UINT8 Second;
+    UINT8 Pad1;
+    UINT32 Nanosecond;
+    INT16 TimeZone;                         // Offset from UTC in minutes
+    UINT8 Daylight;
+    UINT8 Pad2;
+} EFI_TIME;
+
+typedef struct {
+    UINT32 Resolution;                      // The accuracy of the time in counts per second
+    UINT32 Accuracy;                        // Error rate in parts per million
+    BOOLEAN SetsToZero;                     // Whether the time is set to zero when the system time is set
+} EFI_TIME_CAPABILITIES;
+
+typedef EFI_STATUS (EFIAPI *EFI_GET_TIME)(
+    OUT EFI_TIME* Time,
+    OUT EFI_TIME_CAPABILITIES* Capabilities OPTIONAL
+);
+
+typedef struct {
     EFI_TABLE_HEADER Hdr;
-    void* GetTime;
+    EFI_GET_TIME GetTime;
     void* SetTime;
     void* GetWakeupTime;
     void* SetWakeupTime;
@@ -321,6 +417,76 @@ typedef EFI_STATUS (EFIAPI *EFI_LOCATE_PROTOCOL)(
     OUT VOID** Interface
 );
 
+typedef enum {
+    AllHandles,
+    ByRegisterNotify,
+    ByProtocol
+} EFI_LOCATE_SEARCH_TYPE;
+
+typedef enum {
+    TimerCancel,
+    TimerPeriodic,
+    TimerRelative
+} EFI_TIMER_DELAY;
+
+typedef EFI_STATUS (EFIAPI *EFI_LOCATE_HANDLE_BUFFER)(
+    IN EFI_LOCATE_SEARCH_TYPE SearchType,
+    IN EFI_GUID* Protocol OPTIONAL,
+    IN VOID* SearchKey OPTIONAL,
+    IN OUT UINTN* NoHandles,
+    OUT EFI_HANDLE** Buffer
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_FREE_POOL)(
+    IN VOID* Buffer
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_OPEN_PROTOCOL)(
+    IN EFI_HANDLE Handle,
+    IN EFI_GUID* Protocol,
+    OUT VOID** Interface OPTIONAL,
+    IN EFI_HANDLE AgentHandle,
+    IN EFI_HANDLE ControllerHandle,
+    IN UINT32 Attributes
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_CLOSE_PROTOCOL)(
+    IN EFI_HANDLE Handle,
+    IN EFI_GUID* Protocol,
+    IN EFI_HANDLE AgentHandle,
+    IN EFI_HANDLE ControllerHandle
+);
+
+typedef VOID (EFIAPI *EFI_EVENT_NOTIFY)(
+    IN EFI_EVENT Event,
+    IN VOID* Context
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_CREATE_EVENT)(
+    IN UINT32 Type,
+    IN EFI_TPL NotifyTpl,
+    IN EFI_EVENT_NOTIFY NotifyFunction OPTIONAL,
+    IN VOID* NotifyContext OPTIONAL,
+    OUT EFI_EVENT* Event
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_CLOSE_EVENT)(
+    IN EFI_EVENT Event
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_SET_TIMER)(
+    IN EFI_EVENT Event,
+    IN EFI_TIMER_DELAY Type,
+    IN UINT64 TriggerTime                       // 100 ns units
+);
+
+typedef EFI_STATUS (EFIAPI *EFI_SET_WATCHDOG_TIMER)(
+    IN UINTN Timeout,
+    IN UINT64 WatchdogCode,
+    IN UINTN DataSize,
+    IN CHAR16* WatchdogData OPTIONAL
+);
+
 typedef struct {
     EFI_TABLE_HEADER Hdr;
     void* RaiseTPL;
@@ -329,12 +495,12 @@ typedef struct {
     void* FreePages;
     void* GetMemoryMap;
     void* AllocatePool;                                         // Allocates pool memory (literally just malloc)
-    void* FreePool;                                             // Frees pool memory (literally just free)
-    void* CreateEvent;
-    void* SetTimer;
+    EFI_FREE_POOL FreePool;                                     // Frees pool memory (literally just free)
+    EFI_CREATE_EVENT CreateEvent;
+    EFI_SET_TIMER SetTimer;
     EFI_WAIT_FOR_EVENT WaitForEvent;
     void* SignalEvent;
-    void* CloseEvent;
+    EFI_CLOSE_EVENT CloseEvent;
     void* CheckEvent;
     void* InstallProtocolInterface;
     void* ReinstallProtocolInterface;
@@ -352,14 +518,14 @@ typedef struct {
     void* ExitBootServices;                                     // Exits the boot services (required before loading and running a kernel)
     void* GetNextMonotonicCount;
     void* Stall;
-    void* SetWatchdogTimer;
+    EFI_SET_WATCHDOG_TIMER SetWatchdogTimer;
     void* ConnectController;
     void* DisconnectController;
-    void* OpenProtocol;
-    void* CloseProtocol;
+    EFI_OPEN_PROTOCOL OpenProtocol;
+    EFI_CLOSE_PROTOCOL CloseProtocol;
     void* OpenProtocolInformation;
     void* ProtocolsPerHandle;
-    void* LocateHandleBuffer;
+    EFI_LOCATE_HANDLE_BUFFER LocateHandleBuffer;
     EFI_LOCATE_PROTOCOL LocateProtocol;
     void* InstallMultipleProtocolInterfaces;
     void* UninstallMultipleProtocolInterfaces;
