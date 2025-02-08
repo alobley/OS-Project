@@ -1,16 +1,3 @@
-<<<<<<< HEAD
-#include <bootloader.h>
-#include <util.h>
-
-NORETURN void kernel_main(bootutil_t* bu){
-    uint32_t e = bu->screenBpp;
-    for(int i = 0; i < 10; i++){
-        e = i;
-        i = e;
-    }
-
-    for(;;);
-=======
 #include <util.h>
 #include <stdint.h>
 #include <console.h>
@@ -49,5 +36,4 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     for(;;);
     __builtin_unreachable();
->>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 }
