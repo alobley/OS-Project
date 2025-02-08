@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-OUTPUT_FORMAT("elf64-x86-64")
-=======
->>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 ENTRY(_start)
 
 SECTIONS
