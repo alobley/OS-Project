@@ -11,9 +11,16 @@ node_modules/
 vendor/
 
 # Build output
+<<<<<<< HEAD
 bin/
 build/
 mnt/
+=======
+/bin/
+/build/
+/isodir/
+/mnt/
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 
 # Operating system files
 .DS_Store  # macOS
@@ -22,7 +29,10 @@ Thumbs.db  # Windows
 # IDE and editor files
 .vscode/
 .idea/
+<<<<<<< HEAD
 .VSCodeCounter/
+=======
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 *.swp
 
 # Cross-compilation files
@@ -36,4 +46,8 @@ Thumbs.db  # Windows
 
 # Generated files
 *.map
+<<<<<<< HEAD
 *.d
+=======
+*.d
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)

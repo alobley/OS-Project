@@ -1,4 +1,5 @@
 #ifndef STDINT_H
+<<<<<<< HEAD
 #define STDINT_H 1
 
 // Exact-width integer types
@@ -7,11 +8,24 @@ typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long long uint64_t;
 
+=======
+#define STDINT_H
+
+// Exact-width integer types
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 typedef signed char int8_t;
 typedef signed short int16_t;
 typedef signed int int32_t;
 typedef signed long long int64_t;
 
+<<<<<<< HEAD
+=======
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 // Minimum-width integer types
 typedef signed char int_least8_t;
 typedef signed short int_least16_t;
@@ -25,22 +39,39 @@ typedef unsigned long long uint_least64_t;
 
 // Fastest minimum-width integer types
 typedef signed char int_fast8_t;
+<<<<<<< HEAD
 typedef signed int int_fast16_t;
+=======
+typedef signed short int_fast16_t;
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 typedef signed int int_fast32_t;
 typedef signed long long int_fast64_t;
 
 typedef unsigned char uint_fast8_t;
+<<<<<<< HEAD
 typedef unsigned int uint_fast16_t;
+=======
+typedef unsigned short uint_fast16_t;
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 typedef unsigned int uint_fast32_t;
 typedef unsigned long long uint_fast64_t;
 
 // Greatest-width integer types
+<<<<<<< HEAD
 typedef long long intmax_t;
 typedef unsigned long long uintmax_t;
 
 // Integer types capable of holding object pointers
 typedef long long intptr_t;
 typedef unsigned long long uintptr_t;
+=======
+typedef signed long long intmax_t;
+typedef unsigned long long uintmax_t;
+
+// Integer types capable of holding object pointers
+typedef signed long intptr_t;
+typedef unsigned long uintptr_t;
+>>>>>>> a9a2e67 (Rewrote again, back at 32-bit and implemented a fully functional paging setup that is totally flawless and has no flaws at all)
 
 // Limits of exact-width integer types
 #define INT8_MIN (-128)
