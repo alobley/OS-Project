@@ -6,8 +6,18 @@
  * - Implement a way to have better text customization (more colors, better way to change colors)
 */
 
+volatile uintptr_t VGA_ADDRESS = 0xB8000;
+
 int16_t cursor_x = 0;
 int16_t cursor_y = 0;
+
+void RemapVGA(uintptr_t addr){
+    VGA_ADDRESS = addr + (0xB8000 - 0xA0000);
+}
+
+uintptr_t GetVGAAddress(void){
+    return VGA_ADDRESS;
+}
 
 // Move the VGA cursor's position on the screen
 HOT void MoveCursor(uint16_t x, uint16_t y){
@@ -24,7 +34,8 @@ HOT void MoveCursor(uint16_t x, uint16_t y){
     *(uint16_t*)((VGA_ADDRESS + (offset * 2)) + 1) = VGA_WHITE_ON_BLACK;
 }
 
-// Scroll the screen up one line
+// Scroll the screen up one line (software-based implementation)
+// Implement hardware-based with mode X?
 HOT void Scroll(void){
     for(uint16_t i = 0; i < VGA_SIZE - VGA_WIDTH; i++){
         *(uint16_t*)(VGA_ADDRESS + (i * 2)) = *(uint16_t*)(VGA_ADDRESS + ((i + VGA_WIDTH) * 2));
@@ -39,7 +50,7 @@ HOT void Scroll(void){
 }
 
 // Clear the screen
-void ClearScreen(void){
+HOT void ClearScreen(void){
     for(uint16_t i = 0; i < VGA_BYTES; i++){
         // Change this out for SIMD instructions?
         *(uint16_t*)(VGA_ADDRESS + (i * 2)) = (VGA_WHITE_ON_BLACK << 8) | ' ';
@@ -60,10 +71,6 @@ HOT void WriteChar(char c){
     if(cursor_x >= VGA_WIDTH){
         cursor_x = 0;
         cursor_y++;
-    }
-
-    if(cursor_y >= VGA_HEIGHT){
-        cursor_y = 0;
     }
 
     if(cursor_y >= VGA_HEIGHT){
@@ -121,6 +128,50 @@ HOT void PrintNum(uint64_t num, uint8_t base, bool s){
     WriteString(buffer);
 }
 
+HOT void PrintFloat(double num, int precision){
+    char buffer[65];                    // Maximum of 64 characters for a double
+
+    // Check if the number is negative
+    if(num < 0){
+        num = -num;
+        WriteChar('-');
+    }
+
+    uint64_t whole = (uint64_t)num;
+    double fraction = num - whole;
+
+    int i = 0;
+    if(whole == 0){
+        buffer[i++] = '0';
+    } else {
+        while(whole > 0){
+            buffer[i++] = (whole % 10) + '0';
+            whole /= 10;
+        }
+    }
+
+    // Reverse the integer string
+    for(size_t j = 0; j < (size_t)i / 2; j++){
+        char temp = buffer[j];
+        buffer[j] = buffer[i - j - 1];
+        buffer[i - j - 1] = temp;
+    }
+
+    // Print the integer part
+    WriteString(buffer);
+    WriteChar('.');
+
+    if(precision > 0){
+        for(int k = 0; k < precision; k++){
+            fraction *= 10;
+            WriteChar((int)fraction + '0');
+            fraction -= (int)fraction;
+        }
+    }else{
+        WriteChar('0');
+    }
+}
+
 HOT void printf(const char* fmt, ...){
     char c[2] = {'\0', '\0'};
     va_list args;
@@ -164,6 +215,11 @@ HOT void printf(const char* fmt, ...){
                     PrintNum((uint64_t)x, 10, false);
                     break;
                 }
+                case 'f': {
+                    double x = va_arg(args, double);
+                    PrintFloat(x, 2);
+                    break;
+                }
                 case 'l': {
                     extra_l:
                     i++;
@@ -186,6 +242,9 @@ HOT void printf(const char* fmt, ...){
                         case 'l':
                             // Yes I know this isn't best practice, but it's simple and it works very well without recursion
                             goto extra_l;
+                        case 'f':
+                            PrintFloat(va_arg(args, double), 2);
+                            break;
                         default:
                             WriteChar('%');
                             WriteChar('l');

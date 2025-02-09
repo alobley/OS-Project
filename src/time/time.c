@@ -29,7 +29,7 @@ void AddTimerCallback(timer_callback_t callback, uint64_t interval){
         printf("KERNEL PANIC: Too many timers!\n");
         return;
     }
-    TimerCallbackEntry* entry = (TimerCallbackEntry*)ALLOC_STUB(sizeof(TimerCallbackEntry));
+    TimerCallbackEntry* entry = (TimerCallbackEntry*)halloc(sizeof(TimerCallbackEntry));
     if(entry == NULL){
         // Memory allocation failed
         printf("KERNEL PANIC: Memory allocation failed!\n");
@@ -65,7 +65,7 @@ void RemoveTimerCallback(timer_callback_t* callback){
         timerCallbacks = entry->next;
     }
 
-    DEALLOC_STUB(entry);
+    hfree(entry);
 }
 
 uint64_t GetTicks(){

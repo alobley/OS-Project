@@ -96,7 +96,7 @@ void InitIDT(){
 void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case 1: {
-            printf("Hello from the kernel!\n");
+            printf("Debug!\n");
             break;
         }
         default: {

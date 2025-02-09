@@ -39,8 +39,8 @@ typedef signed long long intmax_t;
 typedef unsigned long long uintmax_t;
 
 // Integer types capable of holding object pointers
-typedef signed long intptr_t;
-typedef unsigned long uintptr_t;
+typedef signed int intptr_t;
+typedef unsigned int uintptr_t;
 
 // Limits of exact-width integer types
 #define INT8_MIN (-128)

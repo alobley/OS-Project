@@ -1,4 +1,5 @@
 #include <paging.h>
+#include <alloc.h>
 
 #define TOTAL_PAGES (0xFFFFFFFF / PAGE_SIZE)    // 1048576 pages
 #define TOTAL_BITS (TOTAL_PAGES / 8)            // 131072 bytes
@@ -108,18 +109,25 @@ physaddr_t FindValidFrame(){
 int palloc(virtaddr_t virt, uint32_t flags){
     physaddr_t frame = FindValidFrame();
     if(frame == INVALID_ADDRESS){
+        printf("KERNEL PANIC: Failed to find a valid frame for page allocation\n");
         return -1;
     }
 
+    printf("Allocating page at 0x%x\n", frame);
+
     // Set the page table entry
     physaddr_t table = currentPageDir[PD_INDEX(virt)] & 0xFFFFF000;
-    if(table & PDE_FLAG_PRESENT){
-        page_table_t* pt = (page_table_t*)table;
+    pde_t* pd_entry = (pde_t*)table;
+    if(*pd_entry & PDE_FLAG_PRESENT){
+        page_table_t* pt = (page_table_t*)((physaddr_t)pd_entry & 0xFFFFF000);
         pt->pages[PT_INDEX(virt)] = (frame & 0xFFFFF000) | flags;
 
         asm volatile("invlpg (%0)" :: "r" (frame) : "memory");
 
         totalPages++;
+
+        printf("Allocated page at 0x%x\n", frame);
+        printf("Page virtual address: 0x%x\n", virt);
 
         return 1;
     }else{
@@ -177,7 +185,6 @@ void ConstructPageDirectory(pde_t* pageDirectory, page_table_t* pageTables){
 }
 
 void PageKernel(size_t memSize){
-    printf("Paging memory...\n");
     totalMemSize = memSize;
     ConstructPageDirectory(currentPageDir, currentPageTables);
     // Identity map the kernel to its physical address (The kernel's start address should already be aligned)
@@ -191,14 +198,30 @@ void PageKernel(size_t memSize){
     }
 
     // Identity map the VGA framebuffer to its physical address
-    for(size_t i = 0xA0000; i < 0xC0000; i += PAGE_SIZE){
-        int result = physpalloc(i, i, 0U | (PTE_FLAG_PRESENT | PTE_FLAG_RW));
+    size_t vgaPages = (1024 * 256) / PAGE_SIZE;
+    if(vgaPages * PAGE_SIZE < 1024 * 256){
+        vgaPages++;
+    }
+
+    // Get the first free page of memory after the kernel
+    uintptr_t firstVgaPage = (((uintptr_t)&__kernel_end) + PAGE_SIZE) & 0xFFFFF000;
+    uint32_t offset = 0;
+
+    for(size_t i = 0xA0000; i < 0xA0000 + vgaPages * PAGE_SIZE; i += PAGE_SIZE){
+        // Allocate the VGA pages as write-through pages that user-mode can access
+        int result = physpalloc(i, firstVgaPage + offset, (PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_WRITE_THROUGH | PTE_FLAG_CACHE_DISABLED | PTE_FLAG_GLOBAL | PTE_FLAG_USER));
 
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map VGA framebuffer page at 0x%x\n", i);
+            printf("KERNEL PANIC: Failed to map VGA page at 0x%x\n", i);
             STOP
         }
+
+        offset += PAGE_SIZE;
     }
+
+    // Remap ACPI tables...
+
+    // Map MMIO and other things...
 
     // Enable paging
     asm volatile("mov %0, %%cr3" :: "r" (currentPageDir));
@@ -206,4 +229,14 @@ void PageKernel(size_t memSize){
     asm volatile("mov %%cr0, %0" : "=r" (cr0));
     cr0 = 0x80000001;
     asm volatile("mov %0, %%cr0" :: "r" (cr0));
+
+    RemapVGA(firstVgaPage);                                                 // Move the VGA framebuffer pointer to the new location
+
+    // Allocate one page at the end of all the other data for the beginning of the kernel's heap
+    heapStart = firstVgaPage + offset + PAGE_SIZE;
+    if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+        printf("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
+        STOP
+
+    }
 }

@@ -6,8 +6,6 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-#define VGA_ADDRESS 0xB8000
-
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
 
@@ -21,7 +19,7 @@
 #define VGA_BLACK_ON_WHITE 0xF0                 // Black text on a white background
 
 // Clear the screen
-void ClearScreen(void);
+HOT void ClearScreen(void);
 
 // Write a single character to the screen without using printf
 HOT void WriteChar(char c);
@@ -37,5 +35,9 @@ HOT void printf(const char* fmt, ...);
 
 // Scroll the screen up one line
 HOT void Scroll(void);
+
+void RemapVGA(uintptr_t addr);
+
+uintptr_t GetVGAAddress(void);
 
 #endif
