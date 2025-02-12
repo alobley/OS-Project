@@ -12,6 +12,7 @@
 #include <keyboard.h>
 #include <kernel.h>
 #include <multitasking.h>
+#include <pcspkr.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -65,6 +66,9 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     }
 
     printf("Memory stress test completed successfully!\n");
+
+    // Test the PC speaker
+    PCSP_Beep();
 
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", true, false, true);

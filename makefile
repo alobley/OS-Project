@@ -28,10 +28,11 @@ VFS_DIR=$(SRC_DIR)/vfs
 DISK_DIR=$(SRC_DIR)/disk
 MULTITASK_DIR=$(SRC_DIR)/multitasking
 USER_DIR=$(SRC_DIR)/userland
+SOUND_DIR=$(SRC_DIR)/sound
 
 # Include Directories
 INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(VFS_DIR) -I $(DISK_DIR)
-INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR)
+INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -Wpedantic -lgcc $(INCLUDES) -Wno-unused -Werror
@@ -39,7 +40,7 @@ CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c 
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(DISK_DIR)/disk.c #$(VFS_DIR)/vfs.c $(PS2_DIR)/ps2.c 
-LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c
+LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c
 
 # Assembly and Kernel Files
 ASMFILE=boot
