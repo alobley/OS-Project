@@ -9,16 +9,49 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Any i686-compatible CPU
 - More than 1-4 GiB of RAM(?)
 
-## Features
+## Currently Implemented
   - Boots
   - Sets up paging
   - Initializes heap
+  - Initializes timer
+  - Initializes interrupts and sets up system calls
   - Sets up keyboard
+  - Enters a simple integrated shell environment
 
 
 
-## To-Do
-- to-do list...
+## To-Do (road to 0.90.0 beta)
+[*] = must have
+[-] = nice to have
+- Add ACPI and/or APM support [*]
+- Add a PATA disk driver [*]
+- Add a SATA disk driver [-]
+- Add FAT support [*]
+- Implement a VFS for standardized file interaction [*]
+- Implement a PC speaker driver (this one should be very simple) [-]
+- Fully implement mouse driver [-]
+- Make a more complete list of system calls [*]
+- Add the ability to load and execute programs [*]
+- Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [-]
+- Fully implement process scheduling and multitasking [*]
+- Harden the kernel against vulnerabilities [-]
+- Add PCI/PCIE support [*]
+- Add USB support [*]
+- Implement a userland kernel API in C [*]
+- Replace KISh with a proper userland shell [*]
+- Make a libc and more complete userland [*]
+- Implement a better VGA driver, a VMWare SVGA driver, and an i915 driver [-]
+
+## Goals to reach before 1.0
+- EXT2 support [*]
+- HD audio support [-]
+- Networking [-]
+- Window manager (no promises) [-]
+- Init system [-]
+- Device management [*]
+- Follow UNIX philosophy [-]
+- Write some documentation [-]
+- I am dead inside [*]
 
 ## Build & Run
 

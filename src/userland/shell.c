@@ -78,7 +78,7 @@ void ProcessCommand(char* cmd){
         asm volatile("mov %%eax, %0" : "=r" (result));
         printf("System call returned: %d\n", result);
     }else if(strcmp(cmd, "version") == 0){
-        printf("Dedication OS Version: %d.%d.%d\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch);
+        printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
     }else if(strcmp(cmd, "pinfo") == 0){
         pcb_t* currentProcess = GetCurrentProcess();
         printf("Process info:\n");
@@ -86,13 +86,13 @@ void ProcessCommand(char* cmd){
         printf("Name: %s\n", currentProcess->name);
         printf("State: %d\n", currentProcess->state);
         printf("Priority: %d\n", currentProcess->priority);
-        printf("Time slice: %d\n", currentProcess->timeSlice);
+        printf("Time slice: %d ms\n", currentProcess->timeSlice);
         printf("Stack: 0x%x\n", currentProcess->stack);
         printf("Stack base: 0x%x\n", currentProcess->stackBase);
         printf("Stack top: 0x%x\n", currentProcess->stackTop);
         printf("Heap base: 0x%x\n", currentProcess->heapBase);
         printf("Heap end: 0x%x\n", currentProcess->heapEnd);
-    }else{
+    }else if(strlen(cmd) != 0){
         printf("Unknown command: %s\n", cmd);
     }
 

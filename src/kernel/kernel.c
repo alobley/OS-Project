@@ -19,7 +19,7 @@ size_t memSizeMiB = 0;
 // Reference the built-in shell
 extern int shell(void);
 
-version_t kernelVersion = {0, 0, 1};
+version_t kernelVersion = {0, 1, 0};
 
 NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes

@@ -9,7 +9,7 @@ EMARGS+=-cdrom build/main.iso
 EMARGS+=-hda bin/harddisk.vdi 
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int -no-reboot -no-shutdown
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-d int -no-reboot -no-shutdown
 
 # Directories
 SRC_DIR=src
