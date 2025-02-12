@@ -14,7 +14,7 @@ typedef struct Version {
     uint8_t patch;
 } version_t;
 
-const char* kernelRelease = "Alpha";
+static const char* kernelRelease = "Alpha";
 
 extern size_t memSize;
 extern size_t memSizeMiB;

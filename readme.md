@@ -80,3 +80,5 @@ Feel free to fork this if you wish to do so, but the goal of this project is to 
 
 ## License
 - This software is licensed under the **MIT License**. See the `LICENSE` file in the root directory for more information.
+
+- GRUB, the bootloader, is licensed under the **GNU General Public License**. See the `LICENCE` file for more information.
