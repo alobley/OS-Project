@@ -113,7 +113,7 @@ int palloc(virtaddr_t virt, uint32_t flags){
         return -1;
     }
 
-    printf("Allocating page at 0x%x\n", frame);
+    //printf("Allocating page at 0x%x\n", frame);
 
     // Set the page table entry
     physaddr_t table = currentPageDir[PD_INDEX(virt)] & 0xFFFFF000;
@@ -126,8 +126,8 @@ int palloc(virtaddr_t virt, uint32_t flags){
 
         totalPages++;
 
-        printf("Allocated page at 0x%x\n", frame);
-        printf("Page virtual address: 0x%x\n", virt);
+        //printf("Allocated page at 0x%x\n", frame);
+        //printf("Page virtual address: 0x%x\n", virt);
 
         return 1;
     }else{

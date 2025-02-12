@@ -4,6 +4,8 @@
 #include <paging.h>
 #include <stddef.h>
 
+#define MEMBLOCK_MAGIC 0xDEADBEEF
+
 extern uintptr_t heapStart;
 
 // Allocate a block of memory on the heap of the specified size

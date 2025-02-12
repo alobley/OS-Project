@@ -1,5 +1,6 @@
 #include <interrupts.h>
 #include <console.h>
+#include <keyboard.h>
 
 #define NUM_ISRS 49
 
@@ -96,9 +97,20 @@ void InitIDT(){
 void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case 1: {
-            printf("Debug!\n");
+            // SYS_DBG
+            printf("Syscall Debug!\n");
             break;
         }
+        case 2: {
+            // SYS_GETKEY - Get the last key pressed
+            uint8_t key = GetKey();
+            regs->eax = (uint32_t)key;
+            break;
+        }
+        case 3:
+            // SYS_INSTALL_KBD_HANDLE
+            InstallKeyboardCallback((KeyboardCallback)regs->ebx);
+            break;
         default: {
             printf("Unknown syscall: 0x%x\n", regs->eax);
             break;

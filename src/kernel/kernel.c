@@ -9,9 +9,20 @@
 #include <time.h>
 #include <paging.h>
 #include <alloc.h>
+#include <keyboard.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
+
+NORET void PANIC(const char* msg){
+    printf("KERNEL PANIC: ");
+    printf(msg);
+    STOP
+    __builtin_unreachable();
+}
+
+// Reference the built-in shell
+extern int shell(void);
 
 NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
@@ -39,7 +50,7 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     uint32_t usedMem = totalPages * PAGE_SIZE;
 
-    printf("Used memory: %f MiB\n", (((double)usedMem) / 1024) / 1024);
+    printf("Used memory: %d MiB\n", usedMem / 1024 / 1024);
 
     // Test the memory allocation mechanism
     uint8_t* test = halloc(PAGE_SIZE * 6);
@@ -53,6 +64,10 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memset(test, 1, PAGE_SIZE * 6);
 
     printf("Completed successfully without a fault!\n");
+
+    InitializeKeyboard();
+
+    shell();
 
     for(;;);
     __builtin_unreachable();

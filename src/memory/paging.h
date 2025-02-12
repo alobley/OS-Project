@@ -61,6 +61,8 @@ extern pde_t* currentPageDir;
 extern page_table_t* currentPageTables;
 extern size_t totalPages;
 
+extern size_t totalMemSize;
+
 extern int __kernel_end;
 extern int __kernel_start;
 

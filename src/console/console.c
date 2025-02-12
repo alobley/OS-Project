@@ -59,10 +59,15 @@ HOT void ClearScreen(void){
     cursor_y = 0;
 }
 
-HOT void WriteChar(char c){
+HOT inline void WriteChar(char c){
     if(c == '\n'){
         cursor_x = 0;
         cursor_y++;
+    } else if(c == '\b'){
+        if(cursor_x > 0){
+            cursor_x--;
+            *(uint16_t*)(VGA_ADDRESS + ((cursor_x + (cursor_y * VGA_WIDTH)) * 2)) = (VGA_WHITE_ON_BLACK << 8) | ' ';
+        }
     } else {
         *(uint16_t*)(VGA_ADDRESS + ((cursor_x + (cursor_y * VGA_WIDTH)) * 2)) = (VGA_WHITE_ON_BLACK << 8) | c;
         cursor_x++;
@@ -217,7 +222,7 @@ HOT void printf(const char* fmt, ...){
                 }
                 case 'f': {
                     double x = va_arg(args, double);
-                    PrintFloat(x, 2);
+                    PrintFloat(x, 6);
                     break;
                 }
                 case 'l': {
@@ -243,7 +248,7 @@ HOT void printf(const char* fmt, ...){
                             // Yes I know this isn't best practice, but it's simple and it works very well without recursion
                             goto extra_l;
                         case 'f':
-                            PrintFloat(va_arg(args, double), 2);
+                            PrintFloat(va_arg(args, double), 6);
                             break;
                         default:
                             WriteChar('%');

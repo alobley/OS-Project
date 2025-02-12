@@ -26,6 +26,7 @@ PS2_DIR=$(SRC_DIR)/ps2
 TIME_DIR=$(SRC_DIR)/time
 VFS_DIR=$(SRC_DIR)/vfs
 DISK_DIR=$(SRC_DIR)/disk
+USER_DIR=$(SRC_DIR)/userland
 
 # Include Directories
 INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(VFS_DIR) -I $(DISK_DIR)
@@ -35,7 +36,8 @@ CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-
 
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c 
-LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c #$(VFS_DIR)/vfs.c $(DISK_DIR)/disk.c $(PS2_DIR)/ps2.c 
+LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c #$(VFS_DIR)/vfs.c $(DISK_DIR)/disk.c $(PS2_DIR)/ps2.c 
+LIBS+=$(USER_DIR)/shell.c
 
 # Assembly and Kernel Files
 ASMFILE=boot
