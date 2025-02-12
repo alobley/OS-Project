@@ -1,24 +1,24 @@
 # Dedication OS - My Custom OS Project
 
-This project is meant to be a lightweight 64-bit x86 operating system developed entirely and exclusively by me, using only my own code. Every line of code in every file was written by me, unless stated otherwise. Written entirely from scratch.
+This project is meant to be a lightweight 32-bit x86 operating system developed entirely and exclusively by me, using only my own code. Every line of code in every file was written by me, unless stated otherwise. Written entirely from scratch.
 
 ## Project Status
 Currently, this project is still in the early stages. I've spent the past year learning about x86 and I started with basically zero knowledge, including in C and assembly.
 
 ## System Requirements (subject to change)
-- Any AMD64 CPU
-- UEFI firmware
+- Any i686-compatible CPU
 - More than 1-4 GiB of RAM(?)
 
 ## Features
-- **Boot Process**:
-  - Boots(?)
+  - Boots
+  - Sets up paging
+  - Initializes heap
+  - Sets up keyboard
 
 
 
 ## To-Do
-- Finish my custom bootloader and UEFI library
-- Start working on the kernel
+- to-do list...
 
 ## Build & Run
 
@@ -27,9 +27,8 @@ Currently, this project is still in the early stages. I've spent the past year l
 ### Prerequisites
 Ensure you have the following installed:
 - A Linux or FreeBSD system
-- `x86-64-elf-gcc`
-- `x86-64-elf-ld`
-- `clang`           (For UEFI bootloader)
+- `i386-elf-gcc`
+- `i386-elf-ld`
 - `binutils`
 - `NASM`
 - `QEMU`
