@@ -10,12 +10,16 @@
 #include <paging.h>
 #include <alloc.h>
 #include <keyboard.h>
+#include <kernel.h>
+#include <multitasking.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
 
 // Reference the built-in shell
 extern int shell(void);
+
+version_t kernelVersion = {0, 0, 1};
 
 NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
@@ -62,8 +66,13 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     printf("Memory stress test completed successfully!\n");
 
+    // Create a dummy PCB for the shell
+    pcb_t* shellPCB = CreateProcess(shell, "shell", true, false, true);
+    SwitchProcess(shellPCB);
+
     int result = shell();
 
+    DestroyProcess(shellPCB);
     if(result == 0){
         printf("Shell exited successfully! Idling...\n");
     } else {

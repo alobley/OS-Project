@@ -1,0 +1,147 @@
+#include <multitasking.h>
+
+pcb_t* currentProcess = NULL;
+pcb_t* processList = NULL;
+volatile uint16_t numProcesses = 1;                 // Start at 1 because the kernel is the first process
+
+pcb_t* GetCurrentProcess(void){
+    return currentProcess;
+}
+
+void EnqueueProcess(mutex_t* mutex, pcb_t* process){
+    qnode* node = (struct QueueNode*)halloc(sizeof(qnode));
+    node->process = process;
+    node->next = NULL;
+
+    if(mutex->waitQueue.last == NULL){
+        mutex->waitQueue.first = node;
+        mutex->waitQueue.last = node;
+        return;
+    }
+
+    mutex->waitQueue.last->next = node;
+    mutex->waitQueue.last = node;
+}
+
+pcb_t* DequeueProcess(mutex_t* mutex){
+    if(mutex->waitQueue.first == NULL){
+        // Failed to dequeue process
+        return NULL;
+    }
+
+    qnode* node = mutex->waitQueue.first;
+    mutex->waitQueue.first = node->next;
+    if(mutex->waitQueue.first == NULL){
+        mutex->waitQueue.last = NULL;
+    }
+
+    mutex->owner = node->process;
+    hfree(node);
+    return mutex->owner;
+}
+
+// Lock a mutex for the current process
+void MutexLock(mutex_t* mutex){
+    asm volatile("" ::: "memory");
+    if(mutex->locked){
+        // Mutex is locked, enqueue process
+        EnqueueProcess(mutex, currentProcess);
+        currentProcess->state = WAITING;
+        // Switch to next process
+        process_switch_stub();
+        return;
+    }else{
+        asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");
+    }
+}
+
+// Unlock a mutex
+void MutexUnlock(mutex_t* mutex){
+    asm volatile("" ::: "memory");
+    if(mutex->owner != currentProcess){
+        // Mutex is not owned by the current process
+        return;
+    }
+    asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
+    if(mutex->waitQueue.first != NULL){
+        // Dequeue process
+        DequeueProcess(mutex);
+        mutex->owner->state = RUNNING;
+    }
+}
+
+// Force unlock a mutex (for kernel use only)
+void KernelOverrideUnlock(mutex_t* mutex){
+    asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
+    if(mutex->waitQueue.first != NULL){
+        // Dequeue process
+        DequeueProcess(mutex);
+        mutex->owner->state = RUNNING;
+    }
+}
+
+// Spinlock functions...
+
+// Process control functions
+// TODO: implement process paging, stack, and heap allocation. For now, we'll just create a process with a NULL stack and heap.
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, bool priveliged, bool kernel, bool foreground){
+    pcb_t* process = (pcb_t*)halloc(sizeof(pcb_t));
+    process->pid = numProcesses++;
+    process->flags.priveliged = priveliged;
+    process->flags.kernel = kernel;
+    process->flags.foreground = foreground;
+    process->state = RUNNING;
+    process->entryPoint = entryPoint;
+    process->timeSlice = PROCESS_DEFAULT_TIME_SLICE;
+    process->priority = PROCESS_DEFAULT_PRIORITY;
+
+    process->next = NULL;
+    process->firstChild = NULL;
+    process->parent = NULL;
+
+    // TODO: implement stack allocation
+    process->stack = 0;
+    process->stackBase = 0;
+    process->stackTop = 0;
+
+    // TODO: implement heap allocation
+    process->heapBase = 0;
+    process->heapEnd = 0;
+
+    // Add process to process list
+    process->next = processList;
+    processList = process;
+
+    strcpy(process->name, name);
+
+    return process;
+}
+
+void DestroyProcess(pcb_t* process){
+    if(process == NULL){
+        return;
+    }
+
+    if(process == processList){
+        processList = process->next;
+    }else{
+        pcb_t* current = processList;
+        while(current->next != process){
+            current = current->next;
+        }
+        current->next = process->next;
+    }
+
+    hfree(process);
+    numProcesses--;
+}
+
+// More...
+
+void Scheduler(void){
+    return;
+}
+
+void SwitchProcess(pcb_t* process){
+    currentProcess = process;
+}

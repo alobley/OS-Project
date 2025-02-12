@@ -8,8 +8,15 @@
 #define SYS_DBG 1
 #define SYS_INSTALL_KBD_HANDLE 2
 
+typedef struct Version {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch;
+} version_t;
+
 extern size_t memSize;
 extern size_t memSizeMiB;
+extern version_t kernelVersion;
 
 // Simple wrapper for system calls
 #define do_syscall(num, arg1, arg2, arg3) \

@@ -9,6 +9,7 @@
 #include <keyboard.h>
 #include <alloc.h>
 #include <time.h>
+#include <multitasking.h>
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
 #define CMD_MAX_SIZE 256
@@ -65,6 +66,8 @@ void ProcessCommand(char* cmd){
         printf("help: prints this help message\n");
         printf("exit: exits the shell\n");
         printf("syscall: tests the system call mechanism\n");
+        printf("version: prints the kernel version\n");
+        printf("pinfo: prints the process info of the shell\n");
     }else if(strcmp(cmd, "exit") == 0){
         printf("Exiting shell...\n");
         exit = true;
@@ -74,6 +77,21 @@ void ProcessCommand(char* cmd){
         do_syscall(SYS_DBG, 0, 0, 0);
         asm volatile("mov %%eax, %0" : "=r" (result));
         printf("System call returned: %d\n", result);
+    }else if(strcmp(cmd, "version") == 0){
+        printf("Dedication OS Version: %d.%d.%d\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch);
+    }else if(strcmp(cmd, "pinfo") == 0){
+        pcb_t* currentProcess = GetCurrentProcess();
+        printf("Process info:\n");
+        printf("PID: %d\n", currentProcess->pid);
+        printf("Name: %s\n", currentProcess->name);
+        printf("State: %d\n", currentProcess->state);
+        printf("Priority: %d\n", currentProcess->priority);
+        printf("Time slice: %d\n", currentProcess->timeSlice);
+        printf("Stack: 0x%x\n", currentProcess->stack);
+        printf("Stack base: 0x%x\n", currentProcess->stackBase);
+        printf("Stack top: 0x%x\n", currentProcess->stackTop);
+        printf("Heap base: 0x%x\n", currentProcess->heapBase);
+        printf("Heap end: 0x%x\n", currentProcess->heapEnd);
     }else{
         printf("Unknown command: %s\n", cmd);
     }
