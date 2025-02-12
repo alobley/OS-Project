@@ -28,7 +28,7 @@ void InitializeAllocator(void){
     heapEnd = heapStart + PAGE_SIZE;
 }
 
-// First-fit allocation (TODO: add block splitting for smaller and more efficient allocations)
+// More complex memory allocation algorithm that takes blocks and makes them exactly the correct size
 void* halloc(size_t size){ 
     // Get the kernel's first heap memory block
     block_header_t* current = firstBlock;

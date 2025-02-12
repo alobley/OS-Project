@@ -72,14 +72,17 @@ uint64_t GetTicks(){
     return state.ticks;
 }
 
+#pragma GCC push_options
+#pragma GCC optimize ("O0")
 // Busy-wait in order to delay (when multitasking is implemented, put the process to sleep instead, saves time and resources)
-void delay(uint64_t ms){
+void sleep(uint64_t ms){
     uint64_t currentTicks = GetTicks();
     uint64_t end = currentTicks + ms;
     while(currentTicks < end){
         currentTicks = GetTicks();
     }
 }
+#pragma GCC pop_options
 
 void SetTimer(int hz){
     outb(PIT_COMMAND, PIT_SET);

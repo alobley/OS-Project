@@ -25,6 +25,6 @@ void AddTimerCallback(timer_callback_t callback, uint64_t interval);
 void RemoveTimerCallback(timer_callback_t* callback);
 void InitTimer();
 void SetTimer(int hz);
-void delay(uint64_t ms);
+void sleep(uint64_t ms);
 
 #endif

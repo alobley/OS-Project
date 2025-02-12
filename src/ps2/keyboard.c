@@ -49,8 +49,29 @@
 #define RESEND 0xFE
 #define RESET 0xFF
 
-static bool keysDown[256];
-static uint8_t lastKeyPressed = 0;
+static char keyASCII[104] = {
+    0,
+    0,
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '+', '\b',
+    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+    0,
+    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 
+    0, '\\',
+    'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 
+    0, '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, '5', 0, '+', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+static char ASCIIUpper[104] = {
+    0,
+    0,
+    '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 
+    0,
+    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
+    0, '|',
+    'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',
+    0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
 
 // Function to wait until the input buffer is empty
 void wait_for_input_buffer() {
@@ -60,13 +81,6 @@ void wait_for_input_buffer() {
 // Function to wait until the output buffer is full
 void wait_for_output_buffer() {
     while (!(inb(PS2_READ_PORT) & 0x01));
-}
-
-void WaitForKeyPress(){
-    uint8_t currentKey = 0;
-    while(currentKey == 0){
-        currentKey = GetKey();
-    }
 }
 
 // Linked list of keyboard callbacks from userland applications
@@ -97,30 +111,28 @@ void RemoveKeyboardCallback(KeyboardCallback callback){
     KeyboardEntry_t* entry = keyboardCallbacks;
     KeyboardEntry_t* previous = NULL;
 
-    while(entry != NULL || entry->callback != callback){
+    while(entry->callback != callback){
         previous = entry;
         entry = entry->next;
+        if(entry->next == NULL){
+            break;
+        }
     }
 
     if(entry == NULL){
         return;
     }
 
-    previous->next = entry->next;
+    if(previous == NULL){
+        keyboardCallbacks = entry->next;
+    }else{
+        previous->next = entry->next;
+    }
     hfree(entry);
 }
 
-#pragma GCC push_options
-#pragma GCC optimize("O0")
-void WaitForRelease(uint8_t ScanCode){
-    while(IsKeyPressed(ScanCode));      // Busy wait so that the CPU isn't halted. Important for multitasking.
-}
-#pragma GCC pop_options
-
 bool shiftPressed = false;
 
-#pragma GCC push_options
-#pragma GCC optimize("O0")
 void kb_handler(){
     uint8_t scanCode;
     // If there is anything to retrieve, retrieve it and inform the PIC that the interrupt has been handled.
@@ -130,7 +142,11 @@ void kb_handler(){
 
     KeyboardEvent_t event;
     event.scanCode = scanCode;
-    event.ascii = keyASCII[scanCode];
+    if(shiftPressed){
+        event.ascii = ASCIIUpper[scanCode];
+    }else{
+        event.ascii = keyASCII[scanCode];
+    }
 
     // Much of this code is to support older code that hasn't been adapted yet. It will be changed in the future.
     if(scanCode & EVENT_KEYUP){
@@ -139,27 +155,13 @@ void kb_handler(){
             // Detect a shift release
             shiftPressed = false;
         }
-        keysDown[scanCode ^ EVENT_KEYUP] = false;
         event.keyUp = true;
     }else{
         if(scanCode == LSHIFT || scanCode == RSHIFT){
             // When shift is pressed
             shiftPressed = true;
         }
-        
         event.keyUp = false;
-
-        if(keyASCII[scanCode] != 0){
-            if(shiftPressed){
-                keysDown[scanCode] = true;
-                lastKeyPressed = ASCIIUpper[scanCode];
-            }else{
-                keysDown[scanCode] = true;
-                lastKeyPressed = keyASCII[scanCode];
-            }
-        }else{
-            keysDown[scanCode] = true;
-        }
     }
 
     // Call the keyboard callbacks installed by userland applications
@@ -168,19 +170,6 @@ void kb_handler(){
         entry->callback(event);
         entry = entry->next;
     }
-}
-#pragma GCC pop_options
-
-// Find if a key was pressed or not
-bool IsKeyPressed(uint8_t scanCode){
-    return keysDown[scanCode];
-}
-
-// Get the last key pressed
-uint8_t GetKey(){
-    uint8_t key = lastKeyPressed;
-    lastKeyPressed = 0;
-    return key;
 }
 
 bool mouseExists = false;
@@ -192,7 +181,7 @@ bool MouseExists(){
 
 PS2Info ps2Info;
 
-// Temp measure
+// Temp measure before ACPI is implemented
 #define PS2ControllerExists() true
 
 void InitializeKeyboard(){

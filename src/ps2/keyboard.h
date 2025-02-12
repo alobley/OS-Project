@@ -130,32 +130,6 @@ enum Keys {
     F12 = 0x58
 };
 
-UNUSED
-static char keyASCII[104] = {
-    0,
-    0,
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '+', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0,
-    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 
-    0, '\\',
-    'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 
-    0, '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, '5', 0, '+', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-UNUSED
-static char ASCIIUpper[104] = {
-    0,
-    0,
-    '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 
-    0,
-    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
-    0, '|',
-    'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',
-    0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
 // Struct for the OS to determine the PS/2 hardware
 typedef struct PS2Info {
     bool mouseExists;
@@ -172,13 +146,6 @@ typedef struct KeyboardEvent {
 } KeyboardEvent_t;
 
 typedef void (*KeyboardCallback)(KeyboardEvent_t event);
-
-// Get the last key pressed
-uint8_t GetKey();
-
-void WaitForKeyPress();
-
-bool IsKeyPressed(uint8_t scanCode);
 
 void InitializeKeyboard();
 

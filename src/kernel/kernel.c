@@ -14,13 +14,6 @@
 size_t memSize = 0;
 size_t memSizeMiB = 0;
 
-NORET void PANIC(const char* msg){
-    printf("KERNEL PANIC: ");
-    printf(msg);
-    STOP
-    __builtin_unreachable();
-}
-
 // Reference the built-in shell
 extern int shell(void);
 
@@ -52,23 +45,34 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     printf("Used memory: %d MiB\n", usedMem / 1024 / 1024);
 
-    // Test the memory allocation mechanism
-    uint8_t* test = halloc(PAGE_SIZE * 6);
-    if(test == NULL){
-        printf("Failed to allocate memory!\n");
+    InitializeKeyboard();
+
+    // Stress test the memory allocator
+    for(int i = 0; i < 1000; i++){
+        uint8_t* test = halloc(PAGE_SIZE * 6);
+        if(test == NULL){
+            printf("Failed to allocate memory!\n");
+            STOP
+        }
+
+        memset(test, 1, PAGE_SIZE * 6);
+
+        hfree(test);
+    }
+
+    printf("Memory stress test completed successfully!\n");
+
+    int result = shell();
+
+    if(result == 0){
+        printf("Shell exited successfully! Idling...\n");
+    } else {
+        printf("Shell exited with error code %d!\n", result);
         STOP
     }
 
-    printf("Allocated memory at 0x%x\n", test);
-
-    memset(test, 1, PAGE_SIZE * 6);
-
-    printf("Completed successfully without a fault!\n");
-
-    InitializeKeyboard();
-
-    shell();
-
-    for(;;);
+    for(;;){
+        hlt
+    }
     __builtin_unreachable();
 }

@@ -93,7 +93,7 @@ void InitIDT(){
     LoadIDT((uintptr_t) &idt.pointer);
 }
 
-// This is what is processed when you perform an ABI call (int 0x30). It works!
+// This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case 1: {
@@ -101,13 +101,7 @@ void syscall_handler(struct Registers *regs){
             printf("Syscall Debug!\n");
             break;
         }
-        case 2: {
-            // SYS_GETKEY - Get the last key pressed
-            uint8_t key = GetKey();
-            regs->eax = (uint32_t)key;
-            break;
-        }
-        case 3:
+        case 2:
             // SYS_INSTALL_KBD_HANDLE
             InstallKeyboardCallback((KeyboardCallback)regs->ebx);
             break;
