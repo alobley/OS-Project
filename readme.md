@@ -23,6 +23,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 ## To-Do (road to 0.90.0 beta)
 [*] = must have
 [-] = nice to have
+[x] = complete
 - Add ACPI and/or APM support [*]
 - Add a PATA disk driver [*]
 - Add a SATA disk driver [-]
