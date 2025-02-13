@@ -21,11 +21,11 @@ Currently, this project is still in the early stages. I've spent the past year l
 
 
 ## To-Do (road to 0.90.0 beta)
-[*] = must have
+[*] = must have (Will likely be completed first)
 [-] = nice to have
 [x] = complete
-- Add ACPI and/or APM support [*]
-- Add a PATA disk driver [*]
+- Add ACPI and/or APM support [x]
+- Add a PATA disk driver [*]      - Current goal (must include all modes as well as both reading and writing)
 - Add a SATA disk driver [-]
 - Add FAT support [*]
 - Implement a VFS for standardized file interaction [*]
@@ -38,6 +38,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Harden the kernel against vulnerabilities [-]
 - Add PCI/PCIE support [*]
 - Add USB support [*]
+- Create an interface with the kernel for drivers [*]
 - Implement a userland kernel API in C [*]
 - Replace KISh with a proper userland shell [*]
 - Make a libc and more complete userland [*]

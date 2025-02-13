@@ -88,6 +88,12 @@ hard_drive: create_dirs
 	qemu-img create -f raw $(BIN_DIR)/harddisk.vdi 2G
 	mkfs.fat -F 32 $(BIN_DIR)/harddisk.vdi
 
+# Update the Repository
+update:
+	git add .
+	git commit -m "Minor Update"
+	git push -u origin main
+
 # Clean Build Artifacts
 clean:
 	rm -rf build/*

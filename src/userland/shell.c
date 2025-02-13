@@ -10,6 +10,7 @@
 #include <alloc.h>
 #include <time.h>
 #include <multitasking.h>
+#include <acpi.h>
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
 #define CMD_MAX_SIZE 256
@@ -68,6 +69,7 @@ void ProcessCommand(char* cmd){
         printf("syscall: tests the system call mechanism\n");
         printf("version: prints the kernel version\n");
         printf("pinfo: prints the process info of the shell\n");
+        printf("ACPI: prints ACPI info\n");
     }else if(strcmp(cmd, "exit") == 0){
         printf("Exiting shell...\n");
         exit = true;
@@ -92,6 +94,13 @@ void ProcessCommand(char* cmd){
         printf("Stack top: 0x%x\n", currentProcess->stackTop);
         printf("Heap base: 0x%x\n", currentProcess->heapBase);
         printf("Heap end: 0x%x\n", currentProcess->heapEnd);
+    }else if(strcmp(cmd, "ACPI") == 0){
+        printf("ACPI info:\n");
+        printf("ACPI version: %d\n", acpiInfo.version);
+        printf("ACPI exists: %d\n", acpiInfo.exists);
+        printf("ACPI FADT: 0x%x\n", acpiInfo.fadt);
+        printf("ACPI RSDP: 0x%x\n", acpiInfo.rsdp.rsdpV1);
+        printf("ACPI RSDT: 0x%x\n", acpiInfo.rsdt.rsdt);
     }else if(strlen(cmd) != 0){
         printf("Unknown command: %s\n", cmd);
     }
