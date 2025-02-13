@@ -99,6 +99,7 @@ void syscall_handler(struct Registers *regs){
         case 1: {
             // SYS_DBG
             printf("Syscall Debug!\n");
+            regs->eax = 1;
             break;
         }
         case 2:
@@ -215,11 +216,12 @@ void ISRHandler(struct Registers *regs){
 }
 
 extern void reboot();
+
 static void ExceptionHandler(struct Registers *regs){
     ClearScreen();
     printf("KERNEL PANIC: %s", exceptions[regs->int_no]);
-    cli;
-    for(;;) hlt;
+    cli
+    hlt
 }
 
 void InitISR(){

@@ -2,7 +2,7 @@
 #include <interrupts.h>
 #include <console.h>
 #include <time.h>
-//#include <acpi.h>
+#include <acpi.h>
 #include <alloc.h>
 
 #define KEYBOARD_ISR 0x21
@@ -180,9 +180,6 @@ bool MouseExists(){
 
 
 PS2Info ps2Info;
-
-// Temp measure before ACPI is implemented
-#define PS2ControllerExists() true
 
 void InitializeKeyboard(){
     if(!PS2ControllerExists()){

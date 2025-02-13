@@ -1,5 +1,6 @@
 #include <paging.h>
 #include <alloc.h>
+#include <acpi.h>
 
 #define TOTAL_PAGES (0xFFFFFFFF / PAGE_SIZE)    // 1048576 pages
 #define TOTAL_BITS (TOTAL_PAGES / 8)            // 131072 bytes
@@ -219,7 +220,50 @@ void PageKernel(size_t memSize){
         offset += PAGE_SIZE;
     }
 
-    // Remap ACPI tables...
+    // Remap ACPI tables
+    heapStart = firstVgaPage + offset + PAGE_SIZE;
+    size_t acpiPages = 0;
+    if(acpiInfo.exists){
+        // Remap RSDP
+        int result = physpalloc((physaddr_t)acpiInfo.rsdp.rsdpV1, heapStart, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
+        if(result == -1){
+            printf("KERNEL PANIC: Failed to map ACPI RSDP at 0x%x\n", (physaddr_t)acpiInfo.rsdp.rsdpV1);
+            STOP
+        }
+        acpiPages++;
+
+        acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)heapStart;
+
+        // Remap RSDT
+        heapStart += PAGE_SIZE;
+        result = physpalloc((physaddr_t)acpiInfo.rsdt.rsdt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
+        if(result == -1){
+            printf("KERNEL PANIC: Failed to map ACPI RSDT at 0x%x\n", (physaddr_t)acpiInfo.rsdt.rsdt);
+            STOP
+        }
+
+        acpiPages++;
+        acpiInfo.rsdt.rsdt = (RSDT_t*)(heapStart + PAGE_SIZE);
+
+        // Remap FADT
+        heapStart += PAGE_SIZE;
+        result = physpalloc((physaddr_t)acpiInfo.fadt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
+        if(result == -1){
+            printf("KERNEL PANIC: Failed to map ACPI FADT at 0x%x\n", (physaddr_t)acpiInfo.fadt);
+            STOP
+        }
+
+        acpiPages++;
+        acpiInfo.fadt = (FADT_t*)(heapStart + PAGE_SIZE);
+    }
+
+    heapStart += PAGE_SIZE;
+
+    // Map the first page of the heap
+    if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+        printf("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
+        STOP
+    }
 
     // Map MMIO and other things...
 
@@ -233,7 +277,6 @@ void PageKernel(size_t memSize){
     RemapVGA(firstVgaPage);                                                 // Move the VGA framebuffer pointer to the new location
 
     // Allocate one page at the end of all the other data for the beginning of the kernel's heap
-    heapStart = firstVgaPage + offset + PAGE_SIZE;
     if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
         printf("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
         STOP

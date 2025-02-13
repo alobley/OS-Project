@@ -13,6 +13,7 @@
 #include <kernel.h>
 #include <multitasking.h>
 #include <pcspkr.h>
+#include <acpi.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -28,6 +29,8 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     printf("Multiboot magic: 0x%x\n", magic);
     printf("Memory: %u MiB\n", memSizeMiB);
+
+    InitializeACPI();
 
     InitIDT();
     InitISR();
@@ -73,6 +76,9 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", true, false, true);
     SwitchProcess(shellPCB);
+
+    // Test the timer
+    sleep(1000);
 
     int result = shell();
 
