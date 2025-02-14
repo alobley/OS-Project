@@ -7,8 +7,7 @@
 // For priveliged or unpriveliged users for the kernel to determine what system calls they can make
 
 #define MAX_USERNAME_LENGTH 32
-#define KERNEL_UID 0                    // Maximum possible privelige
-#define ROOT_UID 1                      // Root user ID
+#define ROOT_UID 0                      // Root user ID
 
 typedef uint32_t uid;
 

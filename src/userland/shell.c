@@ -88,7 +88,12 @@ void ProcessCommand(char* cmd){
         printf("Process info:\n");
         printf("PID: %d\n", currentProcess->pid);
         printf("Name: %s\n", currentProcess->name);
-        printf("Owner: %d\n", currentProcess->owner);
+        printf("Owner: %d ", currentProcess->owner);
+        if(currentProcess->owner == ROOT_UID){
+            printf("(root)\n");
+        }else{
+            printf("(user)\n");
+        }
         printf("State: %d\n", currentProcess->state);
         printf("Priority: %d\n", currentProcess->priority);
         printf("Time slice: %d ms\n", currentProcess->timeSlice);

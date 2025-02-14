@@ -75,7 +75,7 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     PCSP_Beep();
 
     // Create a dummy PCB for the shell
-    pcb_t* shellPCB = CreateProcess(shell, "shell", KERNEL_UID, true, false, true);
+    pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true);
     SwitchProcess(shellPCB);
 
     // Test the timer
