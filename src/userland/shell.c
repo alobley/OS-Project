@@ -82,7 +82,9 @@ void ProcessCommand(char* cmd){
     }else if(strcmp(cmd, "version") == 0){
         printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
     }else if(strcmp(cmd, "pinfo") == 0){
-        pcb_t* currentProcess = GetCurrentProcess();
+        pcb_t* currentProcess;
+        do_syscall(SYS_GET_PCB, 0, 0, 0);
+        asm volatile("mov %%eax, %0" : "=r" (currentProcess));
         printf("Process info:\n");
         printf("PID: %d\n", currentProcess->pid);
         printf("Name: %s\n", currentProcess->name);
@@ -110,9 +112,9 @@ void ProcessCommand(char* cmd){
 
 int shell(void){
     ClearScreen();
-    printf("Kernel-Integrated Shell (KISh)\n");
-    printf("Type 'help' for a list of commands\n");
-    printf(prompt);
+    write("Kernel-Integrated Shell (KISh)\n", STDOUT);
+    write("Type 'help' for a list of commands\n", STDOUT);
+    write(prompt, STDOUT);
     do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     while(!exit){
@@ -123,6 +125,6 @@ int shell(void){
             ProcessCommand(cmdBuffer);
         }
     }
-    RemoveKeyboardCallback(handler);
+    do_syscall(SYS_REMOVE_KBD_HANDLE, (uint32_t)handler, 0, 0);
     return 0;
 }

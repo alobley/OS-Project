@@ -1,6 +1,8 @@
 #include <interrupts.h>
 #include <console.h>
 #include <keyboard.h>
+#include <multitasking.h>
+#include <kernel.h>
 
 #define NUM_ISRS 49
 
@@ -96,15 +98,73 @@ void InitIDT(){
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 void syscall_handler(struct Registers *regs){
     switch(regs->eax){
-        case 1: {
+        case SYS_DBG: {
             // SYS_DBG
             printf("Syscall Debug!\n");
             regs->eax = 1;
             break;
         }
-        case 2:
+        case SYS_INSTALL_KBD_HANDLE:
             // SYS_INSTALL_KBD_HANDLE
             InstallKeyboardCallback((KeyboardCallback)regs->ebx);
+            break;
+        case SYS_REMOVE_KBD_HANDLE:
+            // SYS_REMOVE_KBD_HANDLE
+            RemoveKeyboardCallback((KeyboardCallback)regs->ebx);
+            break;
+        case SYS_WRITE:
+            // SYS_WRITE
+            switch(regs->ebx){
+                case STDOUT: {
+                    WriteString((char*)regs->ecx);
+                    break;
+                }
+                default: {
+                    printf("Unknown file descriptor: %d\n", regs->ebx);
+                    break;
+                }
+            }
+            break;
+        case SYS_READ:
+            // SYS_READ
+            break;
+        case SYS_EXIT:
+            // SYS_EXIT
+            break;
+        case SYS_FORK:
+            // SYS_FORK
+            break;
+        case SYS_EXEC:
+            // SYS_EXEC
+            break;
+        case SYS_WAIT:
+            // SYS_WAIT
+            break;
+        case SYS_GET_PID:
+            // SYS_GET_PID
+            regs->eax = GetCurrentProcess()->pid;
+            break;
+        case SYS_GET_PCB:
+            // SYS_GET_PCB
+            regs->eax = (uint32_t)GetCurrentProcess();
+            break;
+        case SYS_OPEN:
+            // SYS_OPEN
+            break;
+        case SYS_CLOSE:
+            // SYS_CLOSE
+            break;
+        case SYS_SEEK:
+            // SYS_SEEK
+            break;
+        case SYS_SLEEP:
+            // SYS_SLEEP
+            break;
+        case SYS_GET_TIME:
+            // SYS_GET_TIME
+            break;
+        case SYS_KILL:
+            // SYS_KILL
             break;
         default: {
             printf("Unknown syscall: 0x%x\n", regs->eax);

@@ -182,11 +182,14 @@ bool MouseExists(){
 PS2Info ps2Info;
 
 void InitializeKeyboard(){
-    if(!PS2ControllerExists()){
+    if(acpiInfo.exists && !PS2ControllerExists()){
+        // If PS/2 controller doesn't exist, return. These kinds of systems will not be supported until USB is implemented.
         printf("PS/2 Controller not found. This computer can't be used.\n");
         return;
+    }else{
+        // No ACPI table, so we can't determine if the PS/2 controller exists. Assume it does.
+        printf("Assuming PS/2 controller existence...\n");
     }
-    // If it doesn't, return. These kinds of systems will not be supported until USB is implemented.
 
     // USB translation will need to be disabled eventually. No USB drivers for now.
 
