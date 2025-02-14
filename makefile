@@ -3,8 +3,6 @@ ASM=nasm
 CCOM=i686-elf-gcc
 ARCH=i386
 
-MSG="Minor Update"
-
 # QEMU Arguments
 EMARGS=-m 512M -smp 1 -vga vmware -display gtk
 EMARGS+=-cdrom build/main.iso 
@@ -93,7 +91,7 @@ hard_drive: create_dirs
 # Update the Repository
 update:
 	git add .
-	git commit -m $(MSG)
+	git commit -m "Minor Update"
 	git push -u origin main
 
 # Clean Build Artifacts
