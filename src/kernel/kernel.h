@@ -8,6 +8,7 @@
 #define STDOUT 1
 #define STDIN 0
 
+// TODO: Learn how to have the kernel and drivers interact with each other and with user applications
 enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
     SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback
@@ -25,7 +26,27 @@ enum System_Calls {
     SYS_SEEK,                               // Seek to a position in a file
     SYS_SLEEP,                              // Sleep for a certain amount of time
     SYS_GET_TIME,                           // Get the current time
-    SYS_KILL                                // Kill a process
+    SYS_KILL,                               // Kill a process
+    SYS_YIELD,                              // Voluntarily yield the CPU
+    SYS_MMAP,                               // Map memory pages
+    SYS_MUNMAP,                             // Unmap memory pages
+    SYS_BRK,                                // Change the heap size
+    SYS_MPROTECT,                           // Change the protection of memory pages
+
+    // Priveliged system calls for drivers and kernel modules (privelige check required, will check PCB)
+    // Note - these will always be the highest system calls
+    SYS_MODULE_LOAD,                        // Load a kernel module
+    SYS_MODULE_UNLOAD,                      // Unload a kernel module
+    SYS_MODULE_QUERY,                       // Query a kernel module
+    SYS_REGISTER_DEVICE,                    // Register a device
+    SYS_UNREGISTER_DEVICE,                  // Unregister a device
+    SYS_REQUEST_IRQ,                        // Request an IRQ
+    SYS_RELEASE_IRQ,                        // Release an IRQ
+    SYS_DRIVER_IOCTL,                       // Driver IOCTL
+    SYS_DRIVER_MMAP,                        // Memory-map a region of MMIO to userland for shared access
+    SYS_DRIVER_MUNMAP,                      // Unmap a region of MMIO from userland
+    SYS_IO_PORT_READ,                       // Read from an I/O port
+    SYS_IO_PORT_WRITE,                      // Write to an I/O port
 };
 
 typedef struct Version {

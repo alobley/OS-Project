@@ -7,6 +7,7 @@
 #include <util.h>
 #include <alloc.h>
 #include <string.h>
+#include <users.h>
 
 #define process_switch_stub()
 
@@ -39,6 +40,7 @@ typedef struct Process_Flags {
 typedef struct Process_Control_Block {
     // Process information
     uint32_t pid;                               // Process ID
+    uid owner;                                  // User ID
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
     char name [PROCESS_MAX_NAME + 1];           // Process name (+ null terminator)
@@ -89,6 +91,6 @@ typedef struct Spinlock {
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);
 void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, bool priveliged, bool kernel, bool foreground);
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground);
 
 #endif // MULTITASKING_H

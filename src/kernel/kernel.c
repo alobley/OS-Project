@@ -14,6 +14,7 @@
 #include <multitasking.h>
 #include <pcspkr.h>
 #include <acpi.h>
+#include <users.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -74,7 +75,7 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     PCSP_Beep();
 
     // Create a dummy PCB for the shell
-    pcb_t* shellPCB = CreateProcess(shell, "shell", true, false, true);
+    pcb_t* shellPCB = CreateProcess(shell, "shell", KERNEL_UID, true, false, true);
     SwitchProcess(shellPCB);
 
     // Test the timer
