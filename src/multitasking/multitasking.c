@@ -94,6 +94,7 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool privel
     process->entryPoint = entryPoint;
     process->timeSlice = PROCESS_DEFAULT_TIME_SLICE;
     process->priority = PROCESS_DEFAULT_PRIORITY;
+    process->owner = owner;
 
     process->next = NULL;
     process->firstChild = NULL;
