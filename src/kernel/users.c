@@ -1,4 +1,5 @@
 #include <users.h>
+#include <string.h>
 
 user_t* CreateUser(char* username, char* password, uid id){
     user_t* user = (user_t*)halloc(sizeof(user_t) + strlen(password) + 1);
