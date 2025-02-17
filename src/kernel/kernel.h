@@ -61,6 +61,8 @@ extern size_t memSize;
 extern size_t memSizeMiB;
 extern version_t kernelVersion;
 
+#define SYSCALL_INT 0x30
+
 // Simple wrapper for system calls
 #define do_syscall(num, arg1, arg2, arg3) \
     asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3))

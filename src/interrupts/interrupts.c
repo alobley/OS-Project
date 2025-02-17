@@ -95,6 +95,11 @@ void InitIDT(){
     LoadIDT((uintptr_t) &idt.pointer);
 }
 
+bool CheckPrivelige(){
+    return GetCurrentProcess()->owner == ROOT_UID;
+}
+
+// System call handler
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 void syscall_handler(struct Registers *regs){
     switch(regs->eax){
@@ -165,6 +170,65 @@ void syscall_handler(struct Registers *regs){
             break;
         case SYS_KILL:
             // SYS_KILL
+            break;
+        case SYS_YIELD:
+            // SYS_YIELD
+            break;
+        case SYS_MMAP:
+            // SYS_MMAP
+            break;
+        case SYS_MUNMAP:
+            // SYS_MUNMAP
+            break;
+        case SYS_BRK:
+            // SYS_BRK
+            break;
+        case SYS_MPROTECT:
+            // SYS_MPROTECT
+            break;
+
+
+        // Priveliged system calls for drivers and kernel modules (privelige check required, will check PCB)
+        // Note - these will always be the highest system calls
+        case SYS_MODULE_LOAD:
+            // SYS_MODULE_LOAD
+            if(!CheckPrivelige()){
+                printf("Unpriveliged Application requesting system resources. Killing process.\n");
+                break;
+            }
+            break;
+        case SYS_MODULE_UNLOAD:
+            // SYS_MODULE_UNLOAD
+            break;
+        case SYS_MODULE_QUERY:
+            // SYS_MODULE_QUERY
+            break;
+        case SYS_REGISTER_DEVICE:
+            // SYS_REGISTER_DEVICE
+            break;
+        case SYS_UNREGISTER_DEVICE:
+            // SYS_UNREGISTER_DEVICE
+            break;
+        case SYS_REQUEST_IRQ:
+            // SYS_REQUEST_IRQ
+            break;
+        case SYS_RELEASE_IRQ:
+            // SYS_RELEASE_IRQ
+            break;
+        case SYS_DRIVER_IOCTL:
+            // SYS_DRIVER_IOCTL
+            break;
+        case SYS_DRIVER_MMAP:
+            // SYS_DRIVER_MMAP
+            break;
+        case SYS_DRIVER_MUNMAP:
+            // SYS_DRIVER_MUNMAP
+            break;
+        case SYS_IO_PORT_READ:
+            // SYS_IO_PORT_READ
+            break;
+        case SYS_IO_PORT_WRITE:
+            // SYS_IO_PORT_WRITE
             break;
         default: {
             printf("Unknown syscall: 0x%x\n", regs->eax);

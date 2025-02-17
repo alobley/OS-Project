@@ -21,9 +21,6 @@
 
 #define STOP cli hlt
 
-// Will likely move to kernel.h
-#define SYSCALL_INT 0x30
-
 FORCE_INLINE static inline unsigned char inb(unsigned short port){
     unsigned char value;
     asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));

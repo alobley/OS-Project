@@ -24,24 +24,26 @@ INT_DIR=$(SRC_DIR)/interrupts
 MEM_DIR=$(SRC_DIR)/memory
 PS2_DIR=$(SRC_DIR)/ps2
 TIME_DIR=$(SRC_DIR)/time
-VFS_DIR=$(SRC_DIR)/vfs
+FS_DIR=$(SRC_DIR)/filesystems
+VFS_DIR=$(FS_DIR)/vfs
 DISK_DIR=$(SRC_DIR)/disk
 MULTITASK_DIR=$(SRC_DIR)/multitasking
 USER_DIR=$(SRC_DIR)/userland
 SOUND_DIR=$(SRC_DIR)/sound
 ACPI_DIR=$(SRC_DIR)/acpi
+STRUCT_DIR=$(SRC_DIR)/datastructures
 
 # Include Directories
 INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(VFS_DIR) -I $(DISK_DIR)
-INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR)
+INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(FS_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -Wpedantic -lgcc $(INCLUDES) -Wno-unused -Werror
 
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c 
-LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(DISK_DIR)/disk.c #$(VFS_DIR)/vfs.c $(PS2_DIR)/ps2.c 
-LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c
+LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(DISK_DIR)/disk.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
+LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hashtable.c
 
 # Assembly and Kernel Files
 ASMFILE=boot
@@ -78,10 +80,11 @@ qemu: create_dirs $(BUILD_DIR)/main.iso
 
 # Add Files to Virtual Disk
 addfiles: create_dirs
+	sync
 	sudo mount -o loop,rw bin/harddisk.vdi mnt
 #sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
-	sudo umount mnt
 	sync
+	sudo umount mnt
 
 # Create the Hard Drive Image, for some reason .qcow2 doesn't show sectors properly.
 hard_drive: create_dirs

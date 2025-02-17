@@ -82,11 +82,15 @@ typedef struct Mutex {
     process_queue_t waitQueue;                  // Mutex wait queue
 } mutex_t;
 
+#define MUTEX_INIT { false, NULL, { NULL, NULL } }
+
 // First come first serve semaphore (for very short wait times)
 typedef struct Spinlock {
     volatile bool locked;                       // Spinlock lock state
     pcb_t* owner;                               // Spinlock owner
 } spinlock_t;
+
+#define SPINLOCK_INIT { false, NULL }
 
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);

@@ -1,6 +1,8 @@
 #include <time.h>
 #include <alloc.h>
 #include <console.h>
+#include <cmos.h>
+#include <acpi.h>
 
 #define TIMER_TPS 1000
 
@@ -27,6 +29,7 @@ void AddTimerCallback(timer_callback_t callback, uint64_t interval){
     if(numTimers >= MAX_TIMERS){
         // There are too many timers!
         printf("KERNEL PANIC: Too many timers!\n");
+        // Log the error, kill the caller...
         return;
     }
     TimerCallbackEntry* entry = (TimerCallbackEntry*)halloc(sizeof(TimerCallbackEntry));
@@ -114,4 +117,65 @@ void InitTimer(){
 
     SetTimer(TIMER_TPS);
     InstallIRQ(PIT_IRQ, TimerHandler);
+}
+
+// The system time
+datetime_t currentTime = {0, 0, 0, 0, 0, 0};
+
+void UpdateTime(){
+    currentTime.second++;
+}
+
+// TODO: Improve year detection
+void SetTime(){
+    cli
+    outb(CMOS_ADDRESS, 0x0A);
+    while(inb(CMOS_DATA) & 0x80);
+
+    outb(CMOS_ADDRESS, CMOS_RTC_SECONDS);
+    currentTime.second = inb(CMOS_DATA);
+    outb(CMOS_ADDRESS, CMOS_RTC_MINUTES);
+    currentTime.minute = inb(CMOS_DATA);
+    outb(CMOS_ADDRESS, CMOS_RTC_HOURS);
+    currentTime.hour = inb(CMOS_DATA);
+    outb(CMOS_ADDRESS, CMOS_RTC_DAY);
+    currentTime.day = inb(CMOS_DATA);
+    outb(CMOS_ADDRESS, CMOS_RTC_MONTH);
+    currentTime.month = inb(CMOS_DATA);
+    outb(CMOS_ADDRESS, CMOS_RTC_YEAR);
+    currentTime.year = inb(CMOS_DATA);
+    uint8_t century = 0;
+    if(acpiInfo.fadt->century != 0){
+        outb(CMOS_ADDRESS, CMOS_MAYBE_CENTURY);
+        century = inb(CMOS_DATA);
+    }
+
+    uint8_t regB = 0;
+    outb(CMOS_ADDRESS, CMOS_SELECT_RTCB);
+    regB = inb(CMOS_DATA);
+
+    if(!(regB & 0x04)){
+        currentTime.second = (currentTime.second & 0x0F) + ((currentTime.second / 16) * 10);
+        currentTime.minute = (currentTime.minute & 0x0F) + ((currentTime.minute / 16) * 10);
+        currentTime.hour = ( (currentTime.hour & 0x0F) + (((currentTime.hour & 0x70) / 16) * 10) ) | (currentTime.hour & 0x80);
+        currentTime.day = (currentTime.day & 0x0F) + ((currentTime.day / 16) * 10);
+        currentTime.month = (currentTime.month & 0x0F) + ((currentTime.month / 16) * 10);
+        currentTime.year = (currentTime.year & 0x0F) + ((currentTime.year / 16) * 10);
+        if(acpiInfo.fadt->century != 0){
+            century = (century & 0x0F) + ((century / 16) * 10);
+        }
+    }
+
+    if(!(regB & 0x02) && (currentTime.hour & 0x80)){
+        currentTime.hour = ((currentTime.hour & 0x7F) + 12) % 24;
+    }
+    
+    if(acpiInfo.fadt->century != 0){
+        currentTime.year += century * 100;
+    }else{
+        currentTime.year += 2000;
+    }
+
+    AddTimerCallback(UpdateTime, 1000);
+    sti
 }

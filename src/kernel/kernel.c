@@ -15,6 +15,7 @@
 #include <pcspkr.h>
 #include <acpi.h>
 #include <users.h>
+#include <vfs.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -70,6 +71,10 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     }
 
     printf("Memory stress test completed successfully!\n");
+
+    printf("Synchronizing system time...\n");
+    SetTime();
+    printf("Current time: %d:%d:%d %d/%d/%d\n", currentTime.hour, currentTime.minute, currentTime.second, currentTime.day, currentTime.month, currentTime.year);
 
     // Test the PC speaker
     PCSP_Beep();
