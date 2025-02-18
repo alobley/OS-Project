@@ -27,7 +27,35 @@ extern int shell(void);
 
 version_t kernelVersion = {0, 2, 3};
 
-NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
+/* Expected driver setup:
+ * - VGA driver (integrated into kernel)
+ * - Ramdisk driver (integrated into kernel)
+ * - Keyboard Driver (loadable module in initrd)
+ * - Mouse Driver (loadable module)
+ * - ACPI Driver (Integrated into kernel)
+ * - PATA Driver (loadable module in initrd)
+ * - AHCI Driver (loadable module in initrd)
+ * - VBE driver (loadable module)
+ * - Network Driver (loadable module)
+ * - Sound Driver (loadable module)
+ * - USB Driver (loadable module in initrd)
+ * - Filesystem Drivers (loadable modules in initrd)
+ * - i915 driver (loadable module)
+*/
+
+/* Short-Term TODO:
+ * - Implement a proper command parser in KISh
+ * - Finish up the driver/module implementation
+ * - Implement initrd
+ * - Create a driver to be loaded as a module
+ * - Improve the memory manager
+ * - Complete the VFS and add full disk drivers
+ * - Implement file then program loading
+ * - Implement a proper task scheduler
+ * - Read up on UNIX philosophy and more closely follow it
+*/
+
+NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
     memSizeMiB = memSize / 1024 / 1024;
 
