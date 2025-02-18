@@ -7,6 +7,7 @@
 #include <kernel.h>
 #include <multitasking.h>
 #include <devices.h>
+#include <vfs.h>
 
 #define WRITE_SUCCESS 0
 #define WRITE_FAILURE -1
@@ -16,7 +17,8 @@
 typedef enum Disk_Interface {
     DISK_INTERFACE_PATA,
     DISK_INTERFACE_AHCI,
-    DISK_INTERFACE_NVME
+    DISK_INTERFACE_NVME,
+    DISK_INTERFACE_RAMDISK,
     // More to be added
 } disk_interface_t;
 
@@ -86,8 +88,16 @@ typedef struct Media_Descriptor {
     driver_t* fsDriver;             // Driver for the filesystem
     mediafs_t filesystem;           // Filesystem used on the media
     char* fsName;                   // Name of the filesystem (if none, "RAW")
-    int (*ReadFile)(struct Media_Descriptor* self, char* path, void* buffer);
-    int (*WriteFile)(struct Media_Descriptor* self, char* path, void* buffer);
+
+    // NOTE: make sure to update the VFS, and when the VFS adds a directory to this disk, update the disk!
+    vfs_node_t* (*ReadFile)(struct Media_Descriptor* self, char* path);
+    int (*WriteFile)(struct Media_Descriptor* self, char* path, vfs_node_t* file);
+    int (*DeleteFile)(struct Media_Descriptor* self, char* path);
+    int (*CreateFile)(struct Media_Descriptor* self, char* path, size_t size);
+    int (*CreateDirectory)(struct Media_Descriptor* self, char* path);
+    int (*DeleteDirectory)(struct Media_Descriptor* self, char* path);
+    int (*Rename)(struct Media_Descriptor* self, char* oldPath, char* newPath);
+    int (*Move)(struct Media_Descriptor* self, char* oldPath, char* newPath);
 
     // Physical geometry (if CHS, otherwise 0)
     uint16_t cylinders;             // Number of cylinders

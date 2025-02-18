@@ -42,6 +42,8 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     InitIRQ();
     InitTimer();
 
+    // Do some stuff for the (future) VBE driver...
+
     printf("Parsing memory map...\n");
     MapBitmap(memSize, mbootInfo->mmap_addr, mbootInfo->mmap_length / sizeof(mmap_entry_t));
 
@@ -80,10 +82,18 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Test the timer
     printf("Testing the timer...\n");
-    //sleep(1000);    
+    sleep(1000);    
 
     // Test the PC speaker
-    //PCSP_Beep();
+    PCSP_Beep();
+
+    // Create device registry...
+
+    // Create the ramfs media descriptor...
+
+    // Load the ramfs driver...
+
+    // Add the ramfs device to the device registry...
 
     // Initialize the VFS
     vfs_init(mbootInfo);
