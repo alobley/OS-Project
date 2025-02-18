@@ -8,6 +8,7 @@
 
 // Hmmm, might be worth learning C++ for this kind of stuff
 
+// Note: filesystems will be implemented in the disk I/O code, as they are not devices
 typedef enum Device_Type{
     DEVICE_TYPE_BLOCK,              // Block device (e.g. hard drive)
     DEVICE_TYPE_INPUT,              // Human i nput device (e.g. keyboard)

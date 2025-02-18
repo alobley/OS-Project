@@ -12,6 +12,7 @@
 #include <multitasking.h>
 #include <acpi.h>
 #include <time.h>
+#include <string.h>
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
 #define CMD_MAX_SIZE 256
@@ -72,6 +73,7 @@ void ProcessCommand(char* cmd){
         printf("pinfo: prints the process info of the shell\n");
         printf("ACPI: prints ACPI info\n");
         printf("time: prints the current time\n");
+        printf("settz: sets the timezone\n");
     }else if(strcmp(cmd, "exit") == 0){
         printf("Exiting shell...\n");
         exit = true;
@@ -112,12 +114,48 @@ void ProcessCommand(char* cmd){
         printf("ACPI RSDP: 0x%x\n", acpiInfo.rsdp.rsdpV1);
         printf("ACPI RSDT: 0x%x\n", acpiInfo.rsdt.rsdt);
     }else if(strcmp(cmd, "time") == 0){
+        uint8_t hour = currentTime.hour;
+        if(hour > 12){
+            hour -= 12;
+        }
         printf("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
-        printf("Time: %d:%d:%d\n", currentTime.hour, currentTime.minute, currentTime.second);
+        printf("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
+    }else if(strncmp(cmd, "settz", 4) == 0){
+        // Assumes the clock is originally set to UTC
+        char* tz = cmd + 6;
+        if(strlen(tz) == 0 || strlen(cmd) < 6){
+            printf("Usage: settz <timezone>\n");
+            goto end;
+        }
+        printf("Setting timezone to %s\n", tz);
+        if(strcmp(tz, "UTC") == 0){
+            SetTime();
+        }else if(strcmp(tz, "EST") == 0){
+            // EST is UTC-5, calculate the offset
+            if(currentTime.hour >= 5){
+                currentTime.hour -= 5;
+            }else{
+                currentTime.hour += 19;
+                if(currentTime.day > 1){
+                    currentTime.day--;
+                }else{
+                    currentTime.day = 31;
+                    if(currentTime.month > 1){
+                        currentTime.month--;
+                    }else{
+                        currentTime.month = 12;
+                        currentTime.year--;
+                    }
+                }
+            }
+        }else{
+            printf("Only EST and UTC are supported\n");
+        }
     }else if(strlen(cmd) != 0){
         printf("Unknown command: %s\n", cmd);
     }
 
+    end:
     printf(prompt);
 }
 

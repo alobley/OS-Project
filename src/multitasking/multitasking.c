@@ -2,7 +2,7 @@
 
 pcb_t* currentProcess = NULL;
 pcb_t* processList = NULL;
-volatile uint16_t numProcesses = 1;                 // Start at 1 because the kernel is the first process
+volatile uint16_t numProcesses = 0;                 // 0 is the kernel process
 
 pcb_t* GetCurrentProcess(void){
     return currentProcess;

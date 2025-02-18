@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <kernel.h>
 #include <multitasking.h>
+#include <devices.h>
 
 #define WRITE_SUCCESS 0
 #define WRITE_FAILURE -1
@@ -29,11 +30,13 @@ typedef enum Disk_Type {
 
 // Filesystems supported by the kernel
 typedef enum Filesystem {
-    FS_FAT12,
-    FS_FAT16,
-    FS_FAT32,
-    FS_ExFAT,
-    FS_EXT2
+    FS_FAT12,            // FAT12 filesystem
+    FS_FAT16,            // FAT16 filesystem
+    FS_FAT32,            // FAT32 filesystem
+    FS_ExFAT,            // ExFAT filesystem
+    FS_EXT2,             // EXT2 filesystem
+    FS_NONE,             // No filesystem (raw disk)
+    FS_OTHER,            // Other filesystem (not supported by the kernel)
 } mediafs_t;
 
 typedef enum Disk_Status {
@@ -61,14 +64,13 @@ typedef struct Features {
 
 typedef struct Media_Descriptor {
     // General information
+    device_t* device;               // Pointer to the device structure (which also points to this)
     uint8_t version;                // Version of the media descriptor
     uint64_t size;                  // Size of the media in bytes
     uint32_t sectorSize;            // Size of a sector in bytes
     uint64_t sectorCount;           // Number of sectors on the media
     disk_interface_t interface;     // Interface used to access the media
     disktype_t type;                // Type of media
-    mediafs_t filesystem;           // Filesystem used on the media
-    char* fsName;                   // Name of the filesystem (if none, "RAW")
     diskflags_t flags;              // Flags defining the disk's capabilities
     disk_status_t status;           // Current status of the disk
     uint16_t diskNum;               // Disk number (for use by the kernel to identify disks)
@@ -80,14 +82,21 @@ typedef struct Media_Descriptor {
     char serial[32];                // Serial number (if applicable)
     char firmware[16];              // Firmware version (if applicable)
 
-    // Physical information (if CHS, otherwise 0)
+    // Filesystem
+    driver_t* fsDriver;             // Driver for the filesystem
+    mediafs_t filesystem;           // Filesystem used on the media
+    char* fsName;                   // Name of the filesystem (if none, "RAW")
+    int (*ReadFile)(struct Media_Descriptor* self, char* path, void* buffer);
+    int (*WriteFile)(struct Media_Descriptor* self, char* path, void* buffer);
+
+    // Physical geometry (if CHS, otherwise 0)
     uint16_t cylinders;             // Number of cylinders
     uint16_t heads;                 // Number of heads
     uint16_t sectorsPerTrack;       // Number of sectors per track
 
     // Miscellaneous information, if applicable based on interface
-    uint16_t basePort;              // Base port number
-    uint16_t controlPort;           // Control port number n
+    uint16_t basePort;              // Base port address
+    uint16_t controlPort;           // Control port address
     bool slave;                     // "Slave" device (if applicable)
 } media_descriptor_t;
 

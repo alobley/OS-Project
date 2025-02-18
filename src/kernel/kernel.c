@@ -25,7 +25,7 @@ size_t memSizeMiB = 0;
 // Reference the built-in shell
 extern int shell(void);
 
-version_t kernelVersion = {0, 2, 0};
+version_t kernelVersion = {0, 2, 2};
 
 NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
@@ -59,8 +59,8 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     InitializeKeyboard();
 
-    printf("Stress testing the heap allocator...\n");
     // Stress test the memory allocator
+    printf("Stress testing the heap allocator...\n");
     for(int i = 0; i < 1000; i++){
         uint8_t* test = halloc(PAGE_SIZE * 6);
         if(test == NULL){
@@ -85,6 +85,13 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     // Test the PC speaker
     PCSP_Beep();
 
+    // Load modules and drivers from initramfs...
+
+    // Other system initialization...
+
+    // Create the kernel's PCB
+    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", ROOT_UID, true, true, true);
+
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true);
     SwitchProcess(shellPCB);
@@ -95,12 +102,13 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     // - Make the shell a userland application
     int result = shellPCB->entryPoint();
 
+    // Go to the task scheduler...
+
     DestroyProcess(shellPCB);
     if(result == 0){
         printf("Shell exited successfully! Idling...\n");
     } else {
         printf("Shell exited with error code %d!\n", result);
-        STOP
     }
 
     for(;;){

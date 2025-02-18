@@ -4,6 +4,10 @@
 /* TODO:
  * - Impmement an STDOUT, which can then be accessed by terminal applications? (Should the kernel do that instead?)
  * - Implement a way to have better text customization (more colors, better way to change colors)
+ * - Improve the VGA driver to support more features (e.g. mode X)
+ * - Allow console history and scrolling up/down through it
+ * 
+ * NOTE: The VGA driver will always be hardcoded into the kernel
 */
 
 volatile uintptr_t VGA_ADDRESS = 0xB8000;
