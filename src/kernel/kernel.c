@@ -25,7 +25,7 @@ size_t memSizeMiB = 0;
 // Reference the built-in shell
 extern int shell(void);
 
-version_t kernelVersion = {0, 2, 2};
+version_t kernelVersion = {0, 2, 3};
 
 NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
@@ -80,22 +80,25 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Test the timer
     printf("Testing the timer...\n");
-    sleep(1000);    
+    //sleep(1000);    
 
     // Test the PC speaker
-    PCSP_Beep();
+    //PCSP_Beep();
 
-    // Load modules and drivers from initramfs...
+    // Initialize the VFS
+    vfs_init(mbootInfo);
+
+    // Load modules and drivers from initrd...
 
     // Load a users file and create the users...
 
     // Other system initialization...
 
     // Create the kernel's PCB
-    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", ROOT_UID, true, true, true, KERNEL, 0);
+    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);
 
     // Create a dummy PCB for the shell
-    pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
+    pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
     SwitchProcess(shellPCB);
 
     // Jump to the built-in debug shell

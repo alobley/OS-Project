@@ -13,11 +13,12 @@
 #include <acpi.h>
 #include <time.h>
 #include <string.h>
+#include <vfs.h>
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
 #define CMD_MAX_SIZE 256
 
-const char* prompt = "KISh> ";
+const char* prompt = "> ";
 
 char* cmdBuffer = NULL;
 
@@ -25,6 +26,8 @@ uint8_t cmdBufferIndex = 0;
 
 volatile bool enterPressed = false;         // Must be volatile so the compiler doesn't optimize it away
 volatile bool exit = false;
+
+pcb_t* shellPCB = NULL;
 
 // Handle a key press
 void handler(KeyboardEvent_t event){
@@ -74,6 +77,9 @@ void ProcessCommand(char* cmd){
         printf("ACPI: prints ACPI info\n");
         printf("time: prints the current time\n");
         printf("settz: sets the timezone\n");
+        printf("pwd: prints the current working directory\n");
+        printf("ls: lists the files in the current directory\n");
+        printf("cd: changes the current directory\n");
     }else if(strcmp(cmd, "exit") == 0){
         printf("Exiting shell...\n");
         exit = true;
@@ -86,26 +92,26 @@ void ProcessCommand(char* cmd){
     }else if(strcmp(cmd, "version") == 0){
         printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
     }else if(strcmp(cmd, "pinfo") == 0){
-        pcb_t* currentProcess;
         do_syscall(SYS_GET_PCB, 0, 0, 0);
-        asm volatile("mov %%eax, %0" : "=r" (currentProcess));
+        asm volatile("mov %%eax, %0" : "=r" (shellPCB));
         printf("Process info:\n");
-        printf("PID: %d\n", currentProcess->pid);
-        printf("Name: %s\n", currentProcess->name);
-        printf("Owner: %d ", currentProcess->owner);
-        if(currentProcess->owner == ROOT_UID){
+        printf("PID: %d\n", shellPCB->pid);
+        printf("Name: %s\n", shellPCB->name);
+        printf("Owner: %d ", shellPCB->owner);
+        if(shellPCB->owner == ROOT_UID){
             printf("(root)\n");
         }else{
             printf("(user)\n");
         }
-        printf("State: %d\n", currentProcess->state);
-        printf("Priority: %d\n", currentProcess->priority);
-        printf("Time slice: %d ms\n", currentProcess->timeSlice);
-        printf("Stack: 0x%x\n", currentProcess->stack);
-        printf("Stack base: 0x%x\n", currentProcess->stackBase);
-        printf("Stack top: 0x%x\n", currentProcess->stackTop);
-        printf("Heap base: 0x%x\n", currentProcess->heapBase);
-        printf("Heap end: 0x%x\n", currentProcess->heapEnd);
+        printf("State: %d\n", shellPCB->state);
+        printf("Priority: %d\n", shellPCB->priority);
+        printf("Time slice: %d ms\n", shellPCB->timeSlice);
+        printf("Stack: 0x%x\n", shellPCB->stack);
+        printf("Stack base: 0x%x\n", shellPCB->stackBase);
+        printf("Stack top: 0x%x\n", shellPCB->stackTop);
+        printf("Heap base: 0x%x\n", shellPCB->heapBase);
+        printf("Heap end: 0x%x\n", shellPCB->heapEnd);
+        printf("Current working directory: %s\n", shellPCB->workingDirectory);
     }else if(strcmp(cmd, "ACPI") == 0){
         printf("ACPI info:\n");
         printf("ACPI version: %d\n", acpiInfo.version);
@@ -120,7 +126,7 @@ void ProcessCommand(char* cmd){
         }
         printf("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
         printf("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
-    }else if(strncmp(cmd, "settz", 4) == 0){
+    }else if(strncmp(cmd, "settz", 5) == 0){
         // Assumes the clock is originally set to UTC
         char* tz = cmd + 6;
         if(strlen(tz) == 0 || strlen(cmd) < 6){
@@ -151,19 +157,77 @@ void ProcessCommand(char* cmd){
         }else{
             printf("Only EST and UTC are supported\n");
         }
+    }else if(strcmp(cmd, "pwd") == 0){
+        printf("%s\n", shellPCB->workingDirectory);
+    }else if(strcmp(cmd, "ls") == 0){
+        vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
+        if(current == NULL){
+            printf("Error: current directory does not exist\n");
+            goto end;
+        }
+        if(!current->isDirectory){
+            printf("Error: current directory is not a directory\n");
+            goto end;
+        }
+        vfs_node_t* child = current->pointer.firstChild;
+        for(size_t i = 0; i < current->size; i++){
+            if(child != NULL){
+                printf("%s\n", child->name);
+                child = child->next;
+            }
+        }
+    }else if(strncmp(cmd, "cd", 2) == 0){
+        char* dir = cmd + 3;
+        if(strlen(dir) == 0 || strlen(cmd) < 3){
+            printf("Usage: cd <directory>\n");
+            goto end;
+        }
+        vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
+        if(current == NULL){
+            printf("Error: current directory does not exist\n");
+            goto end;
+        }
+        if(!current->isDirectory){
+            printf("Error: current directory is not a directory\n");
+            goto end;
+        }
+        if(strcmp(dir, "..") == 0 && current->parent != NULL){
+            shellPCB->workingDirectory = current->parent->name;
+            goto end;
+        }else if(strcmp(dir, ".") == 0){
+            goto end;
+        }else if(*dir == '/'){
+            // Absolute path
+            shellPCB->workingDirectory = dir;
+            goto end;
+        }
+        vfs_node_t* newDir = VfsFindNode(dir);
+        if(newDir != NULL && newDir->isDirectory){
+            shellPCB->workingDirectory = newDir->name;
+            goto end;
+        }
+        printf("Error: directory %s does not exist\n", dir);
     }else if(strlen(cmd) != 0){
         printf("Unknown command: %s\n", cmd);
     }
 
     end:
+    printf(shellPCB->workingDirectory);
     printf(prompt);
 }
 
 int shell(void){
     ClearScreen();
-    printf("Kernel-Integrated Shell (KISh)\n", STDOUT);
-    printf("Type 'help' for a list of commands\n", STDOUT);
-    printf(prompt, STDOUT);
+    printf("Kernel-Integrated Shell (KISh)\n");
+    printf("Type 'help' for a list of commands\n");
+    do_syscall(SYS_GET_PCB, 0, 0, 0);
+    asm volatile("mov %%eax, %0" : "=r" (shellPCB));
+    if(shellPCB == NULL){
+        printf("Error finding process information!\n");
+        return 1;
+    }
+    printf(shellPCB->workingDirectory);
+    printf(prompt);
     do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     while(!exit){

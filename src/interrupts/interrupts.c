@@ -408,7 +408,6 @@ void ISRHandler(struct Registers *regs){
 extern void reboot();
 
 static void ExceptionHandler(struct Registers *regs){
-    ClearScreen();
     printf("KERNEL PANIC: %s", exceptions[regs->int_no]);
     cli
     hlt

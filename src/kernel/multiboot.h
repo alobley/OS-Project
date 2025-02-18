@@ -20,7 +20,7 @@ typedef struct Module {
     uintptr_t end;
     const char* desc;
     uint32_t __reserved;
-} PACKED module_t;
+} PACKED multiboot_module_t;
 
 typedef struct MultibootInfo {
     // System information flags
@@ -38,7 +38,7 @@ typedef struct MultibootInfo {
 
     // Module information
     uint32_t mods_count;            // Number of (loaded) modules
-    module_t* mods_addr;            // Address of the first module structure
+    multiboot_module_t* mods_addr;  // Address of the first module structure
 
     // Symbol table and ELF section header information
     union {

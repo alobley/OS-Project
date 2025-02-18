@@ -45,6 +45,7 @@ typedef struct Process_Control_Block {
 
     // Environment/Args
     char* env;                                  // Environment variables
+    char* workingDirectory;                     // Working directory
 
     // Are these needed with env?
     int argc;                                   // Argument count
@@ -99,6 +100,6 @@ typedef struct Spinlock {
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);
 void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
 
 #endif // MULTITASKING_H

@@ -98,6 +98,7 @@ static inline int strcmp(const char* str1, const char* str2){
 
 // Compare two strings, up to a certain number of characters
 static inline int strncmp(const char* str1, const char* str2, unsigned long size){
+    size--;                 // Bug fix
     while(size-- && *str1 && *str2 && *str1 == *str2){
         str1++;
         str2++;
