@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <console.h>
 #include <stddef.h>
+#include <stdbool.h>
+#include <string.h>
 
 #define STDOUT 1
 #define STDIN 0
@@ -47,6 +49,8 @@ enum System_Calls {
     SYS_DRIVER_MUNMAP,                      // Unmap a region of MMIO from userland
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
+    SYS_BLOCK_READ,                         // Read from a block device
+    SYS_BLOCK_WRITE,                        // Write to a block device
 };
 
 typedef struct Version {
@@ -69,8 +73,8 @@ extern version_t kernelVersion;
 
 
 // This function is primarily here to make debugging easier
-static inline void write(const char* str, uint32_t fileDescriptor){
-    do_syscall(SYS_WRITE, fileDescriptor, (uint32_t)str, 0);
+static inline void write(const char* str, uint32_t fileDescriptor, size_t len){
+    do_syscall(SYS_WRITE, fileDescriptor, (uint32_t)str, len);
 }
 
 #endif // KERNEL_H

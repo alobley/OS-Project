@@ -123,9 +123,9 @@ void ProcessCommand(char* cmd){
 
 int shell(void){
     ClearScreen();
-    write("Kernel-Integrated Shell (KISh)\n", STDOUT);
-    write("Type 'help' for a list of commands\n", STDOUT);
-    write(prompt, STDOUT);
+    printf("Kernel-Integrated Shell (KISh)\n", STDOUT);
+    printf("Type 'help' for a list of commands\n", STDOUT);
+    printf(prompt, STDOUT);
     do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     while(!exit){

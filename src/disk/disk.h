@@ -5,6 +5,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <kernel.h>
+#include <multitasking.h>
+
+#define WRITE_SUCCESS 0
+#define WRITE_FAILURE -1
 
 // Common interface for disk drivers
 
@@ -19,6 +23,7 @@ typedef enum Disk_Type {
     DISK_TYPE_NVRAM,                // Non-volatile RAM (e.g. flash memory)
     DISK_TYPE_ROM,                  // Read-only memory (e.g. CD-ROM)
     DISK_TYPE_RW,                   // Read-write memory (e.g. hard drive)
+    DISK_TYPE_RAMDISK,              // RAM disk (e.g. tmpfs)
     // More...
 } disktype_t;
 
@@ -63,6 +68,7 @@ typedef struct Media_Descriptor {
     disk_interface_t interface;     // Interface used to access the media
     disktype_t type;                // Type of media
     mediafs_t filesystem;           // Filesystem used on the media
+    char* fsName;                   // Name of the filesystem (if none, "RAW")
     diskflags_t flags;              // Flags defining the disk's capabilities
     disk_status_t status;           // Current status of the disk
     uint16_t diskNum;               // Disk number (for use by the kernel to identify disks)
@@ -81,7 +87,7 @@ typedef struct Media_Descriptor {
 
     // Miscellaneous information, if applicable based on interface
     uint16_t basePort;              // Base port number
-    uint16_t controlPort;           // Control port number
+    uint16_t controlPort;           // Control port number n
     bool slave;                     // "Slave" device (if applicable)
 } media_descriptor_t;
 

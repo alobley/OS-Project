@@ -85,15 +85,7 @@ physaddr_t FindValidFrame(){
                 uint32_t pt_idx = PT_INDEX(addr);
                 
                 // Check if page directory entry is present
-                if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
-                    physaddr_t table = currentPageDir[pd_idx] & 0xFFFFF000;
-                    page_table_t* pt = (page_table_t*)table;
-                    if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
-                        continue;
-                    }else{
-                        return i * PAGE_SIZE;
-                    }
-                }
+                return i * PAGE_SIZE;
             }
         }
     }else{
@@ -127,6 +119,8 @@ int palloc(virtaddr_t virt, uint32_t flags){
 
         totalPages++;
 
+        ClearBit(frame / PAGE_SIZE);
+
         //printf("Allocated page at 0x%x\n", frame);
         //printf("Page virtual address: 0x%x\n", virt);
 
@@ -150,6 +144,8 @@ void pfree(virtaddr_t virt){
             totalPages--;
         }
 
+        SetBit(virt / PAGE_SIZE);
+
         asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
     }
 }
@@ -164,6 +160,8 @@ int physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags) {
         physaddr_t table = currentPageDir[pdi] & 0xFFFFF000;
         page_table_t* pt = (page_table_t*)table;
         pt->pages[pti] = (phys & 0xFFFFF000) | flags;
+
+        ClearBit(phys / PAGE_SIZE);
 
         asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
 

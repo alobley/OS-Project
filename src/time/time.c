@@ -123,7 +123,32 @@ void InitTimer(){
 datetime_t currentTime = {0, 0, 0, 0, 0, 0};
 
 void UpdateTime(){
-    currentTime.second++;
+    if(currentTime.second < 59){
+        currentTime.second++;
+    }else{
+        currentTime.second = 0;
+        if(currentTime.minute < 59){
+            currentTime.minute++;
+        }else{
+            currentTime.minute = 0;
+            if(currentTime.hour < 23){
+                currentTime.hour++;
+            }else{
+                currentTime.hour = 0;
+                if(currentTime.day < 31){
+                    currentTime.day++;
+                }else{
+                    currentTime.day = 1;
+                    if(currentTime.month < 12){
+                        currentTime.month++;
+                    }else{
+                        currentTime.month = 1;
+                        currentTime.year++;
+                    }
+                }
+            }
+        }
+    }
 }
 
 // TODO: Improve year detection

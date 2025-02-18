@@ -46,6 +46,13 @@ typedef struct Process_Control_Block {
     char name [PROCESS_MAX_NAME + 1];           // Process name (+ null terminator)
     int (*entryPoint)(void);                    // Entry point
 
+    // Environment/Args
+    char* env;                                  // Environment variables
+
+    // Are these needed with env?
+    int argc;                                   // Argument count
+    char** argv;                                // Argument vector
+
     // Memory information
     uintptr_t stack;                            // Stack pointer
     uintptr_t stackBase;                        // Stack base

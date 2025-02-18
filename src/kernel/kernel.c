@@ -16,6 +16,8 @@
 #include <acpi.h>
 #include <users.h>
 #include <vfs.h>
+#include <disk.h>
+#include <devices.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -57,6 +59,7 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     InitializeKeyboard();
 
+    printf("Stress testing the heap allocator...\n");
     // Stress test the memory allocator
     for(int i = 0; i < 1000; i++){
         uint8_t* test = halloc(PAGE_SIZE * 6);
@@ -72,9 +75,12 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     printf("Memory stress test completed successfully!\n");
 
-    printf("Synchronizing system time...\n");
+    printf("Getting system time from CMOS...\n");
     SetTime();
-    printf("Current time: %d:%d:%d %d/%d/%d\n", currentTime.hour, currentTime.minute, currentTime.second, currentTime.day, currentTime.month, currentTime.year);
+
+    // Test the timer
+    printf("Testing the timer...\n");
+    sleep(1000);    
 
     // Test the PC speaker
     PCSP_Beep();
@@ -83,10 +89,11 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
     pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true);
     SwitchProcess(shellPCB);
 
-    // Test the timer
-    sleep(1000);
-
-    int result = shell();
+    // Jump to the built-in debug shell
+    // TODO: 
+    // - Load the shell from the filesystem
+    // - Make the shell a userland application
+    int result = shellPCB->entryPoint();
 
     DestroyProcess(shellPCB);
     if(result == 0){

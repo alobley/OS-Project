@@ -3,6 +3,7 @@
 #include <keyboard.h>
 #include <multitasking.h>
 #include <kernel.h>
+#include <time.h>
 
 #define NUM_ISRS 49
 
@@ -101,7 +102,7 @@ bool CheckPrivelige(){
 
 // System call handler
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
-void syscall_handler(struct Registers *regs){
+HOT void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case SYS_DBG: {
             // SYS_DBG
@@ -119,9 +120,14 @@ void syscall_handler(struct Registers *regs){
             break;
         case SYS_WRITE:
             // SYS_WRITE
+            // EBX contains the file descriptor
+            // ECX contains the pointer to the data to write
+            // EDX contains the number of bytes to write
+
+            // Write a string to the file descriptor
             switch(regs->ebx){
                 case STDOUT: {
-                    WriteString((char*)regs->ecx);
+                    WriteStringSize((char*)regs->ecx, regs->edx);
                     break;
                 }
                 default: {
@@ -135,23 +141,38 @@ void syscall_handler(struct Registers *regs){
             break;
         case SYS_EXIT:
             // SYS_EXIT
+            // EBX contains the exit code
+            // Exit a process
             break;
         case SYS_FORK:
             // SYS_FORK
+            // Fork a process
             break;
         case SYS_EXEC:
             // SYS_EXEC
+            // EBX contains the pointer to the path of the executable
+            // ECX contains the pointer to the arguments
+            // EDX contains the pointer to the environment variables
+            // Execute a process (replaces current process)
             break;
         case SYS_WAIT:
             // SYS_WAIT
+            // EBX contains the PID to wait for
+            // Wait for a process to exit
             break;
         case SYS_GET_PID:
             // SYS_GET_PID
-            regs->eax = GetCurrentProcess()->pid;
+            regs->eax = (uint32_t)GetCurrentProcess()->pid;
             break;
         case SYS_GET_PCB:
             // SYS_GET_PCB
-            regs->eax = (uint32_t)GetCurrentProcess();
+            // Gets own PCB when not priveliged, otherwise gets PCB of process with PID in ebx
+            if(!CheckPrivelige()){
+                regs->eax = (uint32_t)GetCurrentProcess();
+            }else{
+                // Don't have this yet, just do the same thing as above
+                regs->eax = (uint32_t)GetCurrentProcess();
+            }
             break;
         case SYS_OPEN:
             // SYS_OPEN
@@ -167,6 +188,7 @@ void syscall_handler(struct Registers *regs){
             break;
         case SYS_GET_TIME:
             // SYS_GET_TIME
+            regs->eax = (uint32_t)&currentTime;
             break;
         case SYS_KILL:
             // SYS_KILL
@@ -186,49 +208,93 @@ void syscall_handler(struct Registers *regs){
         case SYS_MPROTECT:
             // SYS_MPROTECT
             break;
+        
 
 
         // Priveliged system calls for drivers and kernel modules (privelige check required, will check PCB)
-        // Note - these will always be the highest system calls
+        // Note - these will always be the highest system calls.
+        // Microkernel for now? Is it easier? What about speed?
         case SYS_MODULE_LOAD:
             // SYS_MODULE_LOAD
             if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting system resources. Killing process.\n");
+                printf("Unpriveliged Application requesting ring 0. Killing process.\n");
+                // Log the error
+                // Kill the process
                 break;
             }
+            // Put a driver into ring 0
             break;
         case SYS_MODULE_UNLOAD:
             // SYS_MODULE_UNLOAD
+            // Remove a driver from ring 0
             break;
         case SYS_MODULE_QUERY:
             // SYS_MODULE_QUERY
             break;
         case SYS_REGISTER_DEVICE:
             // SYS_REGISTER_DEVICE
+            // EBX contains a value signaling what kind of device to load
+            // ECX contains a pointer to the struct containing the device data
+            // Note: This registers the driver as well as the device
+
+            // Check the module type and load it
+            // Do what is neccecary for the type of module (device, filesystem, etc.)
             break;
         case SYS_UNREGISTER_DEVICE:
             // SYS_UNREGISTER_DEVICE
+            // EBX contains a value signaling what kind of device to unload
+            // ECX contains a pointer to the struct containing the device data
+
+            // Search for the device in the device list and unload it
+            // The driver is responsible for its own memory management
             break;
         case SYS_REQUEST_IRQ:
             // SYS_REQUEST_IRQ
+            // This should be pretty simple. EBX contains the IRQ number to request, ECX contains a pointer to the handler function
             break;
         case SYS_RELEASE_IRQ:
             // SYS_RELEASE_IRQ
+            // EBX contains the IRQ number to release
+            
+            // Disable the IRQ in the PIC
             break;
         case SYS_DRIVER_IOCTL:
             // SYS_DRIVER_IOCTL
             break;
         case SYS_DRIVER_MMAP:
             // SYS_DRIVER_MMAP
+            // EBX contains the physical address to map
+            // ECX contains the size of the region to map
+
+            // Page a memory region for a driver to access
             break;
         case SYS_DRIVER_MUNMAP:
             // SYS_DRIVER_MUNMAP
+            // EBX contains the physical address to unmap
+            // ECX contains the size of the region to unmap
+
+            // Unmap/Unpage a memory region for a driver to access
             break;
         case SYS_IO_PORT_READ:
             // SYS_IO_PORT_READ
+            // EBX contains the port to read from
+            // ECX contains the size of the read (1, 2, or 4 bytes)
+
+            // Wrapper for inb, inw, and inl essentially
             break;
         case SYS_IO_PORT_WRITE:
             // SYS_IO_PORT_WRITE
+            // EBX contains the port to write to
+            // ECX contains the size of the write (1, 2, or 4 bytes)
+            // EDX contains the value to write
+
+            // Wrapper for outb, outw, and outl essentially
+            break;
+        case SYS_BLOCK_READ:
+            // SYS_BLOCK_READ
+            break;
+        case SYS_BLOCK_WRITE:
+            // SYS_BLOCK_WRITE
             break;
         default: {
             printf("Unknown syscall: 0x%x\n", regs->eax);

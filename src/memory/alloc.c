@@ -155,4 +155,6 @@ void hfree(UNUSED void* ptr){
         }
         current = current->next;
     }
+
+    // Free unused pages...
 }
