@@ -29,6 +29,13 @@ volatile bool exit = false;
 
 pcb_t* shellPCB = NULL;
 
+void PrintPrompt(){
+    WriteChar('[');
+    WriteString(shellPCB->workingDirectory);
+    WriteChar(']');
+    printf(prompt);
+}
+
 // Handle a key press
 void handler(KeyboardEvent_t event){
     if(event.keyUp || event.ascii == 0){
@@ -196,10 +203,6 @@ void ProcessCommand(char* cmd){
             goto end;
         }else if(strcmp(dir, ".") == 0){
             goto end;
-        }else if(*dir == '/'){
-            // Absolute path
-            shellPCB->workingDirectory = dir;
-            goto end;
         }
         vfs_node_t* newDir = VfsFindNode(dir);
         if(newDir != NULL && newDir->isDirectory){
@@ -212,8 +215,7 @@ void ProcessCommand(char* cmd){
     }
 
     end:
-    printf(shellPCB->workingDirectory);
-    printf(prompt);
+    PrintPrompt();
 }
 
 int shell(void){
@@ -226,8 +228,7 @@ int shell(void){
         printf("Error finding process information!\n");
         return 1;
     }
-    printf(shellPCB->workingDirectory);
-    printf(prompt);
+    PrintPrompt();
     do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     while(!exit){
