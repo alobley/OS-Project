@@ -84,7 +84,7 @@ void KernelOverrideUnlock(mutex_t* mutex){
 
 // Process control functions
 // TODO: implement process paging, stack, and heap allocation. For now, we'll just create a process with a NULL stack and heap.
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground){
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice){
     pcb_t* process = (pcb_t*)halloc(sizeof(pcb_t));
     process->pid = numProcesses++;
     process->flags.priveliged = priveliged;
@@ -92,8 +92,8 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool privel
     process->flags.foreground = foreground;
     process->state = RUNNING;
     process->entryPoint = entryPoint;
-    process->timeSlice = PROCESS_DEFAULT_TIME_SLICE;
-    process->priority = PROCESS_DEFAULT_PRIORITY;
+    process->timeSlice = timeSlice;
+    process->priority = priority;
     process->owner = owner;
 
     process->next = NULL;
@@ -113,7 +113,7 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool privel
     process->next = processList;
     processList = process;
 
-    strcpy(process->name, name);
+    process->name = name;
 
     return process;
 }

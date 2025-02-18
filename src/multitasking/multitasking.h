@@ -11,7 +11,6 @@
 
 #define process_switch_stub()
 
-#define PROCESS_MAX_NAME 32
 #define PROCESS_DEFAULT_TIME_SLICE 100          // Default time slice in milliseconds
 
 typedef enum Process_Priority {
@@ -21,8 +20,6 @@ typedef enum Process_Priority {
     NORMAL = 3,                                 // Normal priority processes
     LOW = 4,                                    // Low priority processes
 } priority_t;
-
-#define PROCESS_DEFAULT_PRIORITY NORMAL
 
 typedef enum Process_State {
     RUNNING,                                    // Process is currently running (including non-current processes)
@@ -43,7 +40,7 @@ typedef struct Process_Control_Block {
     uid owner;                                  // User ID
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
-    char name [PROCESS_MAX_NAME + 1];           // Process name (+ null terminator)
+    char* name;                                 // Process name
     int (*entryPoint)(void);                    // Entry point
 
     // Environment/Args
@@ -102,6 +99,6 @@ typedef struct Spinlock {
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);
 void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground);
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
 
 #endif // MULTITASKING_H

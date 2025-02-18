@@ -87,13 +87,15 @@ NORET void kernel_main(UNUSED uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Load modules and drivers from initramfs...
 
+    // Load a users file and create the users...
+
     // Other system initialization...
 
     // Create the kernel's PCB
-    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", ROOT_UID, true, true, true);
+    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", ROOT_UID, true, true, true, KERNEL, 0);
 
     // Create a dummy PCB for the shell
-    pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true);
+    pcb_t* shellPCB = CreateProcess(shell, "shell", ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
     SwitchProcess(shellPCB);
 
     // Jump to the built-in debug shell
