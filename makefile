@@ -4,7 +4,7 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display gtk
+EMARGS=-m 10M -smp 1 -vga vmware -display gtk
 EMARGS+=-cdrom build/main.iso 
 EMARGS+=-hda bin/harddisk.vdi 
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
