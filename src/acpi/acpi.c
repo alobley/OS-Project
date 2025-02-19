@@ -17,76 +17,44 @@ bool DoChecksum(char* table, uint32_t length){
 // Locate the RSDP table using brute force
 void GetRSDP(){
     // Check if the real mode pointer exists
-    uint16_t* potentialPtr = (uint16_t*)0x40E;
-    // No real mode pointer, check the BIOS area
+    char* potentialPtr = (char*)0x40E;
+    // If no real mode pointer, check the BIOS area
     char* startPtr = (char*)0x000E0000;
     char* endPtr = (char*)0x000FFFFF;
 
     char* toFind = "RSD PTR ";
 
-    // Search painstakingly for the RSDP
-    for(char* i = startPtr; i < endPtr; i += 16){
-        if(strncmp(i, toFind, 8)){
+    if(strncmp((char*)potentialPtr, toFind, 8) == 0){
+        if(DoChecksum((char*)potentialPtr, sizeof(RSDP_V1_t))){
             // Found it
-
-            if(DoChecksum(i, sizeof(RSDP_V1_t)) == false){
-                // Checksum failed
-                WriteString("RSDP checksum failed.\n");
-                continue;
-            }
-
-            if(((RSDP_V1_t*)i)->revision == 0){
-                acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)i;
-                acpiInfo.version = 0;
-            }else if(((RSDP_V1_t*)i)->revision == 2){
-                // Check the extended checksum
-
-                if(DoChecksum(i, sizeof(RSDP_V2_t)) == false){
-                    // Checksum failed
-                    WriteString("RSDP checksum failed.\n");
-                    continue;
-                }
-
-                acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)i;
-                acpiInfo.version = 2;
+            if(((RSDP_V1_t*)potentialPtr)->revision == 0){
+                acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)potentialPtr;
+                acpiInfo.version = acpiInfo.rsdp.rsdpV1->revision;
             }else{
-                // Unsupported revision
-                WriteString("Unsupported RSDP revision.\n");
-                continue;
+                acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)potentialPtr;
+                acpiInfo.version = acpiInfo.rsdp.rsdpV2->revision;
             }
             acpiInfo.exists = true;
             return;
         }
     }
 
-    // If no pointer found, try looking for the real mode pointer
-    uint32_t ptr = *potentialPtr;
-    ptr = ptr << 4;
-
-    if(DoChecksum((char*)ptr, sizeof(RSDP_V1_t)) == false){
-        // Checksum failed. There is no ACPI table.
-        WriteString("RSDP checksum failed. There is no ACPI table.\n");
-        acpiInfo.exists = false;
-        return;
-    }
-    if(((RSDP_V1_t*)ptr)->revision == 0){
-        acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)ptr;
-    }else if(((RSDP_V1_t*)ptr)->revision == 2){
-        // Check the extended checksum
-        if(DoChecksum((char*)ptr, sizeof(RSDP_V2_t)) == false){
-            // Checksum failed
-            WriteString("RSDP checksum failed. There is no ACPI table.\n");
-            acpiInfo.exists = false;
-            return;
+    // Search the BIOS data area for it if not found
+    for(char* i = startPtr; i < endPtr; i += 16){
+        if(strncmp(i, toFind, 8) == 0){
+            if(DoChecksum(i, sizeof(RSDP_V1_t))){
+                // Found it
+                if(acpiInfo.rsdp.rsdpV1->revision == 0){
+                    acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)i;
+                    acpiInfo.version = acpiInfo.rsdp.rsdpV1->revision;
+                }else{
+                    acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)i;
+                    acpiInfo.version = acpiInfo.rsdp.rsdpV2->revision;
+                }
+                acpiInfo.exists = true;
+                return;
+            }
         }
-
-        acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)ptr;
-        acpiInfo.version = 2;
-    }else{
-        // Unsupported revision
-        printf("Unsupported RSDP revision.\n");
-        acpiInfo.exists = false;
-        return;
     }
 }
 
@@ -149,16 +117,12 @@ bool PS2ControllerExists(){
     if(acpiInfo.fadt == NULL){
         return false;
     }
-    if(acpiInfo.version > 1){
-        if((acpiInfo.fadt->bootArchFlags & 0x0002) == 0x0002){
-        return true;
-        }else{
-            return false;
-        }
-    }else{
-        // On version 1, it is always enabled
-        return true;
+    if(acpiInfo.fadt->header.revision > 1){
+        // Check the boot architecture flags
+        return acpiInfo.fadt->bootArchFlags & 0x02;
     }
+    // On version 1, it is always enabled
+    return true;
 }
 
 void AcpiShutdown(){

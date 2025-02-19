@@ -185,8 +185,8 @@ void InitializeKeyboard(){
     if(acpiInfo.exists && !PS2ControllerExists()){
         // If PS/2 controller doesn't exist, return. These kinds of systems will not be supported until USB is implemented.
         printf("PS/2 Controller not found. This computer can't be used.\n");
-        return;
-    }else{
+        STOP
+    }else if(!acpiInfo.exists){
         // No ACPI table, so we can't determine if the PS/2 controller exists. Assume it does.
         printf("Assuming PS/2 controller existence...\n");
     }

@@ -23,6 +23,7 @@ typedef enum Process_Priority {
 
 typedef enum Process_State {
     RUNNING,                                    // Process is currently running (including non-current processes)
+    BACKGROUND,                                 // Process is running in the background (i.e. does not need a time slice)
     WAITING,                                    // Process is waiting for an event (e.g. a mutex or timer)
     STOPPED                                     // Process is stopped (it is not running, e.g. closing)
 } process_state_t;
@@ -101,5 +102,6 @@ pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);
 void DestroyProcess(pcb_t* process);
 pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
+void Scheduler(void);
 
 #endif // MULTITASKING_H

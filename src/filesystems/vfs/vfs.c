@@ -4,6 +4,48 @@
 
 vfs_node_t* root = NULL;
 
+char* GetFullPath(vfs_node_t* node) {
+    if (node == NULL) {
+        return NULL;
+    }
+    
+    if (node->parent == NULL) {
+        // Root case: allocate and copy name
+        char* path = (char*)halloc(strlen(node->name) + 1);
+        if (path == NULL) {
+            return NULL;
+        }
+        strcpy(path, node->name);
+        return path;
+    }
+    
+    // Get parent path recursively
+    char* parentPath = GetFullPath(node->parent);
+    if (parentPath == NULL) {
+        return NULL;
+    }
+    
+    // Calculate required size and allocate
+    size_t parentLen = strlen(parentPath);
+    size_t nodeLen = strlen(node->name);
+    char* fullPath = (char*)halloc(parentLen + nodeLen + 2); // +2 for '/' and '\0'
+    if (fullPath == NULL) {
+        hfree(parentPath);
+        return NULL;
+    }
+    
+    // Construct full path
+    strcpy(fullPath, parentPath);
+    if(parentLen > 1){
+        // If the parent path is not the root, add a slash
+        strcat(fullPath, "/");
+    }
+    strcat(fullPath, node->name);
+    
+    hfree(parentPath);
+    return fullPath;
+}
+
 vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* pointer){
     vfs_node_t* node = (vfs_node_t*)halloc(sizeof(vfs_node_t));
     memset(node, 0, sizeof(vfs_node_t));

@@ -32,6 +32,7 @@ version_t kernelVersion = {0, 2, 3};
  * - Ramdisk driver (integrated into kernel)
  * - Keyboard Driver (loadable module in initrd)
  * - Mouse Driver (loadable module)
+ * - PCI/PCIe Driver (Integrated into kernel?)
  * - ACPI Driver (Integrated into kernel)
  * - PATA Driver (loadable module in initrd)
  * - AHCI Driver (loadable module in initrd)
@@ -59,16 +60,17 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
     memSizeMiB = memSize / 1024 / 1024;
 
+    printf("Bootloader: %s\n", mbootInfo->boot_loader_name);
     printf("Multiboot magic: 0x%x\n", magic);
     printf("Memory: %u MiB\n", memSizeMiB);
-
-    InitializeACPI();
 
     InitIDT();
     InitISR();
     InitFPU();
     InitIRQ();
     InitTimer();
+
+    InitializeACPI();
 
     // Do some stuff for the (future) VBE driver...
 
@@ -91,7 +93,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Stress test the memory allocator
     printf("Stress testing the heap allocator...\n");
-    for(int i = 0; i < 1000; i++){
+    for(int i = 1; i <= 1000; i++){
         uint8_t* test = halloc(PAGE_SIZE * 6);
         if(test == NULL){
             printf("Failed to allocate memory!\n");
@@ -138,21 +140,15 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
     SwitchProcess(shellPCB);
-
     // Jump to the built-in debug shell
     // TODO: 
     // - Load the shell from the filesystem
     // - Make the shell a userland application
     int result = shellPCB->entryPoint();
-
-    // Go to the task scheduler...
-
     DestroyProcess(shellPCB);
-    if(result == 0){
-        printf("Shell exited successfully! Idling...\n");
-    } else {
-        printf("Shell exited with error code %d!\n", result);
-    }
+
+    // Schedule the first process
+    Scheduler();
 
     for(;;){
         hlt

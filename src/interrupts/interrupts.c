@@ -4,6 +4,7 @@
 #include <multitasking.h>
 #include <kernel.h>
 #include <time.h>
+#include <devices.h>
 
 #define NUM_ISRS 49
 
@@ -217,12 +218,59 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_MODULE_LOAD:
             // SYS_MODULE_LOAD
             if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting ring 0. Killing process.\n");
+                printf("Unpriveliged Application requesting system resources. Killing process.\n");
                 // Log the error
                 // Kill the process
                 break;
             }
-            // Put a driver into ring 0
+            // EBX contains the device type
+            // ECX contains a pointer to the device struct
+            // EDX contains a pointer to the device-specific struct containing specific functions
+            // Other registers based on device type...
+
+            // Get the driver's PCB and set the proper flags
+            pcb_t* currentProcess = GetCurrentProcess();
+            currentProcess->state = BACKGROUND;
+            currentProcess->flags.disableSwap = true;
+            currentProcess->timeSlice = 0;                      // No time slice for drivers (they should be background processes)
+
+            // This registers the device and its type
+            switch(regs->ebx){
+                case DEVICE_TYPE_BLOCK:
+                    // Load a device driver
+                    break;
+                case DEVICE_TYPE_INPUT:
+                    // Load a filesystem driver
+                    break;
+                case DEVICE_TYPE_NETWORK:
+                    // Load a network driver
+                    break;
+                case DEVICE_TYPE_GPU:
+                    // Load a graphics driver
+                    break;
+                case DEVICE_TYPE_AUDIO:
+                    // Load an audio driver
+                    break;
+                case DEVICE_TYPE_CONSOLE:
+                    // Load a storage driver
+                    break;
+                case DEVICE_TYPE_BRIDGE:
+                    // Load a bridge driver
+                    break;
+                case DEVICE_TYPE_LEGACY:
+                    // Load a driver for a legacy I/O device
+                    break;
+                case DEVICE_TYPE_DISK_CONTROLLER:
+                    // Load a driver for a disk controller
+                    break;
+                case DEVICE_TYPE_MISC:
+                    // Load a driver for a miscellaneous device
+                    break;
+                default:
+                    printf("Unknown driver type: 0x%x\n", regs->ebx);
+                    break;
+            }
+
             break;
         case SYS_MODULE_UNLOAD:
             // SYS_MODULE_UNLOAD

@@ -58,7 +58,7 @@ typedef struct GenericAddressStructure {
 } PACKED GenericAddressStructure;
 
 // Why so many tables just to find this?
-typedef struct FADT {
+typedef struct PACKED FADT {
     SDTHeader_t header;
     uint32_t firmwareCtrl;
     uint32_t dsdt;
@@ -118,6 +118,14 @@ typedef struct FADT {
     GenericAddressStructure xGPE0Blk;
     GenericAddressStructure xGPE1Blk;
 } PACKED FADT_t;
+
+// This can be defined later
+typedef struct PACKED MADT {
+    SDTHeader_t header;
+    uintptr_t localAPICAddress;
+    uint32_t flags;
+    uint8_t entries[];
+} PACKED MADT_t;
 
 typedef struct ACPIInfo {
     union {

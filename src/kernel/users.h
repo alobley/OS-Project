@@ -10,11 +10,13 @@
 #define ROOT_UID 0                      // Root user ID
 
 typedef uint32_t uid;
+typedef uint32_t gid;
 
 typedef struct User {
     uid id;
+    gid group;
     char username[MAX_USERNAME_LENGTH];
-    char password[];
+    char* password;                     // Password hash
 } user_t;
 
 user_t* CreateUser(char* username, char* password, uid id);

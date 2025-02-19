@@ -135,12 +135,15 @@ void DestroyProcess(pcb_t* process){
         current->next = process->next;
     }
 
+    // Search the device tree for any devices owned by the process and destroy them...
+
     hfree(process);
     numProcesses--;
 }
 
 // More...
 
+// TODO: implement scheduler
 void Scheduler(void){
     return;
 }
