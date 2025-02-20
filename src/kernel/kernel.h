@@ -44,7 +44,7 @@ enum System_Calls {
     SYS_UNREGISTER_DEVICE,                  // Unregister a device
     SYS_REQUEST_IRQ,                        // Request an IRQ
     SYS_RELEASE_IRQ,                        // Release an IRQ
-    SYS_DRIVER_IOCTL,                       // Driver IOCTL
+    SYS_DRIVER_SET_STATUS,                  // Set the status of a driver
     SYS_DRIVER_MMAP,                        // Memory-map a region of MMIO to userland for shared access
     SYS_DRIVER_MUNMAP,                      // Unmap a region of MMIO from userland
     SYS_IO_PORT_READ,                       // Read from an I/O port

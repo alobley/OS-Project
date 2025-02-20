@@ -64,6 +64,16 @@ typedef struct Features {
     bool present : 1;               // Disk is present
 } diskflags_t;
 
+typedef enum File_IO_Command {
+    FILE_COMMAND_READ,
+    FILE_COMMAND_WRITE,
+    FILE_COMMAND_DELETE,
+    FILE_COMMAND_CREATE,
+    FILE_COMMAND_RENAME,
+    FILE_COMMAND_MOVE,
+    FILE_COMMAND_COPY,
+} file_command_t;
+
 typedef struct Media_Descriptor {
     // General information
     device_t* device;               // Pointer to the device structure (which also points to this)
@@ -90,14 +100,7 @@ typedef struct Media_Descriptor {
     char* fsName;                   // Name of the filesystem (if none, "RAW")
 
     // NOTE: make sure to update the VFS, and when the VFS adds a directory to this disk, update the disk!
-    vfs_node_t* (*ReadFile)(struct Media_Descriptor* self, char* path);
-    int (*WriteFile)(struct Media_Descriptor* self, char* path, vfs_node_t* file);
-    int (*DeleteFile)(struct Media_Descriptor* self, char* path);
-    int (*CreateFile)(struct Media_Descriptor* self, char* path, size_t size);
-    int (*CreateDirectory)(struct Media_Descriptor* self, char* path);
-    int (*DeleteDirectory)(struct Media_Descriptor* self, char* path);
-    int (*Rename)(struct Media_Descriptor* self, char* oldPath, char* newPath);
-    int (*Move)(struct Media_Descriptor* self, char* oldPath, char* newPath);
+    driver_status (*FileCommand)(struct Media_Descriptor* self, file_command_t command, char* path, void* buffer, size_t bufferSize);
 
     // Physical geometry (if CHS, otherwise 0)
     uint16_t cylinders;             // Number of cylinders

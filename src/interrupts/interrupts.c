@@ -230,7 +230,7 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Get the driver's PCB and set the proper flags
             pcb_t* currentProcess = GetCurrentProcess();
-            currentProcess->state = BACKGROUND;
+            currentProcess->state = DRIVER;
             currentProcess->flags.disableSwap = true;
             currentProcess->timeSlice = 0;                      // No time slice for drivers (they should be background processes)
 
@@ -254,14 +254,11 @@ HOT void syscall_handler(struct Registers *regs){
                 case DEVICE_TYPE_CONSOLE:
                     // Load a storage driver
                     break;
-                case DEVICE_TYPE_BRIDGE:
-                    // Load a bridge driver
+                case DEVICE_TYPE_BUS:
+                    // Load a bus driver
                     break;
                 case DEVICE_TYPE_LEGACY:
                     // Load a driver for a legacy I/O device
-                    break;
-                case DEVICE_TYPE_DISK_CONTROLLER:
-                    // Load a driver for a disk controller
                     break;
                 case DEVICE_TYPE_MISC:
                     // Load a driver for a miscellaneous device
@@ -306,8 +303,9 @@ HOT void syscall_handler(struct Registers *regs){
             
             // Disable the IRQ in the PIC
             break;
-        case SYS_DRIVER_IOCTL:
-            // SYS_DRIVER_IOCTL
+        case SYS_DRIVER_SET_STATUS:
+            // SYS_DRIVER_SET_STATUS
+            // Set the status of the device this driver is responsible for
             break;
         case SYS_DRIVER_MMAP:
             // SYS_DRIVER_MMAP
@@ -315,6 +313,7 @@ HOT void syscall_handler(struct Registers *regs){
             // ECX contains the size of the region to map
 
             // Page a memory region for a driver to access
+            // Make sure already mapped regions are not overwritten (palloc already has this functionality)
             break;
         case SYS_DRIVER_MUNMAP:
             // SYS_DRIVER_MUNMAP

@@ -23,7 +23,7 @@ typedef enum Process_Priority {
 
 typedef enum Process_State {
     RUNNING,                                    // Process is currently running (including non-current processes)
-    BACKGROUND,                                 // Process is running in the background (i.e. does not need a time slice)
+    DRIVER,                                     // Process is a driver and will not be scheduled
     WAITING,                                    // Process is waiting for an event (e.g. a mutex or timer)
     STOPPED                                     // Process is stopped (it is not running, e.g. closing)
 } process_state_t;
@@ -42,7 +42,7 @@ typedef struct Process_Control_Block {
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
     char* name;                                 // Process name
-    int (*entryPoint)(void);                    // Entry point
+    int (*EntryPoint)(void);                    // Entry point
 
     // Environment/Args
     char* env;                                  // Environment variables
@@ -88,7 +88,7 @@ typedef struct Mutex {
     process_queue_t waitQueue;                  // Mutex wait queue
 } mutex_t;
 
-#define MUTEX_INIT { false, NULL, { NULL, NULL } }
+#define MUTEX_INIT (mutex_t){ false, NULL, { NULL, NULL } }
 
 // First come first serve semaphore (for very short wait times)
 typedef struct Spinlock {
@@ -96,7 +96,7 @@ typedef struct Spinlock {
     pcb_t* owner;                               // Spinlock owner
 } spinlock_t;
 
-#define SPINLOCK_INIT { false, NULL }
+#define SPINLOCK_INIT (spinlock_t){ false, NULL }
 
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(pcb_t* process);

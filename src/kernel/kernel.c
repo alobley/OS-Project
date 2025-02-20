@@ -27,6 +27,19 @@ extern int shell(void);
 
 version_t kernelVersion = {0, 2, 3};
 
+/* Short-Term TODO:
+ * - Implement a proper command parser in KISh
+ * - Finish up the driver/module implementation
+ * - Implement initrd
+ * - Create a driver to be loaded as a module
+ * - Improve the memory manager
+ * - Complete the VFS and add full disk drivers
+ * - Implement file then program loading
+ * - Implement a proper task scheduler
+ * - Read up on UNIX philosophy and more closely follow it
+*/
+
+
 /* Expected driver setup:
  * - VGA driver (integrated into kernel)
  * - Ramdisk driver (integrated into kernel)
@@ -42,18 +55,36 @@ version_t kernelVersion = {0, 2, 3};
  * - USB Driver (loadable module in initrd)
  * - Filesystem Drivers (loadable modules in initrd)
  * - i915 driver (loadable module)
-*/
-
-/* Short-Term TODO:
- * - Implement a proper command parser in KISh
- * - Finish up the driver/module implementation
- * - Implement initrd
- * - Create a driver to be loaded as a module
- * - Improve the memory manager
- * - Complete the VFS and add full disk drivers
- * - Implement file then program loading
- * - Implement a proper task scheduler
- * - Read up on UNIX philosophy and more closely follow it
+ * - Page kernel to the higher half of memory
+ *  
+ * How drivers work
+ * - Physical devices can also have virtual children (i.e. a disk device can have a child device as a filesystem driver, and each one for a partition)
+ * - Monolithic design is typically easier
+ * - Physical and virtual devices should be considered as entirely separate devices (i.e. sda is not the same as sda1)
+ * - Some filesystem and disk drivers should be directly integrated into the kernel
+ * - The kernel should be able to identify all the devices on the system
+ * 
+ * How I might set them up:
+ * - Create a device registry
+ * - Create a root bus
+ * - Scan for all hardware devices
+ * - Create a media descriptor for each device
+ * - Load the appropriate driver for each device (if one exists)
+ * - Add the device to the device registry
+ * - Create virtual devices as needed, such as for filesystems. One for each partition most likely
+ * - Add the virtual devices to the device registry
+ * - Initialize the VFS
+ * 
+ * Driver model:
+ * - Each driver should be a loadable module
+ * - Should the drivers run in userland as a microkernel environment?
+ * - If the drivers don't run in kernelspace, does that require them to be "servers"? What about the single CPU this OS is designed for?
+ * - Should the drivers be able to communicate with each other? (probably)
+ * - Will any drivers need code that constantly runs and therefore should be scheduled? That should be avoided.
+ * - What is the most efficient way for communication? Should a device type only have the one command function pointer?
+ * - How should userland functions request access to a device?
+ * - Should the kernel just have a wholly standardized interface, or should access to devices be done through their symbolic existence in the VFS, like UNIX?
+ * - How do I abstract specifics like that? Should the OS have a GOP for graphics, for example?
 */
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
@@ -119,6 +150,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Create device registry...
 
+    // Create the root bus...
+
     // Create the ramfs media descriptor...
 
     // Load the ramfs driver...
@@ -141,10 +174,10 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
     SwitchProcess(shellPCB);
     // Jump to the built-in debug shell
-    // TODO: 
+    // TODO:
     // - Load the shell from the filesystem
     // - Make the shell a userland application
-    int result = shellPCB->entryPoint();
+    int result = shellPCB->EntryPoint();
     DestroyProcess(shellPCB);
 
     // Schedule the first process

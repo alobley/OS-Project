@@ -6,19 +6,25 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Hmmm, might be worth learning C++ for this kind of stuff
+typedef enum Driver_Return {
+    DRIVER_RETURN_OK,              // Driver loaded successfully
+    DRIVER_RETURN_ERROR,           // Driver failed to load
+    DRIVER_RETURN_NOT_SUPPORTED,   // Driver does not support the device
+    DRIVER_RETURN_NOT_PRESENT,     // Driver is not present
+    DRIVER_RETURN_NOT_READY,       // Driver is not ready
+    DRIVER_RETURN_UNKNOWN          // Driver status is unknown
+} driver_status;
 
 // Note: filesystems will be implemented in the disk I/O code, as they are not devices
 typedef enum Device_Type{
+    DEVICE_TYPE_BUS,                // Bus (e.g. PCI, USB, AHCI, chipset)
     DEVICE_TYPE_BLOCK,              // Block device (e.g. hard drive)
-    DEVICE_TYPE_INPUT,              // Human i nput device (e.g. keyboard)
+    DEVICE_TYPE_INPUT,              // Human input device (e.g. keyboard)
     DEVICE_TYPE_NETWORK,            // Network device (e.g. Ethernet)
     DEVICE_TYPE_GPU,                // Graphics device (e.g. VGA)
     DEVICE_TYPE_AUDIO,              // Audio device (e.g. sound card)
     DEVICE_TYPE_CONSOLE,            // TTY or VGA
-    DEVICE_TYPE_BRIDGE,             // Bridge (e.g. PCI, USB)
     DEVICE_TYPE_LEGACY,             // Legacy device (e.g. ISA, non-USB Serial, Parallel)
-    DEVICE_TYPE_DISK_CONTROLLER,    // Disk controller (e.g. AHCI, NVMe)
     DEVICE_TYPE_MISC,               // Miscellaneous/other device
 } device_type_t;
 
@@ -29,12 +35,16 @@ typedef struct Driver {
     device_type_t type;             // Type of device the driver supports
     uint32_t vendorId;              // Vendor ID of the driver
     uint32_t deviceId;              // Device ID of the driver
+    pcb_t* pcb;                     // Process control block for the driver
 
     // More driver stuff...
 } driver_t;
 
 typedef enum Device_Status {
-    DEVICE_STATUS_OK,              // Device is OK
+    DEVICE_STATUS_OK,              // Device is OK and ready for next command
+    DEVICE_STATUS_BUSY,            // Device is busy
+    DEVICE_STATUS_TIMEOUT,         // Device timed out
+    DEVICE_STATUS_BUFFER_FULL,     // Device buffer is full
     DEVICE_STATUS_ERROR,           // Device has an error
     DEVICE_STATUS_NOT_PRESENT,     // Device is not present
     DEVICE_STATUS_NOT_SUPPORTED,   // Device is not supported
@@ -42,6 +52,16 @@ typedef enum Device_Status {
     DEVICE_STATUS_INVALID_DRIVER,  // Device has an invalid driver
     DEVICE_STATUS_UNKNOWN          // Device status is unknown
 } device_status_t;
+
+typedef enum Device_Command {
+    DEVICE_COMMAND_READ,            // Read data from the device
+    DEVICE_COMMAND_WRITE,           // Write data to the device
+    DEVICE_COMMAND_CONTROL,         // Control command (e.g. enable/disable device)
+    DEVICE_COMMAND_STATUS,          // Status command (e.g. get device status)
+    DEVICE_COMMAND_RESET,           // Reset command (e.g. reset device)
+    DEVICE_COMMAND_INIT,            // Initialize command (e.g. initialize device)
+    DEVICE_COMMAND_CLEANUP,         // Cleanup command (e.g. cleanup device)
+} device_command_t;
 
 typedef struct Device {
     // Device-specific information
@@ -51,11 +71,7 @@ typedef struct Device {
     mutex_t lock;                   // Mutex for the device
 
     // Device operations (set by drivers)
-    int (*init)(struct Device* self);                                      // Initialize the device
-    int (*read)(struct Device* self, void* buffer, size_t size);           // Read from the device
-    int (*write)(struct Device* self, const void* buffer, size_t size);    // Write to the device
-    int (*command)(struct Device* self, ...);                              // Send a command to the device
-    int (*cleanup)(struct Device* self);                                   // Cleanup the device
+    driver_status (*Command)(struct Device* self, device_command_t command, void* data, size_t bufferLen); // Command function (e.g. read, write, control, status, reset, init, cleanup)
 
     // Strings for device identification
     char* name;                     // Name of the device
@@ -76,20 +92,13 @@ typedef struct Device {
 } device_t;
 
 typedef struct Device_Registry {
-    device_t* first;                // First device in the registry (is kind of an unholy abomination of a combination of a linked list and a binary tree)
+    device_t* rootBus;              // System root bus (represents the motherboard)
     size_t numDevices;              // Number of devices
 } device_registry_t;
 
+extern device_registry_t* deviceRoot;
+
 // Functions for device and driver management
 void InitializeDeviceRegistry();
-device_registry_t* GetDeviceRegistry();
-device_t* RegisterDevice(device_t* self);
-void UnregisterDevice(device_t* self);
-
-driver_t* RegisterDriver(driver_t* self);
-void UnregisterDriver(driver_t* self);
-
-driver_t* CreateDriver(char* name, device_type_t type, uint32_t vendorId, uint32_t deviceId, int (*probe)(device_t* device));
-device_t* CreateDevice(char* name, device_type_t type, void* deviceData);
 
 #endif // DEVICES_H

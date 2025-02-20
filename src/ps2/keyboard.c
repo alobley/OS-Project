@@ -156,6 +156,8 @@ void kb_handler(){
             shiftPressed = false;
         }
         event.keyUp = true;
+        event.scanCode = scanCode ^ EVENT_KEYUP;
+        event.ascii = keyASCII[event.scanCode];
     }else{
         if(scanCode == LSHIFT || scanCode == RSHIFT){
             // When shift is pressed

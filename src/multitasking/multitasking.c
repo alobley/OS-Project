@@ -91,7 +91,7 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
     process->flags.kernel = kernel;
     process->flags.foreground = foreground;
     process->state = RUNNING;
-    process->entryPoint = entryPoint;
+    process->EntryPoint = entryPoint;
     process->timeSlice = timeSlice;
     process->priority = priority;
     process->owner = owner;
