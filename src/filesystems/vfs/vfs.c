@@ -185,7 +185,6 @@ char* strdup(const char* str) {
     return result;
 }
 
-// Add this helper function before ProcessCommand
 char* JoinPath(const char* base, const char* path) {
     // Handle absolute paths
     if (path[0] == '/') {
