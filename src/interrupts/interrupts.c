@@ -127,7 +127,7 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Write a string to the file descriptor
             switch(regs->ebx){
-                case STDOUT: {
+                case STDOUT_FILENO: {
                     WriteStringSize((char*)regs->ecx, regs->edx);
                     break;
                 }
