@@ -55,7 +55,7 @@ version_t kernelVersion = {0, 2, 3};
  * - USB Driver (loadable module in initrd)
  * - Filesystem Drivers (loadable modules in initrd)
  * - i915 driver (loadable module)
- * - Page kernel to the higher half of memory
+ * - Page kernel to the higher half of memory instead of at 2MiB
  *  
  * How drivers work
  * - Physical devices can also have virtual children (i.e. a disk device can have a child device as a filesystem driver, and each one for a partition)
@@ -74,8 +74,9 @@ version_t kernelVersion = {0, 2, 3};
  * - Create virtual devices as needed, such as for filesystems. One for each partition most likely
  * - Add the virtual devices to the device registry
  * - Initialize the VFS
+ * - Add each device as a symbolic file in /dev
  * 
- * Driver model:
+ * Driver design considerations:
  * - Each driver should be a loadable module
  * - Should the drivers run in userland as a microkernel environment?
  * - If the drivers don't run in kernelspace, does that require them to be "servers"? What about the single CPU this OS is designed for?
@@ -84,7 +85,7 @@ version_t kernelVersion = {0, 2, 3};
  * - What is the most efficient way for communication? Should a device type only have the one command function pointer?
  * - How should userland functions request access to a device?
  * - Should the kernel just have a wholly standardized interface, or should access to devices be done through their symbolic existence in the VFS, like UNIX?
- * - How do I abstract specifics like that? Should the OS have a GOP for graphics, for example?
+ * - How do I abstract specifics like that? Should the OS have a GOP for graphics, for example? Should I write drivers with OpenGL support?
 */
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
@@ -113,8 +114,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     InitializeAllocator();
 
-    asm volatile("mov $1, %eax");
-    DO_SYSCALL
+    do_syscall(1, 0, 0, 0);
 
     uint32_t usedMem = totalPages * PAGE_SIZE;
 
