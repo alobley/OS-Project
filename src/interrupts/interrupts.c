@@ -125,9 +125,10 @@ HOT void syscall_handler(struct Registers *regs){
             // ECX contains the pointer to the data to write
             // EDX contains the number of bytes to write
 
-            // Write a string to the file descriptor
+            // Write data to the file descriptor
             switch(regs->ebx){
                 case STDOUT_FILENO: {
+                    // TODO: change STDOUT_FILENO to the actual file descriptor
                     WriteStringSize((char*)regs->ecx, regs->edx);
                     break;
                 }

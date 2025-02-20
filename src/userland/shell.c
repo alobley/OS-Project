@@ -206,15 +206,16 @@ void ProcessCommand(char* cmd){
             goto end;
         }
         if(strcmp(dir, "..") == 0 && current->parent != NULL){
-            //shellPCB->workingDirectory = current->parent->name;
             shellPCB->workingDirectory = GetFullPath(current->parent);
             goto end;
         }else if(strcmp(dir, ".") == 0){
             goto end;
         }
-        vfs_node_t* newDir = VfsFindNode(dir);
+        char* fullPath = JoinPath(shellPCB->workingDirectory, dir);
+        vfs_node_t* newDir = VfsFindNode(fullPath);
         if(newDir != NULL && newDir->isDirectory){
             shellPCB->workingDirectory = GetFullPath(newDir);
+            hfree(fullPath);
             goto end;
         }
         printf("Error: directory %s does not exist\n", dir);

@@ -176,6 +176,35 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     return -1;
 }
 
+char* strdup(const char* str) {
+    size_t len = strlen(str) + 1;
+    char* result = (char*)halloc(len);
+    if (result) {
+        strcpy(result, str);
+    }
+    return result;
+}
+
+// Add this helper function before ProcessCommand
+char* JoinPath(const char* base, const char* path) {
+    // Handle absolute paths
+    if (path[0] == '/') {
+        return strdup(path);
+    }
+    
+    // Allocate enough space for base + / + path + null terminator
+    size_t len = strlen(base) + strlen(path) + 2;
+    char* result = (char*)halloc(len);
+    
+    strcpy(result, base);
+    // Add slash if base doesn't end with one
+    if (base[strlen(base) - 1] != '/') {
+        strcat(result, "/");
+    }
+    strcat(result, path);
+    return result;
+}
+
 // Create the bare minimum needed for a functional VFS on boot
 void vfs_init(multiboot_info_t* mbootInfo) {
     // Initialize the virtual filesystem
@@ -191,6 +220,16 @@ void vfs_init(multiboot_info_t* mbootInfo) {
     // Make the ram0 file in the /dev directory
     vfs_node_t* rd = VfsMakeNode("ram0", false, 0, 0644, ROOT_UID, NULL);
     VfsAddChild(dev, rd);
+
+    // Make the tty0 file in the /dev directory
+    vfs_node_t* tty0 = VfsMakeNode("tty0", false, 0, 0644, ROOT_UID, NULL);
+    VfsAddChild(dev, tty0);
+
+    vfs_node_t* input = VfsMakeNode("input", true, 0, 0755, ROOT_UID, NULL);
+    VfsAddChild(dev, input);
+
+    vfs_node_t* keyboard = VfsMakeNode("kb0", false, 0, 0644, ROOT_UID, NULL);
+    VfsAddChild(input, keyboard);
 
     vfs_node_t* ramdisk = VfsFindNode("/dev/ram0");
     // The file just exists to tell the kernel it's there, so it doesn't need data

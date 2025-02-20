@@ -35,5 +35,6 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int 
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
 void vfs_init(multiboot_info_t* mbootInfo);
 char* GetFullPath(vfs_node_t* node);
+char* JoinPath(const char* base, const char* path);
 
 #endif // VFS_H
