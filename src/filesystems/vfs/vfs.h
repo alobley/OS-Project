@@ -7,6 +7,7 @@
 #include <users.h>
 #include <time.h>
 #include <multiboot.h>
+#include <multitasking.h>
 
 #define VFS_ROOT "/"
 
@@ -26,6 +27,10 @@ typedef struct VFS_Node {
     datetime_t created;                     // The time the file or directory was created
     datetime_t modified;                    // The time the file or directory was last modified
     datetime_t accessed;                    // The time the file or directory was last accessed
+    union {
+        spinlock_t* lock;                  // If file, a spinlock for the file
+        uint32_t reserved;                 // If directory, reserved for future use
+    };
 } vfs_node_t;
 
 extern vfs_node_t* root;

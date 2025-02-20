@@ -176,6 +176,7 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     return -1;
 }
 
+// This is gonna have to move
 char* strdup(const char* str) {
     size_t len = strlen(str) + 1;
     char* result = (char*)halloc(len);
