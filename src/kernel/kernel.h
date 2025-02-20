@@ -7,8 +7,8 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define STDOUT 1
-#define STDIN 0
+#define STDOUT_FILENO 1
+#define STDIN_FILENO 0
 
 // TODO: Learn how to have the kernel and drivers interact with each other and with user applications
 enum System_Calls {
