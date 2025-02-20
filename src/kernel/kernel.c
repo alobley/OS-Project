@@ -86,6 +86,8 @@ version_t kernelVersion = {0, 2, 3};
  * - How should userland functions request access to a device?
  * - Should the kernel just have a wholly standardized interface, or should access to devices be done through their symbolic existence in the VFS, like UNIX?
  * - How do I abstract specifics like that? Should the OS have a GOP for graphics, for example? Should I write drivers with OpenGL support?
+ * 
+ * I'm kind of overwhelmed. Not sure where to start or what to do first.
 */
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){

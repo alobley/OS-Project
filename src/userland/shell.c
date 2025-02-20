@@ -31,7 +31,14 @@ pcb_t* shellPCB = NULL;
 
 void PrintPrompt(){
     WriteChar('[');
-    WriteString(shellPCB->workingDirectory);
+    // Get only the last part of the working directory
+    char* lastPart = strrchr(shellPCB->workingDirectory, '/');
+    if(strlen(shellPCB->workingDirectory) == 1){
+        lastPart = shellPCB->workingDirectory;
+    }else{
+        lastPart++;
+    }
+    WriteString(lastPart);
     WriteChar(']');
     printf(prompt);
 }

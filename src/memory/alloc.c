@@ -129,7 +129,7 @@ MALLOC void* halloc(size_t size){
 }
 
 
-void hfree(UNUSED void* ptr){
+void hfree(void* ptr){
     if(ptr == NULL){
         return;
     }
