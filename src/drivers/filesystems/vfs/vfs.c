@@ -89,7 +89,7 @@ vfs_node_t* VfsFindNode(char* path) {
         }
 
         // Find matching child node
-        vfs_node_t* child = current->pointer.firstChild;
+        vfs_node_t* child = current->firstChild;
         bool found = false;
 
         while (child != NULL) {
@@ -134,12 +134,12 @@ int VfsAddChild(vfs_node_t* parent, vfs_node_t* child) {
     child->next = NULL;
 
     // Add child to parent
-    if (parent->pointer.firstChild == NULL) {
+    if (parent->firstChild == NULL) {
         // First child case
-        parent->pointer.firstChild = child;
+        parent->firstChild = child;
     } else {
         // Find last child and append
-        vfs_node_t* lastChild = parent->pointer.firstChild;
+        vfs_node_t* lastChild = parent->firstChild;
         while (lastChild->next != NULL) {
             lastChild = lastChild->next;
         }
@@ -157,12 +157,12 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
         return -1;
     }
     if(parent->isDirectory){
-        vfs_node_t* current = parent->pointer.firstChild;
+        vfs_node_t* current = parent->firstChild;
         vfs_node_t* prev = NULL;
         while(current != NULL){
             if(current == child){
                 if(prev == NULL){
-                    parent->pointer.firstChild = current->next;
+                    parent->firstChild = current->next;
                 }else{
                     prev->next = current->next;
                 }
@@ -174,6 +174,11 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
         }
     }
     return -1;
+}
+
+void VfsAddDevice(device_t* device, char* name, char* path){
+    vfs_node_t* node = VfsMakeNode(name, false, 0, 0755, ROOT_UID, device);
+    VfsAddChild(VfsFindNode(path), node);
 }
 
 // This is gonna have to move
@@ -214,27 +219,14 @@ void vfs_init(multiboot_info_t* mbootInfo) {
     // Make the required directories for the initrd
     vfs_node_t* dev = VfsMakeNode("dev", true, 0, 0755, ROOT_UID, NULL);
     VfsAddChild(root, dev);
+
     vfs_node_t* initrd = VfsMakeNode("initrd", true, 0, 0755, ROOT_UID, NULL);
     VfsAddChild(root, initrd);
 
-    // Make the ram0 file in the /dev directory
-    vfs_node_t* rd = VfsMakeNode("ram0", false, 0, 0644, ROOT_UID, NULL);
-    VfsAddChild(dev, rd);
-
-    // Make the tty0 file in the /dev directory
-    vfs_node_t* tty0 = VfsMakeNode("tty0", false, 0, 0644, ROOT_UID, NULL);
-    VfsAddChild(dev, tty0);
+    // TODO: Search for devices and add them to the VFS dynamically
 
     vfs_node_t* input = VfsMakeNode("input", true, 0, 0755, ROOT_UID, NULL);
     VfsAddChild(dev, input);
-
-    vfs_node_t* keyboard = VfsMakeNode("kb0", false, 0, 0644, ROOT_UID, NULL);
-    VfsAddChild(input, keyboard);
-
-    vfs_node_t* ramdisk = VfsFindNode("/dev/ram0");
-    // The file just exists to tell the kernel it's there, so it doesn't need data
-    ramdisk->pointer.data = NULL;
-    ramdisk->size = 1;
 
     // Get the initrd directory from the multiboot info
     multiboot_module_t* mod = (multiboot_module_t*)mbootInfo->mods_addr;

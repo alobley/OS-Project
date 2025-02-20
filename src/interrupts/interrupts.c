@@ -226,7 +226,7 @@ HOT void syscall_handler(struct Registers *regs){
             }
             // EBX contains the device type
             // ECX contains a pointer to the device struct
-            // EDX contains a pointer to the device-specific struct containing specific functions
+            // EDX contains a pointer to the device-specific struct
             // Other registers based on device type...
 
             // Get the driver's PCB and set the proper flags
@@ -236,38 +236,7 @@ HOT void syscall_handler(struct Registers *regs){
             currentProcess->timeSlice = 0;                      // No time slice for drivers (they should be background processes)
 
             // This registers the device and its type
-            switch(regs->ebx){
-                case DEVICE_TYPE_BLOCK:
-                    // Load a device driver
-                    break;
-                case DEVICE_TYPE_INPUT:
-                    // Load a filesystem driver
-                    break;
-                case DEVICE_TYPE_NETWORK:
-                    // Load a network driver
-                    break;
-                case DEVICE_TYPE_GPU:
-                    // Load a graphics driver
-                    break;
-                case DEVICE_TYPE_AUDIO:
-                    // Load an audio driver
-                    break;
-                case DEVICE_TYPE_CONSOLE:
-                    // Load a storage driver
-                    break;
-                case DEVICE_TYPE_BUS:
-                    // Load a bus driver
-                    break;
-                case DEVICE_TYPE_LEGACY:
-                    // Load a driver for a legacy I/O device
-                    break;
-                case DEVICE_TYPE_MISC:
-                    // Load a driver for a miscellaneous device
-                    break;
-                default:
-                    printf("Unknown driver type: 0x%x\n", regs->ebx);
-                    break;
-            }
+            //RegisterDevice((device_type_t)regs->ebx, (device_t*)regs->ecx, (void*)regs->edx);
 
             break;
         case SYS_MODULE_UNLOAD:

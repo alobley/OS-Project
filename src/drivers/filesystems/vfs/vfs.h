@@ -8,6 +8,7 @@
 #include <time.h>
 #include <multiboot.h>
 #include <multitasking.h>
+#include <devices.h>
 
 #define VFS_ROOT "/"
 
@@ -16,10 +17,10 @@ typedef struct VFS_Node {
     char* name;
     bool isDirectory;
     size_t size;                            // If file, the number of bytes. If directory, the number of children.
-    union Pointer{
+    union /*-Wpedantic doesn't allow this so it's time to get rid of that*/ {
         struct VFS_Node* firstChild;        // If directory
         void* data;                         // If file (data type to be determined elsewhere)
-    } pointer;
+    };
     struct VFS_Node* parent;                // Parent directory
     struct VFS_Node* next;                  // Next sibling
     unsigned int permissions;               // Permissions for the file or directory (the owner can do anything to it)
@@ -27,16 +28,13 @@ typedef struct VFS_Node {
     datetime_t created;                     // The time the file or directory was created
     datetime_t modified;                    // The time the file or directory was last modified
     datetime_t accessed;                    // The time the file or directory was last accessed
-    union {
-        spinlock_t* lock;                  // If file, a spinlock for the file
-        uint32_t reserved;                 // If directory, reserved for future use
-    };
 } vfs_node_t;
 
 extern vfs_node_t* root;
 
 vfs_node_t* VfsFindNode(char* path);
 vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* pointer);
+void VfsAddDevice(device_t* device, char* name, char* path);
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
 void vfs_init(multiboot_info_t* mbootInfo);
 char* GetFullPath(vfs_node_t* node);

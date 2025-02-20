@@ -183,7 +183,7 @@ void ProcessCommand(char* cmd){
             printf("Error: current directory is not a directory\n");
             goto end;
         }
-        vfs_node_t* child = current->pointer.firstChild;
+        vfs_node_t* child = current->firstChild;
         for(size_t i = 0; i < current->size; i++){
             if(child != NULL){
                 printf("%s\n", child->name);

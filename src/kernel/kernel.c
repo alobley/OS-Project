@@ -163,6 +163,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialize the VFS
     vfs_init(mbootInfo);
 
+    InitializeDeviceRegistry();
+
     // Load modules and drivers from initrd...
 
     // Load a users file and create the users...
@@ -175,6 +177,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
     SwitchProcess(shellPCB);
+    
     // Jump to the built-in debug shell
     // TODO:
     // - Load the shell from the filesystem

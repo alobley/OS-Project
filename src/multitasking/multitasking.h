@@ -13,7 +13,7 @@
 
 #define PROCESS_DEFAULT_TIME_SLICE 100          // Default time slice in milliseconds
 
-typedef enum Process_Priority {
+typedef enum {
     KERNEL = 0,                                 // Kernel processes
     REALTIME = 1,                               // Real-time processes
     HIGH = 2,                                   // High priority processes
@@ -21,14 +21,14 @@ typedef enum Process_Priority {
     LOW = 4,                                    // Low priority processes
 } priority_t;
 
-typedef enum Process_State {
+typedef enum {
     RUNNING,                                    // Process is currently running (including non-current processes)
     DRIVER,                                     // Process is a driver and will not be scheduled
     WAITING,                                    // Process is waiting for an event (e.g. a mutex or timer)
     STOPPED                                     // Process is stopped (it is not running, e.g. closing)
 } process_state_t;
 
-typedef struct Process_Flags {
+typedef struct {
     bool priveliged : 1;                        // Running as root (if not, running as standard user)
     bool kernel : 1;                            // Running in kernel mode (drivers, etc. If not, running in userland)
     bool foreground : 1;                        // Running in the foreground
@@ -77,12 +77,12 @@ typedef struct QueueNode {
     struct QueueNode* next;                     // Next process in the queue
 } qnode;
 
-typedef struct Process_Queue {
+typedef struct {
     qnode* first;                               // First process in the queue
     qnode* last;                                // Last process in the queue
 } process_queue_t;
 
-typedef struct Mutex {
+typedef struct {
     volatile bool locked;                       // Mutex lock state
     pcb_t* owner;                               // Mutex owner
     process_queue_t waitQueue;                  // Mutex wait queue
@@ -91,7 +91,7 @@ typedef struct Mutex {
 #define MUTEX_INIT (mutex_t){ false, NULL, { NULL, NULL } }
 
 // First come first serve semaphore (for very short wait times)
-typedef struct Spinlock {
+typedef struct {
     volatile bool locked;                       // Spinlock lock state
     pcb_t* owner;                               // Spinlock owner
 } spinlock_t;

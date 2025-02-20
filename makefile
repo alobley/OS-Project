@@ -4,7 +4,7 @@ CCOM=i686-elf-gcc
 ARCH=i386
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display gtk -machine pc
+EMARGS=-m 512M -smp 1 -vga vmware -display sdl,gl=on -machine pc
 EMARGS+=-cdrom build/main.iso 
 EMARGS+=-hda bin/harddisk.vdi 
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
@@ -23,8 +23,9 @@ CONSOLE_DIR=$(SRC_DIR)/console
 INT_DIR=$(SRC_DIR)/interrupts
 MEM_DIR=$(SRC_DIR)/memory
 PS2_DIR=$(SRC_DIR)/ps2
+DRIVER_DIR=$(SRC_DIR)/drivers
 TIME_DIR=$(SRC_DIR)/time
-FS_DIR=$(SRC_DIR)/filesystems
+FS_DIR=$(DRIVER_DIR)/filesystems
 VFS_DIR=$(FS_DIR)/vfs
 DISK_DIR=$(SRC_DIR)/disk
 MULTITASK_DIR=$(SRC_DIR)/multitasking
@@ -38,7 +39,7 @@ INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT
 INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(FS_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
-CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -Wpedantic -lgcc $(INCLUDES) -Wno-unused -Werror
+CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -lgcc $(INCLUDES) -Wno-unused -Werror
 
 # Libraries to Link
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c
