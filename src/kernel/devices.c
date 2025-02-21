@@ -97,6 +97,7 @@ void InitializeDeviceRegistry(){
     deviceRoot->rootBus = motherboard;
     deviceRoot->numDevices = 1;
 
+    // This can be moved to the VFS initialization
     VfsAddDevice(motherboard, "rootdev", "/dev");
 
     // TODO: Move the following code to driver implementations
@@ -113,22 +114,17 @@ void InitializeDeviceRegistry(){
     VfsAddDevice(ramfs, "ram0", "/dev");
 
     /*
-    // Dump the info of the keyboard driver/device for debugging
-    printf("Keyboard driver info:\n");
-    printf("Name: %s\n", keyboardDriver->name);
-    printf("Type: %d\n", keyboardDriver->type);
-    printf("Device ID: %d\n", keyboardDriver->deviceId);
-    printf("Vendor ID: %d\n", keyboardDriver->vendorId);
-    printf("Device type: %d\n", keyboard->type);
-    printf("Device status: %d\n", keyboard->status);
-    printf("Device name: %s\n", keyboard->name);
-    printf("Device description: %s\n", keyboard->description);
-    printf("Device manufacturer: %s\n", keyboard->manufacturer);
-    printf("Device model: %s\n", keyboard->model);
-    printf("Device serial: %s\n", keyboard->serial);
-    printf("Device firmware: %s\n", keyboard->firmware);
-    printf("Device ID: %d\n", keyboard->id);
-    printf("Parent bus devices: %d\n", keyboard->parent->numDevices);
+    // Dump the info of the Motherboard driver/device for debugging
+    printf("Motherboard Info:\n");
+    printf("Name: %s\n", deviceRoot->rootBus->name);
+    printf("Description: %s\n", deviceRoot->rootBus->description);
+    printf("Manufacturer: %s\n", deviceRoot->rootBus->manufacturer);
+    printf("Firmware: %s\n", deviceRoot->rootBus->firmware);
+    printf("Number of devices: %d\n", deviceRoot->rootBus->numDevices);
+    printf("Driver name: %s\n", deviceRoot->rootBus->driver->name);
+    printf("Driver type: %d\n", deviceRoot->rootBus->driver->type);
+    printf("Driver device ID: %d\n", deviceRoot->rootBus->driver->deviceId);
+    printf("Driver vendor ID: %d\n", deviceRoot->rootBus->driver->vendorId);
     STOP
     */
 }

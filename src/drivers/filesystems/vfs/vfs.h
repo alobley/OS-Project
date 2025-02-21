@@ -17,7 +17,7 @@ typedef struct VFS_Node {
     char* name;
     bool isDirectory;
     size_t size;                            // If file, the number of bytes. If directory, the number of children.
-    union /*-Wpedantic doesn't allow this so it's time to get rid of that*/ {
+    union /*-Wpedantic doesn't allow unnamed unions so it's time to get rid of that*/ {
         struct VFS_Node* firstChild;        // If directory
         void* data;                         // If file (data type to be determined elsewhere)
     };
@@ -28,6 +28,8 @@ typedef struct VFS_Node {
     datetime_t created;                     // The time the file or directory was created
     datetime_t modified;                    // The time the file or directory was last modified
     datetime_t accessed;                    // The time the file or directory was last accessed
+    mutex_t lock;                           // A lock for the file or directory
+    device_t* device;                       // The device that this file or directory is on
 } vfs_node_t;
 
 extern vfs_node_t* root;

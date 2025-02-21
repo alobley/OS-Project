@@ -59,6 +59,9 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int 
     node->created = currentTime;
     node->modified = currentTime;
     node->accessed = currentTime;
+    node->lock = MUTEX_INIT;
+    node->data = pointer;                   // This is a union, so it's safe to do this
+    node->device = NULL;
     return node;
 }
 
