@@ -2,7 +2,20 @@
 #include <alloc.h>
 #include <ahci.h>
 #include <ata.h>
-#include <vfs.h>  
+#include <vfs.h>
+
+media_descriptor_t* CreateMediaDescriptor(device_t* device, uint8_t version, uint64_t size, disktype_t type, mediafs_t fs, disk_status_t status, diskflags_t flags, disk_interface_t* interface) {
+    media_descriptor_t* media = (media_descriptor_t*)halloc(sizeof(media_descriptor_t));
+    media->device = device;
+    media->version = version;
+    media->size = size;
+    media->type = type;
+    media->fs = fs;
+    media->status = status;
+    media->flags = flags;
+    media->interface = interface;
+    return media;
+}
 
 
 // Low-level disk function for reading sectors. Abstracts away the details of the disk interface.

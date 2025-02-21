@@ -20,3 +20,28 @@
 #define ATA_QUATERNARY_BASE 0x168
 #define ATA_QUATERNARY_CONTROL 0x366
 #define ATA_QUATERNARY_STATUS 0x366
+
+
+driver_t* ataDriver = NULL;
+device_t* ataDevice = NULL;
+
+media_descriptor_t* ataMediaDescriptor = NULL;
+
+uint8_t numAtaDisks = 0;
+
+void InitializeATA(){
+    ataDriver = CreateDriver("ATA", DEVICE_TYPE_STORAGE, 0, 0, NULL);
+    ataDevice = CreateDevice(DEVICE_TYPE_STORAGE, DEVICE_STATUS_OK, NULL, ataDriver, "ATA", "ATA Storage Device", "ATA", NULL);
+    AddDevice(ataDevice, DEVICE_TYPE_STORAGE);
+
+    char* diskNameBuf = (char*)halloc(4);
+    memset(diskNameBuf, 0, 4);
+    strcpy(diskNameBuf, "pat");
+    char* diskName = strcat(diskNameBuf, numAtaDisks + '0');
+    char* pathBuf = (char*)halloc(10);
+    memset(pathBuf, 0, 10);
+    strcpy(pathBuf, "/dev/pat");
+    char* path = strcat(pathBuf, numAtaDisks + '0');
+    numAtaDisks++;
+    VfsAddDevice(ataDevice, diskName, path);
+}

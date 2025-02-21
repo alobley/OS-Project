@@ -9,6 +9,6 @@
 #include <disk.h>
 
 // ATA (specifically PATA) driver
-
+void InitializeATA();
 
 #endif // ATA_H

@@ -18,6 +18,7 @@
 #include <vfs.h>
 #include <disk.h>
 #include <devices.h>
+#include <ata.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -164,6 +165,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     vfs_init(mbootInfo);
 
     InitializeDeviceRegistry();
+
+    InitializeAta();
 
     // Load modules and drivers from initrd...
 
