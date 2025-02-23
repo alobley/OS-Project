@@ -44,6 +44,13 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Follow UNIX philosophy [-]
 - Write some documentation [-]
 
+## Post-1.0
+- EXT4 support
+- NTFS support
+- SMP support
+- 64-bit BIOS version
+- 64-bit UEFI version
+
 ## Build & Run
 
 **Note:** This is currently largely untested on real hardware. It is recommended to use QEMU for emulation.
