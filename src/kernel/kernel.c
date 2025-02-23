@@ -25,7 +25,7 @@ size_t memSizeMiB = 0;
 // Reference the built-in shell
 extern int shell(void);
 
-version_t kernelVersion = {0, 2, 3};
+version_t kernelVersion = {0, 3, 0};
 
 /* Short-Term TODO:
  * - Implement a proper command parser in KISh
