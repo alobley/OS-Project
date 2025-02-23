@@ -25,10 +25,10 @@ Currently, this project is still in the early stages. I've spent the past year l
 [-] = nice to have
 [x] = complete
 - Add ACPI and/or APM support [x]
-- Create a standardized driver interface and add device management [*]
-- Implement a VFS for standardized file interaction [*] - Current goal (must include all modes as well as both reading and writing)
+- Create a standardized driver interface and add device management [x] (will likely never not be in progress)
+- Implement a VFS for standardized file interaction [x]
 - Add an initramfs for use on startup [-]
-- Add a PATA disk driver [*]
+- Add a PATA disk driver [*] (Current goal)
 - Add a SATA disk driver [-]
 - Add FAT support [*]
 - Implement a PC speaker driver (this one should be very simple) [x]
