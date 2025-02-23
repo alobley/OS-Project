@@ -16,9 +16,8 @@
 #include <acpi.h>
 #include <users.h>
 #include <vfs.h>
-#include <disk.h>
 #include <devices.h>
-#include <ata.h>
+//#include <ata.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -91,6 +90,8 @@ version_t kernelVersion = {0, 2, 3};
  * I'm kind of overwhelmed. Not sure where to start or what to do first.
 */
 
+void InitializeAta();
+
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
     memSizeMiB = memSize / 1024 / 1024;
@@ -117,7 +118,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     InitializeAllocator();
 
-    do_syscall(1, 0, 0, 0);
+    do_syscall(1, 0, 0, 0, 0, 0);
 
     uint32_t usedMem = totalPages * PAGE_SIZE;
 
@@ -151,7 +152,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Test the PC speaker
     PCSP_Beep();
 
-    // Create device registry...
+    // Create device registry
+    InitDeviceRegistry();
 
     // Create the root bus...
 
@@ -164,11 +166,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialize the VFS
     vfs_init(mbootInfo);
 
-    InitializeDeviceRegistry();
-
     InitializeAta();
-
-    // Load modules and drivers from initrd...
 
     // Load a users file and create the users...
 

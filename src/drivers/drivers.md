@@ -1,1 +1,0 @@
-This folder is simply meant to contain drivers that are integrated into the kernel. This will include SATA drivers, PATA drivers, filesystem drivers, and some others.

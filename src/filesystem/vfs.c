@@ -184,6 +184,18 @@ void VfsAddDevice(device_t* device, char* name, char* path){
     VfsAddChild(VfsFindNode(path), node);
 }
 
+int VfsRemoveNode(vfs_node_t* node){
+    if(node == NULL){
+        return -1;
+    }
+    if(node->parent != NULL){
+        VfsRemoveChild(node->parent, node);
+    }
+    hfree(node->name);
+    hfree(node);
+    return 0;
+}
+
 // This is gonna have to move
 char* strdup(const char* str) {
     size_t len = strlen(str) + 1;

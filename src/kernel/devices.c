@@ -1,130 +1,177 @@
 #include <devices.h>
 #include <alloc.h>
+#include <console.h>
 #include <vfs.h>
 
-device_registry_t* deviceRoot = NULL;
+device_registry_t* deviceRegistry;
 
-driver_t* rootBusDriver = NULL;
 
-char* rootBusName = "Motherboard";
-char* rootBusDesc = "System root bus";
-char* rootBusManufacturer = "Dedication OS developer";
-char* rootBusFirmware = "IBM-compatible BIOS";
-
-device_t* CreateDevice(device_type_t type, device_status_t status, void* deviceData, driver_t* driver, char* name, char* description, char* manufacturer, 
-                       char* model, char* serial, char* firmware, uint32_t deviceId, bool isBus, driver_status (*Command)(device_t* self, device_command_t command, void* data, 
-                       size_t bufferLen))
-{
-    device_t* device = (device_t*)halloc(sizeof(device_t));
-    device->type = type;
-    device->status = status;
-    device->deviceData = deviceData;
-    device->lock = MUTEX_INIT;
-    device->Command = Command;
-    device->name = name;
-    device->description = description;
-    device->manufacturer = manufacturer;
-    device->model = model;
-    device->serial = serial;
-    device->firmware = firmware;
-    device->parent = NULL;
-    device->children = NULL;
-    device->next = NULL;
-    device->driver = driver;
-    device->id = deviceId;
-    device->numDevices = 0;
-    device->isBus = isBus;
-    return device;
+int InitDeviceRegistry(){
+    deviceRegistry = (device_registry_t*)halloc(sizeof(device_registry_t));
+    if(deviceRegistry == NULL){
+        return REGISTER_OUT_OF_MEMORY;
+    }
+    deviceRegistry->firstDevice = NULL;
+    deviceRegistry->lastDevice = NULL;
+    deviceRegistry->numDevices = 0;
+    return REGISTER_SUCCESS;
 }
 
-driver_t* CreateDriver(char* name, device_type_t type, uint16_t deviceId, uint16_t vendorId, void* pcb){
+int DestroyDeviceRegistry(){
+    if(deviceRegistry == NULL){
+        return REGISTER_FAILURE;
+    }
+    device_t* current = deviceRegistry->firstDevice;
+    while(current != NULL){
+        device_t* next = current->next;
+        DestroyDevice(current);
+        current = next;
+    }
+    hfree(deviceRegistry);
+    deviceRegistry = NULL;
+    return REGISTER_SUCCESS;
+}
+
+driver_t* CreateDriver(char* name, char* description, driverstatus (*init)()){
     driver_t* driver = (driver_t*)halloc(sizeof(driver_t));
-    driver->name = name;
-    driver->type = type;
-    driver->deviceId = deviceId;
-    driver->vendorId = vendorId;
-    driver->pcb = pcb;
+    if(driver == NULL){
+        return NULL;
+    }
+    driver->name = NULL;
+    driver->description = NULL;
+    driver->init = NULL;
+    driver->device = NULL;
     return driver;
 }
 
-// TODO: Add the ability for non-bus devices to have child (virtual) devices
-int AddDevice(device_t* device, device_type_t type){
-    if(device == NULL){
+int DestroyDriver(driver_t* driver){
+    if(driver == NULL){
         return -1;
     }
-    device_t* current = deviceRoot->rootBus;
-    while(current->next != NULL){
-        // Locate the bus
-        if(current->type != type){
-            current = current->next;
-        }
-    }
-
-    if(current != NULL && current->type != type){
-        // If we are adding a bus, add it to the root bus
-        current->next = device;
-        device->parent = deviceRoot->rootBus;
-        deviceRoot->rootBus->numDevices++;
-    }else if(current != NULL && current->type == type){
-        // If we are adding a device, add it to the bus
-        if(current->children == NULL){
-            // No children, add a new child
-            current->children = device;
-            device->parent = current;
-        }else{
-            // There are children, append the new one
-            current = current->children;
-            while(current->next != NULL){
-                current = current->next;
-            }
-        }
-        current->next = device;
-        device->parent = current->parent;
-        current->parent->numDevices++;
-    }else{
-        return -1;
-    }
-
-    deviceRoot->numDevices++;
+    hfree(driver->name);
+    hfree(driver->description);
+    hfree(driver);
     return 0;
 }
 
-void InitializeDeviceRegistry(){
-    rootBusDriver = CreateDriver(rootBusName, DEVICE_TYPE_MOTHERBOARD, 0, 0, NULL);
-    device_t* motherboard = CreateDevice(DEVICE_TYPE_MOTHERBOARD, DEVICE_STATUS_OK, NULL, rootBusDriver, rootBusName, rootBusDesc, rootBusManufacturer, 
-                                        NULL, NULL, rootBusFirmware, 0, true, NULL);
-    deviceRoot = (device_registry_t*)halloc(sizeof(device_registry_t));
-    deviceRoot->rootBus = motherboard;
-    deviceRoot->numDevices = 1;
+device_t* CreateDevice(device_id_t deviceID, vendor_id_t vendorID, device_status_t status, char* name, char* description, void* deviceInfo, device_type_t type){
+    device_t* device = (device_t*)halloc(sizeof(device_t));
+    if(device == NULL){
+        return NULL;
+    }
+    device->deviceID = deviceID;
+    device->vendorID = vendorID;
+    device->status = status;
+    device->name = name;
+    device->description = description;
+    device->deviceInfo = deviceInfo;
+    device->driver = NULL;
+    device->type = type;
+    device->next = NULL;
+    device->prev = NULL;
+    return device;
+}
 
-    // This can be moved to the VFS initialization
-    VfsAddDevice(motherboard, "rootdev", "/dev");
+int DestroyDevice(device_t* device){
+    if(device == NULL){
+        return -1;
+    }
+    hfree(device->name);
+    hfree(device->description);
+    hfree(device);
+    return 0;
+}
 
-    // TODO: Move the following code to driver implementations
-    driver_t* keyboardDriver = CreateDriver("PS/2 Keyboard Driver", DEVICE_TYPE_INPUT_DEVICE, 0, 0, NULL);
-    device_t* keyboard = CreateDevice(DEVICE_TYPE_INPUT_DEVICE, DEVICE_STATUS_OK, NULL, keyboardDriver, "Keyboard", "Standard PS/2 keyboard", "Dedication OS developer",
-    "Standard", " ", " ", 0, false, NULL /*TODO: change the keyboard driver to allow command processing*/);
-    AddDevice(keyboard, DEVICE_TYPE_INPUT_DEVICE);
-    VfsAddDevice(keyboard, "kb0", "/dev/input");
+int RegisterDevice(device_t* device, device_t* parent){
+    if(deviceRegistry == NULL){
+        return REGISTER_FAILURE;
+    }
+    if(device == NULL){
+        return REGISTER_FAILURE;
+    }
+    if(deviceRegistry->firstDevice == NULL){
+        if(parent != NULL){
+            // Registering a child of an unregistered device is not allowed
+            return REGISTER_FAILURE;
+        }
+        deviceRegistry->firstDevice = device;
+        deviceRegistry->lastDevice = device;
+    }else{
+        if(parent != NULL){
+            parent->firstChild = device;
+        }else{
+            deviceRegistry->lastDevice->next = device;
+            device->prev = deviceRegistry->lastDevice;
+            deviceRegistry->lastDevice = device;
+        }
+    }
+    deviceRegistry->numDevices++;
 
-    driver_t* ramfsDriver = CreateDriver("RamFS Driver", DEVICE_TYPE_FS_DEVICE, 0, 0, NULL);
-    device_t* ramfs = CreateDevice(DEVICE_TYPE_FS_DEVICE, DEVICE_STATUS_OK, NULL, ramfsDriver, "RamFS", "RamFS filesystem", "Dedication OS developer", NULL, NULL,
-    NULL, 0, false, NULL);
-    AddDevice(ramfs, DEVICE_TYPE_FS_DEVICE);
-    VfsAddDevice(ramfs, "ram0", "/dev");
+    // Add device to the VFS
+    VfsAddDevice(device, device->name, "/dev");
+    return REGISTER_SUCCESS;
+}
 
-    /*
-    // Dump the info of the Motherboard driver/device for debugging
-    printf("Motherboard Info:\n");
-    printf("Name: %s\n", deviceRoot->rootBus->name);
-    printf("Description: %s\n", deviceRoot->rootBus->description);
-    printf("Manufacturer: %s\n", deviceRoot->rootBus->manufacturer);
-    printf("Firmware: %s\n", deviceRoot->rootBus->firmware);
-    printf("Number of devices: %d\n", deviceRoot->rootBus->numDevices);
-    printf("Driver name: %s\n", deviceRoot->rootBus->driver->name);
-    printf("Driver type: %d\n", deviceRoot->rootBus->driver->type);
-    printf("Driver device ID: %d\n", deviceRoot->rootBus->driver->deviceId);
-    printf("Driver vendor ID: %d\n", deviceRoot->rootBus->driver->vendorId);
-    STOP
-    */
+int UnregisterDevice(device_t* device){
+    if(deviceRegistry == NULL){
+        return REGISTER_FAILURE;
+    }
+    if(device == NULL){
+        return REGISTER_DEVICE_NOT_FOUND;
+    }
+    if(deviceRegistry->firstDevice == device){
+        deviceRegistry->firstDevice = device->next;
+    }
+    if(deviceRegistry->lastDevice == device){
+        deviceRegistry->lastDevice = device->prev;
+    }
+    if(device->prev != NULL){
+        device->prev->next = device->next;
+    }
+    if(device->next != NULL){
+        device->next->prev = device->prev;
+    }
+    deviceRegistry->numDevices--;
+    VfsRemoveNode(VfsFindNode(JoinPath("/dev", device->name)));
+    return REGISTER_SUCCESS;
+}
+
+int RegisterDriver(driver_t* driver, device_t* device){
+    if(driver == NULL || device == NULL){
+        return REGISTER_FAILURE;
+    }
+    if(device->driver != NULL){
+        return REGISTER_DEVICE_ALREADY_REGISTERED;
+    }
+    device->driver = driver;
+    driver->device = device;
+    return REGISTER_SUCCESS;
+}
+
+device_t* GetDeviceByID(device_id_t deviceID){
+    if(deviceRegistry == NULL){
+        return NULL;
+    }
+    device_t* current = deviceRegistry->firstDevice;
+    while(current != NULL){
+        if(current->deviceID == deviceID){
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+device_t* GetFirstDevice(device_type_t type){
+    if(deviceRegistry == NULL){
+        return NULL;
+    }
+    device_t* current = deviceRegistry->firstDevice;
+    while(current != NULL){
+        if(current->type == type){
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
 }

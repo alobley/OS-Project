@@ -36,6 +36,7 @@ extern vfs_node_t* root;
 
 vfs_node_t* VfsFindNode(char* path);
 vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* pointer);
+int VfsRemoveNode(vfs_node_t* node);
 void VfsAddDevice(device_t* device, char* name, char* path);
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
 void vfs_init(multiboot_info_t* mbootInfo);

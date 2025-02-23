@@ -98,12 +98,17 @@ void InitIDT(){
 }
 
 bool CheckPrivelige(){
+    if(GetCurrentProcess() == NULL){
+        // Is part of the kernel
+        return true;
+    }
     return GetCurrentProcess()->owner == ROOT_UID;
 }
 
 // System call handler
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 HOT void syscall_handler(struct Registers *regs){
+    int result;
     switch(regs->eax){
         case SYS_DBG: {
             // SYS_DBG
@@ -224,33 +229,41 @@ HOT void syscall_handler(struct Registers *regs){
                 // Kill the process
                 break;
             }
-            // EBX contains the device type
-            // ECX contains a pointer to the device struct
-            // EDX contains a pointer to the device-specific struct
-            // Other registers based on device type...
+            // EBX contains a pointer to the driver struct
+            // ECX contains a pointer to the device the driver is aquiring
+            // ESI contains a pointer to the PCB (if the driver is a process, otherwise NULL)
 
             // Get the driver's PCB and set the proper flags
-            pcb_t* currentProcess = GetCurrentProcess();
-            currentProcess->state = DRIVER;
-            currentProcess->flags.disableSwap = true;
-            currentProcess->timeSlice = 0;                      // No time slice for drivers (they should be background processes)
+            if(regs->esi != 0){
+                pcb_t* driverPCB = (pcb_t*)regs->esi;
+                driverPCB->state = DRIVER;
+                driverPCB->timeSlice = 0;
+            }
 
-            // This registers the device and its type
-            //RegisterDevice((device_type_t)regs->ebx, (device_t*)regs->ecx, (void*)regs->edx);
+            // Load the device driver
+            result = RegisterDriver((driver_t*)regs->ecx, (device_t*)regs->edx);
+            regs->eax = result;
 
             break;
         case SYS_MODULE_UNLOAD:
             // SYS_MODULE_UNLOAD
-            // Remove a driver from ring 0
+            // Remove a driver and delete its entry in the device registry
             break;
         case SYS_MODULE_QUERY:
             // SYS_MODULE_QUERY
             break;
         case SYS_REGISTER_DEVICE:
             // SYS_REGISTER_DEVICE
-            // EBX contains a value signaling what kind of device to load
-            // ECX contains a pointer to the struct containing the device data
-            // Note: This registers the driver as well as the device
+            // EBX contains a pointer to the device to register
+            // ECX contains a pointer to the parent device (if any)
+            if(!CheckPrivelige()){
+                printf("Unpriveliged Application requesting system resources. Killing process.\n");
+                // Log the error
+                // Kill the process
+                break;
+            }
+            result = RegisterDevice((device_t*)regs->ebx, (device_t*)regs->ecx);
+            regs->eax = result;
 
             // Check the module type and load it
             // Do what is neccecary for the type of module (device, filesystem, etc.)
@@ -262,6 +275,16 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Search for the device in the device list and unload it
             // The driver is responsible for its own memory management
+            break;
+        case SYS_GET_DEVICE:
+            // SYS_GET_DEVICE
+            // EBX contains the device ID to get
+            regs->eax = (uint32_t)GetDeviceByID((device_id_t)regs->ebx);
+            break;
+        case SYS_GET_FIRST_DEVICE:
+            // SYS_GET_FIRST_DEVICE
+            // EBX contains the device type to get
+            regs->eax = (uint32_t)GetFirstDevice((device_type_t)regs->ebx);
             break;
         case SYS_REQUEST_IRQ:
             // SYS_REQUEST_IRQ
@@ -296,19 +319,63 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_IO_PORT_READ
             // EBX contains the port to read from
             // ECX contains the size of the read (1, 2, or 4 bytes)
+            if(!CheckPrivelige()){
+                printf("Unpriveliged Application requesting system resources. Killing process.\n");
+                // Log the error
+                // Kill the process
+                break;
+            }
 
-            // Wrapper for inb, inw, and inl essentially
+            switch(regs->ecx){
+                case 8:
+                    regs->eax = inb(regs->ebx);
+                    break;
+                case 16:
+                    regs->eax = inw(regs->ebx);
+                    break;
+                case 32:
+                    regs->eax = inl(regs->ebx);
+                    break;
+                default:
+                    printf("Unknown size for I/O port read: %d\n", regs->ecx);
+                    regs->eax = 0;
+                    break;
+            }
             break;
         case SYS_IO_PORT_WRITE:
             // SYS_IO_PORT_WRITE
             // EBX contains the port to write to
             // ECX contains the size of the write (1, 2, or 4 bytes)
             // EDX contains the value to write
+            if(!CheckPrivelige()){
+                printf("Unpriveliged Application requesting system resources. Killing process.\n");
+                // Log the error
+                // Kill the process
+                break;
+            }
 
-            // Wrapper for outb, outw, and outl essentially
+            switch(regs->ecx){
+                case 8:
+                    outb(regs->ebx, regs->edx);
+                    break;
+                case 16:
+                    outw(regs->ebx, regs->edx);
+                    break;
+                case 32:
+                    outl(regs->ebx, regs->edx);
+                    break;
+                default:
+                    printf("Unknown size for I/O port write: %d\n", regs->ecx);
+                    break;
+            }
             break;
         case SYS_BLOCK_READ:
             // SYS_BLOCK_READ
+            // Takes a pointer to a block device struct and reads from it
+            // EBX contains the pointer to the block device struct
+            // ECX contains the LBA to read from
+            // EDX contains the number of sectors to read
+            // ESI contains the pointer to the buffer to read into
             break;
         case SYS_BLOCK_WRITE:
             // SYS_BLOCK_WRITE

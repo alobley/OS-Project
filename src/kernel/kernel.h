@@ -42,6 +42,8 @@ enum System_Calls {
     SYS_MODULE_QUERY,                       // Query a kernel module
     SYS_REGISTER_DEVICE,                    // Register a device
     SYS_UNREGISTER_DEVICE,                  // Unregister a device
+    SYS_GET_DEVICE,                         // Get a device by its device ID
+    SYS_GET_FIRST_DEVICE,                   // Get the first device of a certain type (can search through children/next)
     SYS_REQUEST_IRQ,                        // Request an IRQ
     SYS_RELEASE_IRQ,                        // Release an IRQ
     SYS_DRIVER_SET_STATUS,                  // Set the status of a driver
@@ -68,13 +70,13 @@ extern version_t kernelVersion;
 #define SYSCALL_INT 0x30
 
 // Simple wrapper for system calls
-#define do_syscall(num, arg1, arg2, arg3) \
-    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3))
+#define do_syscall(num, arg1, arg2, arg3, arg4, arg5) \
+    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5))
 
 
 // This function is primarily here to make debugging easier
 static inline void write(const char* str, uint32_t fileDescriptor, size_t len){
-    do_syscall(SYS_WRITE, fileDescriptor, (uint32_t)str, len);
+    do_syscall(SYS_WRITE, fileDescriptor, (uint32_t)str, len, 0, 0);
 }
 
 #endif // KERNEL_H

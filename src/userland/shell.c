@@ -100,13 +100,13 @@ void ProcessCommand(char* cmd){
         return;
     }else if(strcmp(cmd, "syscall") == 0){
         uint32_t result = 0;
-        do_syscall(SYS_DBG, 0, 0, 0);
+        do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
         asm volatile("mov %%eax, %0" : "=r" (result));
         printf("System call returned: %d\n", result);
     }else if(strcmp(cmd, "version") == 0){
         printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
     }else if(strcmp(cmd, "pinfo") == 0){
-        do_syscall(SYS_GET_PCB, 0, 0, 0);
+        do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
         asm volatile("mov %%eax, %0" : "=r" (shellPCB));
         printf("Process info:\n");
         printf("PID: %d\n", shellPCB->pid);
@@ -231,14 +231,14 @@ int shell(void){
     ClearScreen();
     printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
-    do_syscall(SYS_GET_PCB, 0, 0, 0);
+    do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (shellPCB));
     if(shellPCB == NULL){
         printf("Error finding process information!\n");
         return 1;
     }
     PrintPrompt();
-    do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0);
+    do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     while(!exit){
         if(enterPressed){
@@ -248,6 +248,6 @@ int shell(void){
             ProcessCommand(cmdBuffer);
         }
     }
-    do_syscall(SYS_REMOVE_KBD_HANDLE, (uint32_t)handler, 0, 0);
+    do_syscall(SYS_REMOVE_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
     return 0;
 }
