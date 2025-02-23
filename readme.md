@@ -8,6 +8,8 @@ Currently, this project is still in the early stages. I've spent the past year l
 ## System Requirements (subject to change)
 - Any i686-compatible CPU
 - At least 10MB of RAM
+- A PS/2 keyboard
+- ACPI support
 
 ## To-Do (road to 0.90.0 beta)
 [*] = must have (Will likely be completed first)
