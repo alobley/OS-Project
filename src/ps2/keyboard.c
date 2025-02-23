@@ -4,6 +4,7 @@
 #include <time.h>
 #include <acpi.h>
 #include <alloc.h>
+#include <vfs.h>
 
 #define KEYBOARD_ISR 0x21
 #define KEYBOARD_IRQ 1
@@ -374,4 +375,7 @@ void InitializeKeyboard(){
     // Install the keyboard interrupt
     InstallISR(KEYBOARD_ISR, kb_handler);
     InstallIRQ(KEYBOARD_IRQ, kb_handler);
+
+    // Add the keyboard device to the VFS (just do it like this for now, later I will properly make the keyboard driver)
+    VfsAddDevice(NULL, "kb0", "/dev/input");
 }

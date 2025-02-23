@@ -37,9 +37,10 @@ driver_t* CreateDriver(char* name, char* description, driverstatus (*init)()){
     if(driver == NULL){
         return NULL;
     }
-    driver->name = NULL;
-    driver->description = NULL;
-    driver->init = NULL;
+    memset(driver, 0, sizeof(driver_t));
+    driver->name = name;
+    driver->description = description;
+    driver->init = init;
     driver->device = NULL;
     return driver;
 }
@@ -59,6 +60,7 @@ device_t* CreateDevice(device_id_t deviceID, vendor_id_t vendorID, device_status
     if(device == NULL){
         return NULL;
     }
+    memset(device, 0, sizeof(device_t));
     device->deviceID = deviceID;
     device->vendorID = vendorID;
     device->status = status;
@@ -69,6 +71,9 @@ device_t* CreateDevice(device_id_t deviceID, vendor_id_t vendorID, device_status
     device->type = type;
     device->next = NULL;
     device->prev = NULL;
+    device->parent = NULL;
+    device->firstChild = NULL;
+    device->lock = MUTEX_INIT;
     return device;
 }
 

@@ -124,8 +124,6 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     printf("Used memory: %d MiB\n", usedMem / 1024 / 1024);
 
-    InitializeKeyboard();
-
     // Stress test the memory allocator
     printf("Stress testing the heap allocator...\n");
     for(int i = 1; i <= 1000; i++){
@@ -166,11 +164,22 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialize the VFS
     vfs_init(mbootInfo);
 
+    InitializeKeyboard();
+
     InitializeAta();
 
     // Load a users file and create the users...
 
     // Other system initialization...
+
+    // Call the init functions of all drivers in the device registry
+    device_t* current = deviceRegistry->firstDevice;
+    while(current != NULL){
+        if(current->driver != NULL){
+            current->driver->init();
+        }
+        current = current->next;
+    }
 
     // Create the kernel's PCB
     pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);

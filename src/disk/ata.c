@@ -1,15 +1,20 @@
 #include <kernel.h>
 #include <devices.h>
 
+// Subject to change
 char* name = "pat0";
 char* description = "Primary ATA Controller";
+
+// Placeholder values
+device_id_t deviceID = 0xBEEF;
+vendor_id_t vendorID = 0xBEEF;
 
 driverstatus Ata_Init(){
     return DRIVER_SUCCESS;
 }
 
 void InitializeAta(){
-    device_t* pata = CreateDevice(0x0101, 0x0000, DEVICE_STATUS_IDLE, name, description, NULL, DEVICE_TYPE_BLOCK);
+    device_t* pata = CreateDevice(deviceID, vendorID, DEVICE_STATUS_IDLE, name, description, NULL, DEVICE_TYPE_BLOCK);
     if(pata == NULL){
         printf("Failed to create PATA device\n");
         return;

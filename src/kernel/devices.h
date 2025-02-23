@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <multitasking.h>
 
 typedef enum {
     DEVICE_STATUS_IDLE,
@@ -62,6 +63,7 @@ typedef struct Device {
     char* description;
     void* deviceInfo;                   // Device specific information (like the Filesystem struct below)
     driver_t* driver;                   // The driver responsible for this device
+    mutex_t lock;                       // A lock for the device (Driver MUST lock the device before accessing it)
 
     device_type_t type;
     struct Device* next;
@@ -81,7 +83,7 @@ typedef struct Filesystem {
     driverstatus (*write)(void* device, char* path, void* buffer, size_t size, bool dir); // Write a file or directory to the filesystem
 } filesystem_t; 
 
-// A partition on a disk device
+// A partition on a disk device (MBR vs GPT can be handled in another driver)
 typedef struct Partition {
     filesystem_t* fs;
     lba_t startLBA;
@@ -101,6 +103,9 @@ typedef struct Block_Device {
     uint32_t numPartitions;
     driverstatus (*read)(lba_t sector, size_t numSectors, void* buffer);
     driverstatus (*write)(lba_t sector, size_t numSectors, void* buffer);
+    driverstatus (*flush)();
+    driverstatus (*command)(uint8_t command, void* buffer);
+    partition_t* firstPartition;
 } block_device_t;
 
 // Add more device types, i.e. network devices, keyboard, mouse, pci devices, etc...
