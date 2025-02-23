@@ -9,17 +9,6 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Any i686-compatible CPU
 - At least 10MB of RAM
 
-## Currently Implemented
-  - Boots
-  - Sets up paging
-  - Initializes heap
-  - Initializes timer
-  - Initializes interrupts and sets up system calls
-  - Sets up keyboard
-  - Enters a simple integrated shell environment
-
-
-
 ## To-Do (road to 0.90.0 beta)
 [*] = must have (Will likely be completed first)
 [-] = nice to have
