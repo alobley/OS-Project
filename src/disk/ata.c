@@ -1,8 +1,14 @@
+/* ATA.c
+ * ATA driver for the kernel
+ * This driver is responsible for initializing the ATA controller and handling ATA devices
+ * This is currently meant to test the kernel's driver interface
+ * This driver is a work in progress
+*/
 #include <kernel.h>
 #include <devices.h>
 
 // Subject to change
-char* name = "pat0";
+char* name = "pata";
 char* description = "Primary ATA Controller";
 
 // Placeholder values
@@ -14,8 +20,8 @@ driverstatus Ata_Init(){
 }
 
 void InitializeAta(){
-    device_t* pata = CreateDevice(deviceID, vendorID, DEVICE_STATUS_IDLE, name, description, NULL, DEVICE_TYPE_BLOCK);
-    if(pata == NULL){
+    device_t* controller = CreateDevice(deviceID, vendorID, DEVICE_STATUS_IDLE, name, description, NULL, DEVICE_TYPE_BLOCK);
+    if(controller == NULL){
         printf("Failed to create PATA device\n");
         return;
     }
@@ -26,22 +32,35 @@ void InitializeAta(){
         return;
     }
 
-    pata->driver = pataDriver;
-    pataDriver->device = pata;
+    controller->driver = pataDriver;
+    pataDriver->device = controller;
 
-    // Register the device
+    // Register the controller
     int result = 0;
-    do_syscall(SYS_REGISTER_DEVICE, (uint32_t)pata, 0, 0, 0, 0);
+    do_syscall(SYS_REGISTER_DEVICE, (uint32_t)controller, 0, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (result));
     if(result != REGISTER_SUCCESS){
         printf("Failed to register PATA device\n");
         return;
     }
 
-    //STOP
+    // Register the first drive
+    device_t* drive = CreateDevice(deviceID, vendorID, DEVICE_STATUS_IDLE, "pat0", "Primary ATA Drive", NULL, DEVICE_TYPE_BLOCK);
+    if(drive == NULL){
+        printf("Failed to create PATA drive\n");
+        return;
+    }
+    drive->parent = controller;
+    drive->driver = pataDriver;
+    do_syscall(SYS_REGISTER_DEVICE, (uint32_t)drive, (uint32_t)controller, 0, 0, 0);
+    asm volatile("mov %%eax, %0" : "=r" (result));
+    if(result != REGISTER_SUCCESS){
+        printf("Failed to register PATA drive\n");
+        return;
+    }
 
     // Register the driver
-    do_syscall(SYS_MODULE_LOAD, (uint32_t)pataDriver, (uint32_t)pata, 0, 0, 0);
+    do_syscall(SYS_MODULE_LOAD, (uint32_t)pataDriver, (uint32_t)controller, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (result));
     if(result != DRIVER_SUCCESS){
         printf("Failed to load PATA driver\n");
