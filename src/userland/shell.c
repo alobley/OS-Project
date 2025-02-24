@@ -14,6 +14,9 @@
 #include <time.h>
 #include <string.h>
 #include <vfs.h>
+#include <hash.h>
+
+hash_table_t* cmdTable;
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
 #define CMD_MAX_SIZE 256
@@ -72,163 +75,225 @@ void handler(KeyboardEvent_t event){
     }
 }
 
-void ProcessCommand(char* cmd){
-    // TODO: Implement a proper command parser (this is crazy inefficient)
-    if(strcmp(cmd, "clear") == 0){
-        ClearScreen();
-    }else if(strcmp(cmd, "meminfo") == 0){
-        printf("Total memory: %d MiB\n", memSizeMiB);
-        printf("Used memory: %d MiB\n", totalPages * PAGE_SIZE / 1024 / 1024);
-    }else if(strcmp(cmd, "help") == 0){
-        printf("Commands:\n");
-        printf("clear: clears the screen\n");
-        printf("meminfo: prints some memory info\n");
-        printf("help: prints this help message\n");
-        printf("exit: exits the shell\n");
-        printf("syscall: tests the system call mechanism\n");
-        printf("version: prints the kernel version\n");
-        printf("pinfo: prints the process info of the shell\n");
-        printf("ACPI: prints ACPI info\n");
-        printf("time: prints the current time\n");
-        printf("settz: sets the timezone\n");
-        printf("pwd: prints the current working directory\n");
-        printf("ls: lists the files in the current directory\n");
-        printf("cd: changes the current directory\n");
-    }else if(strcmp(cmd, "exit") == 0){
-        printf("Exiting shell...\n");
-        exit = true;
+void clear(UNUSED char* cmd){
+    ClearScreen();
+}
+
+void meminfo(UNUSED char* cmd){
+    printf("Total memory: %d MiB\n", memSizeMiB);
+    printf("Used memory: %d MiB\n", totalPages * PAGE_SIZE / 1024 / 1024);
+}
+
+void help(UNUSED char* cmd){
+    printf("Commands:\n");
+    printf("clear: clears the screen\n");
+    printf("meminfo: prints some memory info\n");
+    printf("help: prints this help message\n");
+    printf("exit: exits the shell\n");
+    printf("syscall: tests the system call mechanism\n");
+    printf("version: prints the kernel version\n");
+    printf("pinfo: prints the process info of the shell\n");
+    printf("ACPI: prints ACPI info\n");
+    printf("time: prints the current time\n");
+    printf("settz: sets the timezone\n");
+    printf("pwd: prints the current working directory\n");
+    printf("ls: lists the files in the current directory\n");
+    printf("cd: changes the current directory\n");
+}
+
+void exitShell(UNUSED char* cmd){
+    printf("Exiting shell...\n");
+    exit = true;
+}
+
+void syscall(UNUSED char* cmd){
+    uint32_t result = 0;
+    do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
+    asm volatile("mov %%eax, %0" : "=r" (result));
+    printf("System call returned: %d\n", result);
+}
+
+void version(UNUSED char* cmd){
+    printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
+}
+
+void pinfo(UNUSED char* cmd){
+    do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
+    asm volatile("mov %%eax, %0" : "=r" (shellPCB));
+    printf("Process info:\n");
+    printf("PID: %d\n", shellPCB->pid);
+    printf("Name: %s\n", shellPCB->name);
+    printf("Owner: %d ", shellPCB->owner);
+    if(shellPCB->owner == ROOT_UID){
+        printf("(root)\n");
+    }else{
+        printf("(user)\n");
+    }
+    printf("State: %d\n", shellPCB->state);
+    printf("Priority: %d\n", shellPCB->priority);
+    printf("Time slice: %d ms\n", shellPCB->timeSlice);
+    printf("Stack: 0x%x\n", shellPCB->stack);
+    printf("Stack base: 0x%x\n", shellPCB->stackBase);
+    printf("Stack top: 0x%x\n", shellPCB->stackTop);
+    printf("Heap base: 0x%x\n", shellPCB->heapBase);
+    printf("Heap end: 0x%x\n", shellPCB->heapEnd);
+    printf("Current working directory: %s\n", shellPCB->workingDirectory);
+}
+
+void acpi(UNUSED char* cmd){
+    printf("ACPI info:\n");
+    printf("ACPI version: %d\n", acpiInfo.version);
+    printf("ACPI exists: %d\n", acpiInfo.exists);
+    printf("ACPI FADT: 0x%x\n", acpiInfo.fadt);
+    printf("ACPI RSDP: 0x%x\n", acpiInfo.rsdp.rsdpV1);
+    printf("ACPI RSDT: 0x%x\n", acpiInfo.rsdt.rsdt);
+}
+
+void time(UNUSED char* cmd){
+    uint8_t hour = currentTime.hour;
+    if(hour > 12){
+        hour -= 12;
+    }
+    printf("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
+    printf("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
+}
+
+void settz(char* cmd){
+    // Assumes the clock is originally set to UTC
+    char* tz = cmd + 6;
+    if(strlen(tz) == 0 || strlen(cmd) < 6){
+        printf("Usage: settz <timezone>\n");
         return;
-    }else if(strcmp(cmd, "syscall") == 0){
-        uint32_t result = 0;
-        do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
-        asm volatile("mov %%eax, %0" : "=r" (result));
-        printf("System call returned: %d\n", result);
-    }else if(strcmp(cmd, "version") == 0){
-        printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
-    }else if(strcmp(cmd, "pinfo") == 0){
-        do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
-        asm volatile("mov %%eax, %0" : "=r" (shellPCB));
-        printf("Process info:\n");
-        printf("PID: %d\n", shellPCB->pid);
-        printf("Name: %s\n", shellPCB->name);
-        printf("Owner: %d ", shellPCB->owner);
-        if(shellPCB->owner == ROOT_UID){
-            printf("(root)\n");
+    }
+    printf("Setting timezone to %s\n", tz);
+    if(strcmp(tz, "UTC") == 0){
+        SetTime();
+    }else if(strcmp(tz, "EST") == 0){
+        // EST is UTC-5, calculate the offset
+        if(currentTime.hour >= 5){
+            currentTime.hour -= 5;
         }else{
-            printf("(user)\n");
-        }
-        printf("State: %d\n", shellPCB->state);
-        printf("Priority: %d\n", shellPCB->priority);
-        printf("Time slice: %d ms\n", shellPCB->timeSlice);
-        printf("Stack: 0x%x\n", shellPCB->stack);
-        printf("Stack base: 0x%x\n", shellPCB->stackBase);
-        printf("Stack top: 0x%x\n", shellPCB->stackTop);
-        printf("Heap base: 0x%x\n", shellPCB->heapBase);
-        printf("Heap end: 0x%x\n", shellPCB->heapEnd);
-        printf("Current working directory: %s\n", shellPCB->workingDirectory);
-    }else if(strcmp(cmd, "ACPI") == 0){
-        printf("ACPI info:\n");
-        printf("ACPI version: %d\n", acpiInfo.version);
-        printf("ACPI exists: %d\n", acpiInfo.exists);
-        printf("ACPI FADT: 0x%x\n", acpiInfo.fadt);
-        printf("ACPI RSDP: 0x%x\n", acpiInfo.rsdp.rsdpV1);
-        printf("ACPI RSDT: 0x%x\n", acpiInfo.rsdt.rsdt);
-    }else if(strcmp(cmd, "time") == 0){
-        uint8_t hour = currentTime.hour;
-        if(hour > 12){
-            hour -= 12;
-        }
-        printf("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
-        printf("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
-    }else if(strncmp(cmd, "settz", 5) == 0){
-        // Assumes the clock is originally set to UTC
-        char* tz = cmd + 6;
-        if(strlen(tz) == 0 || strlen(cmd) < 6){
-            printf("Usage: settz <timezone>\n");
-            goto end;
-        }
-        printf("Setting timezone to %s\n", tz);
-        if(strcmp(tz, "UTC") == 0){
-            SetTime();
-        }else if(strcmp(tz, "EST") == 0){
-            // EST is UTC-5, calculate the offset
-            if(currentTime.hour >= 5){
-                currentTime.hour -= 5;
+            currentTime.hour += 19;
+            if(currentTime.day > 1){
+                currentTime.day--;
             }else{
-                currentTime.hour += 19;
-                if(currentTime.day > 1){
-                    currentTime.day--;
+                currentTime.day = 31;
+                if(currentTime.month > 1){
+                    currentTime.month--;
                 }else{
-                    currentTime.day = 31;
-                    if(currentTime.month > 1){
-                        currentTime.month--;
-                    }else{
-                        currentTime.month = 12;
-                        currentTime.year--;
-                    }
+                    currentTime.month = 12;
+                    currentTime.year--;
                 }
             }
-        }else{
-            printf("Only EST and UTC are supported\n");
         }
-    }else if(strcmp(cmd, "pwd") == 0){
-        printf("%s\n", shellPCB->workingDirectory);
-    }else if(strcmp(cmd, "ls") == 0){
-        vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
-        if(current == NULL){
-            printf("Error: current directory does not exist\n");
-            goto end;
+    }else{
+        printf("Only EST and UTC are supported\n");
+    }
+}
+
+void pwd(UNUSED char* cmd){
+    printf("%s\n", shellPCB->workingDirectory);
+}
+
+void ls(UNUSED char* cmd){
+    vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
+    if(current == NULL){
+        printf("Error: current directory does not exist\n");
+        return;
+    }
+    if(!current->isDirectory){
+        printf("Error: current directory is not a directory\n");
+        return;
+    }
+    vfs_node_t* child = current->firstChild;
+    for(size_t i = 0; i < current->size; i++){
+        if(child != NULL){
+            printf("%s\n", child->name);
+            child = child->next;
         }
-        if(!current->isDirectory){
-            printf("Error: current directory is not a directory\n");
-            goto end;
-        }
-        vfs_node_t* child = current->firstChild;
-        for(size_t i = 0; i < current->size; i++){
-            if(child != NULL){
-                printf("%s\n", child->name);
-                child = child->next;
-            }
-        }
-    }else if(strncmp(cmd, "cd", 2) == 0){
-        char* dir = cmd + 3;
-        if(strlen(dir) == 0 || strlen(cmd) < 3){
-            printf("Usage: cd <directory>\n");
-            goto end;
-        }
-        vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
-        if(current == NULL){
-            printf("Error: current directory does not exist\n");
-            goto end;
-        }
-        if(!current->isDirectory){
-            printf("Error: current directory is not a directory\n");
-            goto end;
-        }
-        if(strcmp(dir, "..") == 0 && current->parent != NULL){
-            shellPCB->workingDirectory = GetFullPath(current->parent);
-            goto end;
-        }else if(strcmp(dir, ".") == 0){
-            goto end;
-        }
-        char* fullPath = JoinPath(shellPCB->workingDirectory, dir);
-        vfs_node_t* newDir = VfsFindNode(fullPath);
-        if(newDir != NULL && newDir->isDirectory){
-            shellPCB->workingDirectory = GetFullPath(newDir);
-            hfree(fullPath);
-            goto end;
-        }
-        printf("Error: directory %s does not exist\n", dir);
-    }else if(strlen(cmd) != 0){
-        printf("Unknown command: %s\n", cmd);
+    }
+}
+
+void cd(char* cmd){
+    char* dir = cmd + 3;
+    if(strlen(dir) == 0 || strlen(cmd) < 3){
+        printf("Usage: cd <directory>\n");
+        return;
+    }
+    vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
+    if(current == NULL){
+        printf("Error: current directory does not exist\n");
+        return;
+    }
+    if(!current->isDirectory){
+        printf("Error: current directory is not a directory\n");
+        return;
+    }
+    if(strcmp(dir, "..") == 0 && current->parent != NULL){
+        shellPCB->workingDirectory = GetFullPath(current->parent);
+        return;
+    }else if(strcmp(dir, ".") == 0){
+        return;
+    }
+    char* fullPath = JoinPath(shellPCB->workingDirectory, dir);
+    vfs_node_t* newDir = VfsFindNode(fullPath);
+    if(newDir != NULL && newDir->isDirectory){
+        shellPCB->workingDirectory = GetFullPath(newDir);
+        hfree(fullPath);
+        return;
+    }
+    printf("Error: directory %s does not exist\n", dir);
+}
+
+void ProcessCommand(char* cmd){
+    if(strlen(cmd) == 0){
+        PrintPrompt();
+        return;
     }
 
-    end:
-    PrintPrompt();
+    // Split the command into the command and the arguments
+    char* args = strchr(cmd, ' ');
+    if(args != NULL){
+        *args = '\0';
+        args++;
+    }
+
+    hash_entry_t* entry = hash(cmdTable, cmd);
+    if(entry != NULL){
+        if(args != NULL){
+            args--;
+            *args = ' ';
+        }
+        entry->func(cmd);
+    }else{
+        printf("Command not found\n");
+    }
+    if(!exit){
+        PrintPrompt();
+    }
 }
 
 int shell(void){
     ClearScreen();
+
+    // Create a table with a default size of 30
+    cmdTable = CreateTable(30);
+
+    // Add all the commands
+    HashInsert(cmdTable, "clear", clear);
+    HashInsert(cmdTable, "meminfo", meminfo);
+    HashInsert(cmdTable, "help", help);
+    HashInsert(cmdTable, "exit", exitShell);
+    HashInsert(cmdTable, "syscall", syscall);
+    HashInsert(cmdTable, "version", version);
+    HashInsert(cmdTable, "pinfo", pinfo);
+    HashInsert(cmdTable, "ACPI", acpi);
+    HashInsert(cmdTable, "time", time);
+    HashInsert(cmdTable, "settz", settz);
+    HashInsert(cmdTable, "pwd", pwd);
+    HashInsert(cmdTable, "ls", ls);
+    HashInsert(cmdTable, "cd", cd);
+
     printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
     do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);

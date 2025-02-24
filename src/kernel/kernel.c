@@ -87,12 +87,19 @@ version_t kernelVersion = {0, 3, 0};
  * - Should the kernel just have a wholly standardized interface, or should access to devices be done through their symbolic existence in the VFS, like UNIX?
  * - How do I abstract specifics like that? Should the OS have a GOP for graphics, for example? Should I write drivers with OpenGL support?
  * 
- * I'm kind of overwhelmed. Not sure where to start or what to do first.
+ * After drivers, when in userland:
+ * - Create a standard system for interaction with the kernel (say a graphics library) (OpenGL? Framebuffer access?)
+ * - Create a libc
+ * - Create a shell
 */
 
 void InitializeAta();
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
+    if(magic != MULTIBOOT2_MAGIC && magic != MULTIBOOT_MAGIC){
+        printf("KERNEL PANIC Invalid multiboot magic number: 0x%x\n", magic);
+        STOP
+    }
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
     memSizeMiB = memSize / 1024 / 1024;
 

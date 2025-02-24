@@ -1,6 +1,11 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
+/* TODO: 
+ * - Create unistd.h instead of kernel.h?
+ * - Create wrapper functions for all system calls
+*/
+
 #include <stdint.h>
 #include <console.h>
 #include <stddef.h>
@@ -10,7 +15,6 @@
 #define STDOUT_FILENO 1
 #define STDIN_FILENO 0
 
-// TODO: Learn how to have the kernel and drivers interact with each other and with user applications
 enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
     SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback
