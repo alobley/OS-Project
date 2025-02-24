@@ -241,8 +241,13 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             // Load the device driver
-            result = RegisterDriver((driver_t*)regs->ecx, (device_t*)regs->edx);
+            result = RegisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
             regs->eax = result;
+            if(result == DRIVER_SUCCESS){
+                ((driver_t*)regs->ebx)->init();
+            }else{
+                printf("Failed to load driver: %d\n", result);
+            }
 
             break;
         case SYS_MODULE_UNLOAD:

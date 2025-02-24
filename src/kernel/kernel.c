@@ -172,15 +172,6 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Other system initialization...
 
-    // Call the init functions of all drivers in the device registry
-    device_t* current = deviceRegistry->firstDevice;
-    while(current != NULL){
-        if(current->driver != NULL){
-            current->driver->init();
-        }
-        current = current->next;
-    }
-
     // Create the kernel's PCB
     pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);
 
