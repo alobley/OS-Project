@@ -52,6 +52,7 @@ void MutexLock(mutex_t* mutex){
         return;
     }else{
         asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");
+        mutex->owner = currentProcess;
     }
 }
 
@@ -65,8 +66,9 @@ void MutexUnlock(mutex_t* mutex){
     asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
     if(mutex->waitQueue.first != NULL){
         // Dequeue process
-        DequeueProcess(mutex);
-        mutex->owner->state = RUNNING;
+        if(DequeueProcess(mutex)){
+            mutex->owner->state = RUNNING;
+        }
     }
 }
 

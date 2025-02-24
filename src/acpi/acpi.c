@@ -126,7 +126,12 @@ bool PS2ControllerExists(){
 }
 
 void AcpiShutdown(){
-    
+    if(PS2ControllerExists()){
+        outb(0x64, 0xFE);
+    }else{
+        outb(acpiInfo.fadt->pm1aCtrlBlk, 0x00);
+        outb(acpiInfo.fadt->pm1bCtrlBlk, 0x00);
+    }
 }
 
 void AcpiReboot(){
