@@ -1,9 +1,9 @@
 #ifndef STDDEF_H
 #define STDDEF_H
 
-typedef signed long ptrdiff_t;              // The difference between two pointers
-typedef unsigned long size_t;               // The size of an object
-typedef signed long ssize_t;                // The size of an object (signed - not an official part of this header)
+typedef signed int ptrdiff_t;              // The difference between two pointers
+typedef unsigned int size_t;               // The size of an object
+typedef signed int ssize_t;                // The size of an object (signed - not an official part of this header)
 
 typedef union {
     long long ll;

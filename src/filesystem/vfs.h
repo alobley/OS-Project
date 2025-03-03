@@ -10,7 +10,7 @@
 #include <multitasking.h>
 #include <devices.h>
 
-#define VFS_ROOT "/"
+#define VFS_ROOT "OS/"
 
 // A structure that contains metadata for an entry in the virtual filesystem.
 typedef struct VFS_Node {
@@ -39,7 +39,7 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int 
 int VfsRemoveNode(vfs_node_t* node);
 void VfsAddDevice(device_t* device, char* name, char* path);
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
-void vfs_init(multiboot_info_t* mbootInfo);
+void InitializeVfs(multiboot_info_t* mbootInfo);
 char* GetFullPath(vfs_node_t* node);
 char* JoinPath(const char* base, const char* path);
 

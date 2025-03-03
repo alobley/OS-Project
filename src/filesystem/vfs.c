@@ -226,7 +226,7 @@ char* JoinPath(const char* base, const char* path) {
 }
 
 // Create the bare minimum needed for a functional VFS on boot
-void vfs_init(multiboot_info_t* mbootInfo) {
+void InitializeVfs(multiboot_info_t* mbootInfo) {
     // Initialize the virtual filesystem
     // Create the root directory
     root = VfsMakeNode("/", true, 2, 0755, ROOT_UID, NULL);

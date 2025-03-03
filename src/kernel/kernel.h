@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#define STDERR_FILENO 2
 #define STDOUT_FILENO 1
 #define STDIN_FILENO 0
 

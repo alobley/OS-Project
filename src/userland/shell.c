@@ -1,10 +1,3 @@
-/* 
- * KISh (Kernel-Integrated Shell)
- * This is a simple shell built into the kernel's binary specifically meant to test its functionality. It is not meant to be a full-featured shell.
- * It processes a few commands raw without any API assistance.
- * 
-*/
-
 #include <kernel.h>
 #include <keyboard.h>
 #include <alloc.h>
@@ -36,7 +29,7 @@ void PrintPrompt(){
     WriteChar('[');
     // Get only the last part of the working directory
     char* lastPart = strrchr(shellPCB->workingDirectory, '/');
-    if(strlen(shellPCB->workingDirectory) == 1){
+    if(strlen(shellPCB->workingDirectory) == strlen(VFS_ROOT)){
         lastPart = shellPCB->workingDirectory;
     }else{
         lastPart++;
@@ -79,26 +72,20 @@ void clear(UNUSED char* cmd){
     ClearScreen();
 }
 
-void meminfo(UNUSED char* cmd){
-    printf("Total memory: %d MiB\n", memSizeMiB);
-    printf("Used memory: %d MiB\n", totalPages * PAGE_SIZE / 1024 / 1024);
-}
-
 void help(UNUSED char* cmd){
     printf("Commands:\n");
     printf("clear: clears the screen\n");
-    printf("meminfo: prints some memory info\n");
     printf("help: prints this help message\n");
     printf("exit: exits the shell\n");
     printf("syscall: tests the system call mechanism\n");
-    printf("version: prints the kernel version\n");
     printf("pinfo: prints the process info of the shell\n");
-    printf("ACPI: prints ACPI info\n");
     printf("time: prints the current time\n");
     printf("settz: sets the timezone\n");
     printf("pwd: prints the current working directory\n");
     printf("ls: lists the files in the current directory\n");
     printf("cd: changes the current directory\n");
+    printf("shutdown: shuts down the system\n");
+    printf("sysinfo: prints system information\n");
 }
 
 void exitShell(UNUSED char* cmd){
@@ -111,10 +98,6 @@ void syscall(UNUSED char* cmd){
     do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (result));
     printf("System call returned: %d\n", result);
-}
-
-void version(UNUSED char* cmd){
-    printf("Dedication OS Version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
 }
 
 void pinfo(UNUSED char* cmd){
@@ -138,15 +121,6 @@ void pinfo(UNUSED char* cmd){
     printf("Heap base: 0x%x\n", shellPCB->heapBase);
     printf("Heap end: 0x%x\n", shellPCB->heapEnd);
     printf("Current working directory: %s\n", shellPCB->workingDirectory);
-}
-
-void acpi(UNUSED char* cmd){
-    printf("ACPI info:\n");
-    printf("ACPI version: %d\n", acpiInfo.version);
-    printf("ACPI exists: %d\n", acpiInfo.exists);
-    printf("ACPI FADT: 0x%x\n", acpiInfo.fadt);
-    printf("ACPI RSDP: 0x%x\n", acpiInfo.rsdp.rsdpV1);
-    printf("ACPI RSDT: 0x%x\n", acpiInfo.rsdt.rsdt);
 }
 
 void time(UNUSED char* cmd){
@@ -245,6 +219,30 @@ void cd(char* cmd){
     printf("Error: directory %s does not exist\n", dir);
 }
 
+void shutdown(UNUSED char* cmd){
+    AcpiShutdown();
+}
+
+void sysinfo(UNUSED char* cmd){
+    printf("System information:\n");
+    printf("Kernel version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
+    printf("Total memory: %d MiB\n", memSizeMiB);
+    printf("Used memory: %d MiB\n", totalPages * PAGE_SIZE / 1024 / 1024);
+    printf("ACPI supported: ");
+    if(acpiInfo.exists){
+        printf("yes\n");
+    }else{
+        printf("no\n");
+    }
+
+    uint32_t eax = 0;
+    uint32_t others[4] = {0};
+    cpuid(eax, others[0], others[1], others[2]);
+    // Combine the manufacturer string into a single string
+    printf("CPUID: 0x%x\n", eax);
+    printf("CPU Manufacturer: %s\n", others);
+}
+
 void ProcessCommand(char* cmd){
     if(strlen(cmd) == 0){
         PrintPrompt();
@@ -266,7 +264,7 @@ void ProcessCommand(char* cmd){
         }
         entry->func(cmd);
     }else{
-        printf("Command not found\n");
+        printf("Command not found: %s\n", cmd);
     }
     if(!exit){
         PrintPrompt();
@@ -281,18 +279,17 @@ int shell(void){
 
     // Add all the commands
     HashInsert(cmdTable, "clear", clear);
-    HashInsert(cmdTable, "meminfo", meminfo);
     HashInsert(cmdTable, "help", help);
     HashInsert(cmdTable, "exit", exitShell);
     HashInsert(cmdTable, "syscall", syscall);
-    HashInsert(cmdTable, "version", version);
     HashInsert(cmdTable, "pinfo", pinfo);
-    HashInsert(cmdTable, "ACPI", acpi);
     HashInsert(cmdTable, "time", time);
     HashInsert(cmdTable, "settz", settz);
     HashInsert(cmdTable, "pwd", pwd);
     HashInsert(cmdTable, "ls", ls);
     HashInsert(cmdTable, "cd", cd);
+    HashInsert(cmdTable, "shutdown", shutdown);
+    HashInsert(cmdTable, "sysinfo", sysinfo);
 
     printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
@@ -303,8 +300,8 @@ int shell(void){
         return 1;
     }
     PrintPrompt();
-    do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
+    do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
     while(!exit){
         if(enterPressed){
             cmdBuffer[cmdBufferIndex] = '\0';
@@ -314,5 +311,7 @@ int shell(void){
         }
     }
     do_syscall(SYS_REMOVE_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
+    hfree(cmdBuffer);
+    ClearTable(cmdTable);
     return 0;
 }

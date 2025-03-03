@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <multitasking.h>
+#include <keyboard.h>
 
 typedef enum {
     DEVICE_STATUS_IDLE,
@@ -77,8 +78,9 @@ typedef struct Device {
 typedef struct Filesystem {
     char* fsName;
     char* fsType;
+    char* mountpoint;
     driverstatus (*mount)(void* device, char* path);                                      // Mount the filesystem on the VFS
-    driverstatus (*unmount)(void* device, char* path);                                    // Unmount the filesystem from the VFS
+    driverstatus (*unmount)(void* device);                                                // Unmount the filesystem from the VFS
     driverstatus (*read)(void* device, char* path, void* buffer, size_t size);            // Read a file from the filesystem
     driverstatus (*write)(void* device, char* path, void* buffer, size_t size, bool dir); // Write a file or directory to the filesystem
 } filesystem_t; 
@@ -122,6 +124,29 @@ typedef struct Device_Registry {
     device_t* lastDevice;
     size_t numDevices;
 } device_registry_t;
+
+// Contains information about a linear framebuffer - is a graphics device
+// Hardware acceleration support is far down the line
+// TODO: Update the VGA/Console driver to use this and register it as a device
+typedef struct Framebuffer {
+    uintptr_t address;              // Address of the framebuffer
+    size_t width;                   // Width of the framebuffer (in pixels)
+    size_t height;                  // Height of the framebuffer (in pixels)
+    uint8_t bpp;                    // Bits per pixel
+    size_t size;                    // Size of the framebuffer (in bytes)
+    size_t totalPixels;             // Total number of pixels
+} framebuffer_t;
+
+typedef struct Keyboard {
+    driverstatus (*InstallHandler)(void (*handler)(KeyboardEvent_t event));
+    driverstatus (*RemoveHandler)();
+} kbd_t;
+
+// USB device...
+
+// PCI device...
+
+// PCIe device...
 
 extern device_registry_t* deviceRegistry;
 

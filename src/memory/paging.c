@@ -70,28 +70,31 @@ page_table_t kernelPageTables[1024] ALIGNED(4096);
 pde_t* currentPageDir = &kernelPageDirectory[0];
 page_table_t* currentPageTables = &kernelPageTables[0];
 
-// Find a valid page frame in the memory bitmap (TODO: Implement a better algorithm, this one is crazy bad)
+// Find a valid page frame in the memory bitmap
 physaddr_t FindValidFrame(){
     while(!TestBit(lastFreeBit) && lastFreeBit < TOTAL_PAGES){
         // Skip to the next free bit if this one is unavailable
         lastFreeBit++;
     }
     if(lastFreeBit >= TOTAL_PAGES){
-        // Search the whole memory bitmap for a free page if we reach the end
-        for(size_t i = 0; i < totalMemSize / PAGE_SIZE; i++){
-            virtaddr_t addr = i * PAGE_SIZE;
-            if(TestBit(i)){
-                uint32_t pd_idx = PD_INDEX(addr);
-                uint32_t pt_idx = PT_INDEX(addr);
-                
-                // Check if page directory entry is present
-                return i * PAGE_SIZE;
+        // Search the whole memory bitmap in a dword-by-dword manner (32 times faster than checking individual bits)
+        uint32_t* bitmap = (uint32_t*)memoryBitmap;
+        for(size_t i = 0; i < TOTAL_BITS / 32; i++){
+            if(bitmap[i] != 0xFFFFFFFF){
+                // Find the first zero bit in the dword
+                for(size_t j = 0; j < 32; j++){
+                    if(!(bitmap[i] & (1 << j))){
+                        lastFreeBit = i * 32 + j;
+                        return lastFreeBit * PAGE_SIZE;
+                    }
+                }
             }
         }
     }else{
         // We found a free page with the lookup
+        physaddr_t frame = lastFreeBit * PAGE_SIZE;
         lastFreeBit++;
-        return lastFreeBit * PAGE_SIZE;
+        return frame;
     }
 
     // Return something that isn't page aligned

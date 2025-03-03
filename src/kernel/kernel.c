@@ -28,12 +28,12 @@ extern int shell(void);
 version_t kernelVersion = {0, 3, 0};
 
 /* Short-Term TODO:
- * - Implement a proper command parser in KISh
- * - Finish up the driver/module implementation
- * - Implement initrd
+ * - Implement a proper command parser in KISh (done)
+ * - Finish up the driver/module implementation (in progress)
+ * - Implement initrd (optional)
  * - Create a driver to be loaded as a module
  * - Improve the memory manager
- * - Complete the VFS and add full disk drivers
+ * - Complete the VFS and add full disk drivers  (in progress)
  * - Implement file then program loading
  * - Implement a proper task scheduler
  * - Read up on UNIX philosophy and more closely follow it
@@ -91,13 +91,13 @@ version_t kernelVersion = {0, 3, 0};
  * - Create a standard system for interaction with the kernel (say a graphics library) (OpenGL? Framebuffer access?)
  * - Create a libc
  * - Create a shell
-*/
+ */
 
 void InitializeAta();
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     if(magic != MULTIBOOT2_MAGIC && magic != MULTIBOOT_MAGIC){
-        printf("KERNEL PANIC Invalid multiboot magic number: 0x%x\n", magic);
+        printf("KERNEL PANIC: Invalid multiboot magic number: 0x%x\n", magic);
         STOP
     }
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;      // Total memory in bytes
@@ -155,7 +155,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     sleep(1000);    
 
     // Test the PC speaker
-    PCSP_Beep();
+    //PCSP_Beep();
 
     // Create device registry
     InitDeviceRegistry();
@@ -169,7 +169,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Add the ramfs device to the device registry...
 
     // Initialize the VFS
-    vfs_init(mbootInfo);
+    InitializeVfs(mbootInfo);
 
     InitializeKeyboard();
 
@@ -199,5 +199,5 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     for(;;){
         hlt
     }
-    __builtin_unreachable();
+    UNREACHABLE
 }

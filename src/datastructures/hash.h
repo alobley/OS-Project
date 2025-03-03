@@ -19,5 +19,6 @@ typedef struct {
 int HashInsert(hash_table_t* table, char* command, void (*func)(char*));
 hash_entry_t* hash(hash_table_t* table, char* command);
 hash_table_t* CreateTable(size_t size);
+void ClearTable(hash_table_t* table);
 
 #endif

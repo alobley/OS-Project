@@ -11,6 +11,7 @@
 #define FORCE_INLINE __attribute__((always_inline))     // Forces the compiler to inline the function
 
 #define MALLOC __attribute__((malloc))
+#define UNREACHABLE __builtin_unreachable();
 
 #define asm __asm__
 
@@ -18,6 +19,18 @@
 #define sti asm("sti");
 
 #define hlt asm("hlt");
+
+#define nop asm("nop");
+
+#define cpuid(eax, ebx, edx, ecx) asm("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(eax));
+
+#define cpulock asm("lock");
+
+#define enter(size, level) asm("enter %0, %1" : : "i"(size), "i"(level));
+#define leave asm("leave");
+
+#define cld asm("cld");
+#define std asm("std");
 
 #define STOP cli hlt
 
@@ -50,5 +63,6 @@ FORCE_INLINE static inline unsigned int inl(unsigned short port){
 FORCE_INLINE static inline void outl(unsigned short port, unsigned int value){
     asm volatile("outl %0, %1" : : "a"(value), "Nd"(port));
 }
+
 
 #endif

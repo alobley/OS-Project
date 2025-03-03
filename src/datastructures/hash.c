@@ -57,8 +57,25 @@ int HashInsert(hash_table_t* table, char* command, void (*func)(char*)){
             entry = entry->next;
         }
         entry->next = (hash_entry_t*)halloc(sizeof(hash_entry_t));
+        memset(entry->next, 0, sizeof(hash_entry_t));
         entry->next->command = command;
         entry->next->func = func;
         return 0;
     }
+}
+
+void ClearTable(hash_table_t* table){
+    for(size_t i = 0; i < table->size; i++){
+        hash_entry_t* entry = &table->table[i];
+        if(entry != NULL && entry->next != NULL){
+            entry = entry->next;
+            while(entry != NULL){
+                hash_entry_t* next = entry->next;
+                hfree(entry);
+                entry = next;
+            }
+        }
+    }
+    hfree(table->table);
+    hfree(table);
 }

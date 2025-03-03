@@ -18,11 +18,22 @@ vendor_id_t vendorID = 0xBEEF;
 device_t* controller = NULL;
 driver_t* pataDriver = NULL;
 
+driverstatus ReadBlock(vfs_node_t* device, lba_t lba, void* buffer, size_t numSectors){
+    // Read from the drive
+    return DRIVER_SUCCESS;
+}
+
+driverstatus WriteBlock(vfs_node_t* device, lba_t lba, void* buffer, size_t numSectors){
+    // Write to the drive
+    return DRIVER_SUCCESS;
+}
+
 driverstatus Ata_Init(){
     // Register the first drive
     int result = 0;
     // Do checks through I/O ports to see if there is a drive connected...
-    // If not, unregister the devices and driver
+    // If not, unregister the devices and driver...
+    // Add the read/write functions...
     device_t* drive = CreateDevice(deviceID, vendorID, DEVICE_STATUS_IDLE, "pat0", "Primary ATA Drive", NULL, DEVICE_TYPE_BLOCK);
     if(drive == NULL){
         printf("Failed to create PATA drive\n");
