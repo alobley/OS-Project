@@ -80,6 +80,34 @@ static struct {
 
 extern void LoadIDT();
 
+static void regdump(struct Registers* regs){
+    printf("EAX: 0x%x\n", regs->eax);
+    printf("EBX: 0x%x\n", regs->ebx);
+    printf("ECX: 0x%x\n", regs->ecx);
+    printf("EDX: 0x%x\n", regs->edx);
+    printf("ESI: 0x%x\n", regs->esi);
+    printf("EDI: 0x%x\n", regs->edi);
+    printf("EBP: 0x%x\n", regs->ebp);
+    printf("ESP: 0x%x\n", regs->esp);
+    printf("EIP: 0x%x\n", regs->eip);
+    printf("CS: 0x%x\n", regs->cs);
+    printf("DS: 0x%x\n", regs->ds);
+    printf("ES: 0x%x\n", regs->es);
+    printf("FS: 0x%x\n", regs->fs);
+    printf("SS: 0x%x\n", regs->ss);
+    printf("EFLAGS: 0x%x\n", regs->eflags);
+
+    uint32_t cr0, cr2, cr3, cr4;
+    asm volatile("mov %%cr0, %0" : "=r"(cr0));
+    asm volatile("mov %%cr2, %0" : "=r"(cr2));
+    asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    printf("CR0: 0x%x ", cr0);
+    printf("CR2: 0x%x ", cr2);
+    printf("CR3: 0x%x ", cr3);
+    printf("CR4: 0x%x\n", cr4);
+}
+
 void SetIDT(uint8_t index, void(*base)(struct Registers*), uint16_t selector, uint8_t flags){
     idt.entries[index] = (struct IDTEntry){
         .offset_low = ((uintptr_t) base) & 0xFFFF,
@@ -214,6 +242,11 @@ HOT void syscall_handler(struct Registers *regs){
             break;
         case SYS_MPROTECT:
             // SYS_MPROTECT
+            break;
+        case SYS_REGDUMP:
+            // SYS_REGDUMP
+            // Dump the CPU's registers to the console for debugging reasons
+            regdump(regs);
             break;
         
 
@@ -385,6 +418,11 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_BLOCK_WRITE:
             // SYS_BLOCK_WRITE
             break;
+        case SYS_ENTER_V86_MODE:
+            // SYS_ENTER_V86_MODE
+            // Needed?
+            regs->eflags |= 0x00020000;
+            break;
         default: {
             printf("Unknown syscall: 0x%x\n", regs->eax);
             break;
@@ -497,7 +535,8 @@ void ISRHandler(struct Registers *regs){
 extern void reboot();
 
 static void ExceptionHandler(struct Registers *regs){
-    printf("KERNEL PANIC: %s", exceptions[regs->int_no]);
+    printf("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
     cli
     hlt
 }

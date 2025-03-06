@@ -179,7 +179,7 @@ gdt_code_segment:
     db 0x00
     db 0b10011010
     db 0b11001111
-    db 0x00
+    db 0x00             
 gdt_data_segment:
     dw 0xFFFF
     dw 0x0000

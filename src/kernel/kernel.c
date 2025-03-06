@@ -17,6 +17,7 @@
 #include <users.h>
 #include <vfs.h>
 #include <devices.h>
+#include <vbe.h>
 //#include <ata.h>
 
 size_t memSize = 0;
@@ -26,6 +27,8 @@ size_t memSizeMiB = 0;
 extern int shell(void);
 
 version_t kernelVersion = {0, 3, 0};
+
+multiboot_info_t mbootCopy;
 
 /* Short-Term TODO:
  * - Implement a proper command parser in KISh (done)
@@ -57,7 +60,7 @@ version_t kernelVersion = {0, 3, 0};
  * - i915 driver (loadable module)
  * - Page kernel to the higher half of memory instead of at 2MiB
  *  
- * How drivers work
+ * How drivers work:
  * - Physical devices can also have virtual children (i.e. a disk device can have a child device as a filesystem driver, and each one for a partition)
  * - Monolithic design is typically easier
  * - Physical and virtual devices should be considered as entirely separate devices (i.e. sda is not the same as sda1)
@@ -115,7 +118,9 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     InitializeACPI();
 
-    // Do some stuff for the (future) VBE driver...
+    memcpy(&mbootCopy, mbootInfo, sizeof(multiboot_info_t));
+
+    // Do some stuff for the VBE driver...
 
     printf("Parsing memory map...\n");
     MapBitmap(memSize, mbootInfo->mmap_addr, mbootInfo->mmap_length / sizeof(mmap_entry_t));
@@ -169,7 +174,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Add the ramfs device to the device registry...
 
     // Initialize the VFS
-    InitializeVfs(mbootInfo);
+    InitializeVfs(&mbootCopy);
 
     InitializeKeyboard();
 
@@ -184,6 +189,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
+    // The kernel is the steward of all processes
+    kernelPCB->firstChild = shellPCB;
     SwitchProcess(shellPCB);
     
     // Jump to the built-in debug shell

@@ -6,6 +6,7 @@
 */
 #include <kernel.h>
 #include <devices.h>
+#include <vfs.h>
 
 // Subject to change
 char* name = "pata";

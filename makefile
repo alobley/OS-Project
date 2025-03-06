@@ -2,10 +2,11 @@
 ASM=nasm
 CCOM=i686-elf-gcc
 ARCH=i386
+BOOTDISK=boot.img
 
 # QEMU Arguments
 EMARGS=-m 512M -smp 1 -vga vmware -display sdl,gl=on -machine pc
-EMARGS+=-cdrom build/main.iso 
+EMARGS+=-fda bin/$(BOOTDISK)
 EMARGS+=-hda bin/harddisk.vdi 
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
@@ -31,9 +32,10 @@ SOUND_DIR=$(SRC_DIR)/sound
 ACPI_DIR=$(SRC_DIR)/acpi
 STRUCT_DIR=$(SRC_DIR)/datastructures
 DISK_DIR=$(SRC_DIR)/disk
+GRAPHICS_DIR=$(SRC_DIR)/graphics
 
 # Include Directories
-INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR)
+INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(GRAPHICS_DIR)
 INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(FS_DIR) -I $(DISK_DIR) -I $(STRUCT_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
@@ -53,29 +55,45 @@ CFILE=kernel
 PROGRAM_FILE=programtoload
 
 # Build Targets
-all: assemble compile drive_image addfiles qemu
+all: assemble compile boot_image addfiles qemu
 
 create_dirs:
 	mkdir -p $(BUILD_DIR) $(BIN_DIR) $(MNT_DIR)
 
-# Create Boot Disk Image
+
+# Create boot disk image with custom bootloader
+boot_image: create_dirs
+	dd if=/dev/zero of=$(BIN_DIR)/boot.img bs=512 count=2880
+	mkfs.fat -F 12 -R 11 $(BIN_DIR)/boot.img
+	sudo mount -o loop,rw $(BIN_DIR)/boot.img mnt
+	sudo cp $(BUILD_DIR)/$(CFILE).bin mnt/$(CFILE).bin
+	sync
+	sudo umount mnt
+	dd if=$(BUILD_DIR)/$(ASMFILE).bin of=$(BIN_DIR)/boot.img conv=notrunc
+	dd if=$(BUILD_DIR)/stage1.bin of=$(BIN_DIR)/boot.img seek=1 conv=notrunc
+
+# Create Boot Disk Image with GRUB
 drive_image: create_dirs
 	mkdir -p isodir/boot/grub
 	cp $(BUILD_DIR)/$(CFILE).bin isodir/boot/$(CFILE).bin
 	cp $(BOOT_DIR)/grub.cfg isodir/boot/grub/grub.cfg
-	grub-mkrescue -o build/main.iso isodir
+	grub-mkrescue -o bin/main.iso isodir
 
 # Assemble Kernel Startup
 assemble: create_dirs
+	$(ASM) -fbin $(BOOT_DIR)/$(ASMFILE).asm -o $(BUILD_DIR)/$(ASMFILE).bin
 	$(ASM) -felf32 $(KERNEL_DIR)/kernel_start.asm -o $(BUILD_DIR)/kernel_start.o
+
+	$(ASM) -felf $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.o
 #$(ASM) -fbin $(PROG_DIR)/prgm.asm -o $(BUILD_DIR)/prgm.bin
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
 	$(CCOM) -o $(BUILD_DIR)/$(CFILE).bin $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
+	$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
 # Run QEMU
-qemu: create_dirs $(BUILD_DIR)/main.iso
+qemu: create_dirs $(BIN_DIR)/$(BOOTDISK)
 	qemu-system-$(ARCH) $(EMARGS)
 
 # Add Files to Virtual Disk

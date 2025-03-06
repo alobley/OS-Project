@@ -26,9 +26,6 @@
 
 #define cpulock asm("lock");
 
-#define enter(size, level) asm("enter %0, %1" : : "i"(size), "i"(level));
-#define leave asm("leave");
-
 #define cld asm("cld");
 #define std asm("std");
 

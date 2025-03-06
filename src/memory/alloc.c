@@ -156,5 +156,5 @@ void hfree(void* ptr){
         current = current->next;
     }
 
-    // Free unused pages...
+    // Need an algorithm to detect and free unused pages quickly
 }
