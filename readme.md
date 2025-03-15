@@ -15,25 +15,25 @@ Currently, this project is still in the early stages. I've spent the past year l
 [*] = must have (Will likely be completed first)
 [-] = nice to have
 [x] = complete
+- Implement a PC speaker driver (this one should be very simple) [x]
 - Add ACPI and/or APM support [x]
+- Make a more complete list of system calls [x]
 - Create a standardized driver interface and add device management [x] (will likely never not be in progress)
 - Implement a VFS for standardized file interaction [x]
-- Add an initramfs for use on startup [-]
 - Add a PATA disk driver [x]
-- Add a SATA disk driver [-]
 - Add FAT support [*] (Current goal)
-- Implement a PC speaker driver (this one should be very simple) [x]
-- Fully implement mouse driver [-]
-- Make a more complete list of system calls [x]
 - Add the ability to load and execute programs [*]
-- Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [-]
+- Implement a userland kernel API in C [*]
 - Fully implement process scheduling and multitasking [*]
-- Harden the kernel against vulnerabilities [-]
 - Add PCI/PCIE support [*]
 - Add USB support [*]
-- Implement a userland kernel API in C [*]
 - Replace KISh with a proper userland shell [*]
 - Make a libc and more complete userland [*]
+- Add an initramfs for use on startup [-]
+- Add a SATA disk driver [-]
+- Fully implement mouse driver [-]
+- Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [-]
+- Harden the kernel against vulnerabilities [-]
 - Implement a better VGA driver, a VMWare SVGA driver, and an i915 driver [-]
 
 ## Goals to reach before 1.0
