@@ -19,12 +19,12 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Create a standardized driver interface and add device management [x] (will likely never not be in progress)
 - Implement a VFS for standardized file interaction [x]
 - Add an initramfs for use on startup [-]
-- Add a PATA disk driver [*] (Current goal)
+- Add a PATA disk driver [x]
 - Add a SATA disk driver [-]
-- Add FAT support [*]
+- Add FAT support [*] (Current goal)
 - Implement a PC speaker driver (this one should be very simple) [x]
 - Fully implement mouse driver [-]
-- Make a more complete list of system calls [*]
+- Make a more complete list of system calls [x]
 - Add the ability to load and execute programs [*]
 - Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [-]
 - Fully implement process scheduling and multitasking [*]

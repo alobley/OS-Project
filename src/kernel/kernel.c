@@ -156,9 +156,10 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         STOP
     }
 
+    printf("Successfully read from disk!\n");
+
     if(*(buffer + 511) == 0xAA && *(buffer + 510) == 0x55){
-        printf("Successfully read from disk!\n");
-        printf("Buffer contents: 0x%x%x\n", *(buffer + 511), *(buffer + 510));
+        printf("Boot Signature: 0x%x%x\n", *(buffer + 511), *(buffer + 510));
     }
 
     hfree(buffer);
