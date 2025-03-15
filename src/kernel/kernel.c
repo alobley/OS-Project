@@ -18,6 +18,7 @@
 #include <vfs.h>
 #include <devices.h>
 #include <tty.h>
+#include <ata.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -130,18 +131,41 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Test the PC speaker
     //PCSP_Beep();
 
+    // Create the kernel's PCB
+    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);
+    SwitchProcess(kernelPCB);
+
     InitializeVfs(mbootInfo);
 
     InitializeKeyboard();
+    InitializeTTY();
+    InitializeAta();
+
+    // Read from the first sector of the disk to see what happens
+    uint8_t* buffer = halloc(512);
+    if(buffer == NULL){
+        printf("Failed to allocate memory for buffer!\n");
+        STOP
+    }
+    memset(buffer, 0, 512);
+    *(uint64_t*)buffer = 0;
+    *(buffer + 8) = 1;
+    device_t* ataDevice = GetDeviceFromVfs("/dev/pat0");
+    if(ataDevice->read(ataDevice, buffer, 512) != DRIVER_SUCCESS){
+        printf("Failed to read from disk!\n");
+        STOP
+    }
+
+    if(*(buffer + 511) == 0xAA && *(buffer + 510) == 0x55){
+        printf("Successfully read from disk!\n");
+        printf("Buffer contents: 0x%x%x\n", *(buffer + 511), *(buffer + 510));
+    }
+
+    hfree(buffer);
 
     // Load a users file and create the users...
 
     // Other system initialization...
-
-    // Create the kernel's PCB
-    pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);
-
-    InitializeTTY();
 
     // Setup the drivers for the TTYs and keyboard...
 
@@ -158,6 +182,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     int result = shellPCB->EntryPoint();
 
     DestroyProcess(shellPCB);
+    SwitchProcess(kernelPCB);
 
     // Schedule the first process
     Scheduler();

@@ -277,6 +277,12 @@ HOT void syscall_handler(struct Registers *regs){
             // Dump the CPU's registers to the console for debugging reasons
             regdump(regs);
             break;
+        case SYS_DEVICE_READ:
+            // SYS_DEVICE_READ
+            break;
+        case SYS_DEVICE_WRITE:
+            // SYS_DEVICE_WRITE
+            break;
         
 
 
@@ -425,17 +431,6 @@ HOT void syscall_handler(struct Registers *regs){
                     printf("Unknown size for I/O port write: %d\n", regs->ecx);
                     break;
             }
-            break;
-        case SYS_BLOCK_READ:
-            // SYS_BLOCK_READ
-            // Takes a pointer to a block device struct and reads from it
-            // EBX contains the pointer to the block device struct
-            // ECX contains the LBA to read from
-            // EDX contains the number of sectors to read
-            // ESI contains the pointer to the buffer to read into
-            break;
-        case SYS_BLOCK_WRITE:
-            // SYS_BLOCK_WRITE
             break;
         case SYS_ENTER_V86_MODE:
             // SYS_ENTER_V86_MODE

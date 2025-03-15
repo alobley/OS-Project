@@ -42,6 +42,8 @@ enum System_Calls {
     SYS_BRK,                                // Change the heap size
     SYS_MPROTECT,                           // Change the protection of memory pages
     SYS_REGDUMP,                            // Dump the registers to the console
+    SYS_DEVICE_READ,                        // Read from a given device
+    SYS_DEVICE_WRITE,                       // Write to a given device
 
     // Priveliged system calls for drivers and kernel modules (privelige check required, will check PCB)
     // Note - these will always be the highest system calls
@@ -60,8 +62,6 @@ enum System_Calls {
     SYS_DRIVER_MUNMAP,                      // Unmap a region of MMIO from userland
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
-    SYS_BLOCK_READ,                         // Read from a block device
-    SYS_BLOCK_WRITE,                        // Write to a block device
     SYS_ENTER_V86_MODE,                     // Set the CPU into V86 mode
 };
 

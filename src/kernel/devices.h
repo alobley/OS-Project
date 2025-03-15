@@ -94,7 +94,7 @@ typedef struct Device {
     // Note: OS MUST switch to the driver's PCB when using the device
     DRIVERSTATUS (*read)(struct Device* this, void* buffer, size_t size);       // Read from the device
     DRIVERSTATUS (*write)(struct Device* this, void* buffer, size_t size);      // Write to the device
-    DRIVERSTATUS (*ioctl)(struct Device* this, int request, void* argp);        // Control the device (i.e. set options, get status)
+    DRIVERSTATUS (*ioctl)(struct Device* this, IOCTL_CMD request, void* argp);        // Control the device (i.e. set options, get status)
 
     char last_error[64];                        // Last error message from the device in human-readable format
 
@@ -145,6 +145,9 @@ typedef struct Block_Device {
     bool lba48;                                 // Whether the block device supports LBA48 addressing
     bool lba28;                                 // Whether the block device supports LBA28 addressing
     bool chs;                                   // Whether the block device supports CHS addressing
+    bool slave;                                 // Whether the block device is a slave device (if applicable)
+
+    uint16_t basePort;                          // Base port of the device (if applicable)
 
     struct Block_Device* next;                  // Pointer to the next block device (if any - for ennumeration in VFS)
 } blkdev_t;

@@ -224,7 +224,7 @@ int VfsRemoveNode(vfs_node_t* node){
 char* JoinPath(const char* base, const char* path) {
     // Handle absolute paths
     if (path[0] == '/') {
-        path = strdup(path);
+        return strdup(path);
     }
     
     // Allocate enough space for base + / + path + null terminator
