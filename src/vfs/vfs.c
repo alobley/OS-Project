@@ -1,8 +1,19 @@
 #include <vfs.h>
 #include <alloc.h>
-#include <console.h>
+
+// TODO: Add mutex checking in the VFS
 
 vfs_node_t* root = NULL;
+
+// This is gonna have to move
+char* strdup(const char* str) {
+    size_t len = strlen(str) + 1;
+    char* result = (char*)halloc(len);
+    if (result) {
+        strcpy(result, str);
+    }
+    return result;
+}
 
 char* GetFullPath(vfs_node_t* node) {
     if (node == NULL) {
@@ -46,10 +57,14 @@ char* GetFullPath(vfs_node_t* node) {
     return fullPath;
 }
 
-vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* pointer){
+vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* data){
     vfs_node_t* node = (vfs_node_t*)halloc(sizeof(vfs_node_t));
     memset(node, 0, sizeof(vfs_node_t));
-    node->name = name;
+    node->name = strdup(name);
+    if (node->name == NULL) {
+        hfree(node);
+        return NULL;
+    }
     node->isDirectory = isDirectory;
     node->size = size;
     node->parent = NULL;
@@ -60,8 +75,7 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int 
     node->modified = currentTime;
     node->accessed = currentTime;
     node->lock = MUTEX_INIT;
-    node->data = pointer;                   // This is a union, so it's safe to do this
-    node->device = NULL;
+    node->data = data;                   // This is a union, so it's safe to do this
     return node;
 }
 
@@ -170,6 +184,8 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
                     prev->next = current->next;
                 }
                 parent->size--;
+                hfree(current->name);
+                hfree(current);
                 return 0;
             }
             prev = current;
@@ -179,9 +195,13 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     return -1;
 }
 
-void VfsAddDevice(device_t* device, char* name, char* path){
+int VfsAddDevice(device_t* device, char* name, char* path){
     vfs_node_t* node = VfsMakeNode(name, false, 0, 0755, ROOT_UID, device);
+    if(node == NULL){
+        return -1;
+    }
     VfsAddChild(VfsFindNode(path), node);
+    return 0;
 }
 
 int VfsRemoveNode(vfs_node_t* node){
@@ -191,25 +211,20 @@ int VfsRemoveNode(vfs_node_t* node){
     if(node->parent != NULL){
         VfsRemoveChild(node->parent, node);
     }
+    if(node->isDirectory){
+        while(node->firstChild != NULL){
+            VfsRemoveChild(node, node->firstChild);
+        }
+    }
     hfree(node->name);
     hfree(node);
     return 0;
 }
 
-// This is gonna have to move
-char* strdup(const char* str) {
-    size_t len = strlen(str) + 1;
-    char* result = (char*)halloc(len);
-    if (result) {
-        strcpy(result, str);
-    }
-    return result;
-}
-
 char* JoinPath(const char* base, const char* path) {
     // Handle absolute paths
     if (path[0] == '/') {
-        return strdup(path);
+        path = strdup(path);
     }
     
     // Allocate enough space for base + / + path + null terminator
@@ -231,17 +246,19 @@ void InitializeVfs(multiboot_info_t* mbootInfo) {
     // Create the root directory
     root = VfsMakeNode("/", true, 2, 0755, ROOT_UID, NULL);
 
-    // Make the required directories for the initrd
+    // Make the core directories needed on boot (They will be properly mounted later)
     vfs_node_t* dev = VfsMakeNode("dev", true, 0, 0755, ROOT_UID, NULL);
     VfsAddChild(root, dev);
 
     vfs_node_t* initrd = VfsMakeNode("initrd", true, 0, 0755, ROOT_UID, NULL);
     VfsAddChild(root, initrd);
 
-    // TODO: Search for devices and add them to the VFS dynamically
+    vfs_node_t* mnt = VfsMakeNode("mnt", true, 0, 0755, ROOT_UID, NULL);
+    VfsAddChild(root, mnt);
 
-    vfs_node_t* input = VfsMakeNode("input", true, 0, 0755, ROOT_UID, NULL);
-    VfsAddChild(dev, input);
+    // More directories?
+
+    // TODO: Search for devices and add them to the VFS dynamically
 
     // Get the initrd directory from the multiboot info
     multiboot_module_t* mod = (multiboot_module_t*)mbootInfo->mods_addr;
@@ -249,5 +266,3 @@ void InitializeVfs(multiboot_info_t* mbootInfo) {
 
     // Can now return and have the kernel load drivers and stuff
 }
-
-// Function that builds the final VFS...

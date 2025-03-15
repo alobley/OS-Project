@@ -40,4 +40,6 @@ void RemapVGA(uintptr_t addr);
 
 uintptr_t GetVGAAddress(void);
 
+HOT void MoveCursor(uint16_t x, uint16_t y);
+
 #endif

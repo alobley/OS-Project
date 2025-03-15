@@ -21,8 +21,7 @@ static struct State {
     uint64_t ticks;
 } state;
 
-// More?
-#define MAX_TIMERS 256
+#define MAX_TIMERS 1024
 
 uint16_t numTimers = 0;
 

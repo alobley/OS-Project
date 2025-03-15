@@ -3,25 +3,7 @@
 
 #include <bootutil.h>
 
-typedef struct {
-    uint8_t jmpnop[3];
-    char oemid[8];
-    uint16_t bytesPerSector;
-    uint8_t sectorsPerCluster;
-    uint16_t reservedSectors;
-    uint8_t numFATs;
-    uint16_t numRootEntries;
-    uint16_t numSectorsSmall;
-    uint8_t mediaType;
-    uint16_t sectorsPerFAT;                 // FAT12/16 only (should apply to this bootloader)
-    uint16_t sectorsPerTrack;
-    uint16_t numHeads;
-    uint32_t numHiddenSectors;
-    uint32_t numSectorsLarge;
-} bpb;
-
-typedef struct {
-    bpb paramBlock;
+typedef struct PACKED {
     union {
         struct {
             uint8_t driveNumber;
@@ -47,6 +29,30 @@ typedef struct {
             char fsType[8];
         } fat32;
     };
-} ebr;
+} PACKED ebr;
+
+typedef struct PACKED {
+    uint8_t jmpnop[3];
+    char oemid[8];
+    uint16_t bytesPerSector;
+    uint8_t sectorsPerCluster;
+    uint16_t reservedSectors;
+    uint8_t numFATs;
+    uint16_t numRootEntries;
+    uint16_t numSectorsSmall;
+    uint8_t mediaType;
+    uint16_t sectorsPerFAT;                 // FAT12/16 only (should apply to this bootloader)
+    uint16_t sectorsPerTrack;
+    uint16_t numHeads;
+    uint32_t numHiddenSectors;
+    uint32_t numSectorsLarge;
+    ebr exboot;
+} PACKED bpb;
+
+typedef struct {
+    uint8_t cylinder;
+    uint8_t head;
+    uint8_t sector;
+} chs_address;
 
 #endif

@@ -104,4 +104,9 @@ void DestroyProcess(pcb_t* process);
 pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
 void Scheduler(void);
 
+void MutexLock(mutex_t* mutex);
+void MutexUnlock(mutex_t* mutex);
+void SpinlockLock(spinlock_t* spinlock);
+void SpinlockUnlock(spinlock_t* spinlock);
+
 #endif // MULTITASKING_H

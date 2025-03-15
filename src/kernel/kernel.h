@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#define ANSI_ESCAPE "\033[2J\033[H"
+
 #define STDERR_FILENO 2
 #define STDOUT_FILENO 1
 #define STDIN_FILENO 0
@@ -45,6 +47,7 @@ enum System_Calls {
     // Note - these will always be the highest system calls
     SYS_MODULE_LOAD,                        // Load a kernel module
     SYS_MODULE_UNLOAD,                      // Unload a kernel module
+    SYS_ADD_VFS_DEV,                        // Add a device to the VFS
     SYS_MODULE_QUERY,                       // Query a kernel module
     SYS_REGISTER_DEVICE,                    // Register a device
     SYS_UNREGISTER_DEVICE,                  // Unregister a device
@@ -80,10 +83,5 @@ extern version_t kernelVersion;
 #define do_syscall(num, arg1, arg2, arg3, arg4, arg5) \
     asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5))
 
-
-// This function is primarily here to make debugging easier
-static inline void write(const char* str, uint32_t fileDescriptor, size_t len){
-    do_syscall(SYS_WRITE, fileDescriptor, (uint32_t)str, len, 0, 0);
-}
 
 #endif // KERNEL_H

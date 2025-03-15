@@ -102,6 +102,4 @@ typedef unsigned int uintptr_t;
 #define INTPTR_MAX INT64_MAX
 #define UINTPTR_MAX UINT64_MAX
 
-#define SIZE_MAX UINT64_MAX
-
 #endif

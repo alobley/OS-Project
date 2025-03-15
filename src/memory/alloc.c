@@ -1,4 +1,5 @@
 #include <alloc.h>
+#include <kernel.h>
 
 // Get the start of the kernel's heap
 uintptr_t heapStart = 0;
@@ -123,6 +124,8 @@ MALLOC void* halloc(size_t size){
     newBlock->size = size;
     newBlock->free = false;
     newBlock->next = NULL;
+    newBlock->magic = MEMBLOCK_MAGIC;
+    newBlock->prev = current;
     current->next = newBlock;
     heapEnd += pagesToAdd * PAGE_SIZE;
     return (void*)((uint8_t*)newBlock + HEADER_SIZE);
@@ -137,24 +140,54 @@ void hfree(void* ptr){
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
         // Invalid memory block
-        printf("KERNEL PANIC: Invalid memory block magic number 0x%x\n", block->magic);
+        printf("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
+        printf("Invalid ptr: 0x%x, header address: 0x%x\n", ptr, block);
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP;
-    }else{
-        // Free the block
-        block->free = true;
     }
 
-    // Coalesce adjacent free blocks
+    // Mark the block as free
+    block->free = true;
+
+    // Coalesce adjacent free blocks - improved algorithm
     block_header_t* current = firstBlock;
-    while(current != NULL && current->next != NULL){
-        if(current->free && current->next != NULL && current->next->free){
-            // Coalesce the blocks
-            current->size += current->next->size + HEADER_SIZE;
-            current->next->magic = 0;                                   // Invalidate the block, just in case
-            current->next = current->next->next;
-        }
-        current = current->next;
-    }
+    bool modified;
 
-    // Need an algorithm to detect and free unused pages quickly
+    do {
+        modified = false;
+        current = firstBlock;
+        
+        while(current != NULL) {
+            // Validate current block before using it
+            if(current->magic != MEMBLOCK_MAGIC) {
+                printf("KERNEL PANIC: Corrupted block during coalescing: 0x%x\n", current);
+                do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+                STOP;
+            }
+            
+            // Check if we can coalesce with next block
+            if(current->free && current->next != NULL && current->next->magic == MEMBLOCK_MAGIC && current->next->free) {
+                // Coalesce the blocks
+                current->size += current->next->size + HEADER_SIZE;
+                block_header_t* toRemove = current->next;
+                current->next = toRemove->next;
+                
+                // Update the next block's prev pointer if it exists
+                if(current->next != NULL) {
+                    current->next->prev = current;
+                }
+                
+                // Invalidate the removed block
+                toRemove->magic = 0;
+                
+                // Mark that we modified the list
+                modified = true;
+                
+                // Don't advance the pointer since we've modified the list
+                continue;
+            }
+            
+            current = current->next;
+        }
+    } while(modified); // Continue until no more blocks can be coalesced
 }

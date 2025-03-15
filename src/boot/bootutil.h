@@ -3,7 +3,11 @@
 
 #define NULL ((void *)0)
 
+#if defined(__STDC__)
+// For standard (non-GNU) C standards
 #define asm __asm__
+#endif
+
 #define sti asm("sti");
 #define cli asm("cli");
 #define hlt asm("hlt");
@@ -27,29 +31,29 @@
 #define popds asm("pop %ds");
 #define popss asm("pop %ss");
 
-#define setes(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %es");
-#define setfs(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %fs");
-#define setgs(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %gs");
-#define setds(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %ds");
-#define setss(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %ss");
+#define setes(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %es")
+#define setfs(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %fs")
+#define setgs(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %gs")
+#define setds(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %ds")
+#define setss(x) asm("movw %0, %%ax" ::"g"(x)); asm("movw %ax, %ss")
 
-#define setax(x) asm("movw %0, %%ax" ::"g"(x));
-#define setbx(x) asm("movw %0, %%bx" ::"g"(x));
-#define setcx(x) asm("movw %0, %%cx" ::"g"(x));
-#define setdx(x) asm("movw %0, %%dx" ::"g"(x));
-#define setsi(x) asm("movw %0, %%si" ::"g"(x));
-#define setdi(x) asm("movw %0, %%di" ::"g"(x));
-#define setsp(x) asm("movw %0, %%sp" ::"g"(x));
-#define setbp(x) asm("movw %0, %%bp" ::"g"(x));
+#define setax(x) asm("movw %0, %%ax" ::"g"(x))
+#define setbx(x) asm("movw %0, %%bx" ::"g"(x))
+#define setcx(x) asm("movw %0, %%cx" ::"g"(x))
+#define setdx(x) asm("movw %0, %%dx" ::"g"(x))
+#define setsi(x) asm("movw %0, %%si" ::"g"(x))
+#define setdi(x) asm("movw %0, %%di" ::"g"(x))
+#define setsp(x) asm("movw %0, %%sp" ::"g"(x))
+#define setbp(x) asm("movw %0, %%bp" ::"g"(x))
 
-#define getax(x) asm("movw %%ax, %0" :"=g"(x));
-#define getbx(x) asm("movw %%bx, %0" :"=g"(x));
-#define getcx(x) asm("movw %%cx, %0" :"=g"(x));
-#define getdx(x) asm("movw %%dx, %0" :"=g"(x));
-#define getsi(x) asm("movw %%si, %0" :"=g"(x));
-#define getdi(x) asm("movw %%di, %0" :"=g"(x));
-#define getsp(x) asm("movw %%sp, %0" :"=g"(x));
-#define getbp(x) asm("movw %%bp, %0" :"=g"(x));
+#define getax(x) asm("movw %%ax, %0" :"=g"(x))
+#define getbx(x) asm("movw %%bx, %0" :"=g"(x))
+#define getcx(x) asm("movw %%cx, %0" :"=g"(x))
+#define getdx(x) asm("movw %%dx, %0" :"=g"(x))
+#define getsi(x) asm("movw %%si, %0" :"=g"(x))
+#define getdi(x) asm("movw %%di, %0" :"=g"(x))
+#define getsp(x) asm("movw %%sp, %0" :"=g"(x))
+#define getbp(x) asm("movw %%bp, %0" :"=g"(x))
 
 #define pusha asm("pusha");
 #define popa asm("popa");
@@ -75,19 +79,28 @@
 #define popsp asm("pop %sp");
 #define popbp asm("pop %bp");
 
-#define setal(x) asm("movb %0, %%al" ::"g"(x));
-#define setah(x) asm("movb %0, %%ah" ::"g"(x));
-#define setbl(x) asm("movb %0, %%bl" ::"g"(x));
-#define setbh(x) asm("movb %0, %%bh" ::"g"(x));
-#define setcl(x) asm("movb %0, %%cl" ::"g"(x));
-#define setch(x) asm("movb %0, %%ch" ::"g"(x));
-#define setdl(x) asm("movb %0, %%dl" ::"g"(x));
-#define setdh(x) asm("movb %0, %%dh" ::"g"(x));
+#define setal(x) asm("movb %0, %%al" ::"g"(x))
+#define setah(x) asm("movb %0, %%ah" ::"g"(x))
+#define setbl(x) asm("movb %0, %%bl" ::"g"(x))
+#define setbh(x) asm("movb %0, %%bh" ::"g"(x))
+#define setcl(x) asm("movb %0, %%cl" ::"g"(x))
+#define setch(x) asm("movb %0, %%ch" ::"g"(x))
+#define setdl(x) asm("movb %0, %%dl" ::"g"(x))
+#define setdh(x) asm("movb %0, %%dh" ::"g"(x))
 
-#define setcr0(x) asm("movl %0, %%cr0" ::"a"(x));
-#define getcr0(x) asm("movl %%cr0, %0" :"=a"(x));
+#define getal(x) asm("movb %%al, %0" :"=g"(x))
+#define getah(x) asm("movb %%ah, %0" :"=g"(x))
+#define getbl(x) asm("movb %%bl, %0" :"=g"(x))
+#define getbh(x) asm("movb %%bh, %0" :"=g"(x))
+#define getcl(x) asm("movb %%cl, %0" :"=g"(x))
+#define getch(x) asm("movb %%ch, %0" :"=g"(x))
+#define getdl(x) asm("movb %%dl, %0" :"=g"(x))
+#define getdh(x) asm("movb %%dh, %0" :"=g"(x))
 
-#define doint(x) asm("int %0" ::"N"(x));
+#define setcr0(x) asm("movl %0, %%cr0" ::"a"(x))
+#define getcr0(x) asm("movl %%cr0, %0" :"=a"(x))
+
+#define doint(x) asm("int %0" ::"N"(x))
 
 #define stosw asm("stosw");
 #define stosb asm("stosb");
@@ -106,7 +119,7 @@
 #define UNREACHABLE __builtin_unreachable();            // Tells the compiler that the code path is unreachable
 #define SECTION(x) __attribute__((section(x)))          // Places the function or variable in the specified section
 
-#define FASTCALL __attribute__((fastcall))              // Function uses fastcall calling convention
+#define FASTCALL __attribute__((fastcall))              // Function uses fastcall calling convention (easier to call from assembly)
 
 typedef unsigned int uintptr_t;
 
@@ -172,6 +185,7 @@ typedef struct PACKED {
     uint32_t acpi;          // Reserved if ACPI version is less than 3.0
 } PACKED memory_map_t;
 
+// Use multiboot instead?
 typedef struct {
     uint32_t memmap_address;
     uint32_t memmap_length;
@@ -210,6 +224,5 @@ typedef struct PACKED gdtptr {
     uint16_t limit;
     uint32_t base;
 } PACKED gdtptr_t;
-
 
 #endif

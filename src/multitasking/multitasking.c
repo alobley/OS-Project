@@ -47,8 +47,7 @@ void MutexLock(mutex_t* mutex){
         // Mutex is locked, enqueue process
         EnqueueProcess(mutex, currentProcess);
         currentProcess->state = WAITING;
-        // Switch to next process
-        process_switch_stub();
+        SwitchProcess(currentProcess->next); // Switch to the next process and assume no child processes since this one is asking for the lock (is this a good idea?)
         return;
     }else{
         asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");

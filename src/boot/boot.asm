@@ -74,7 +74,7 @@ start:
     mov cl, 10               ; Read 10 sectors (5KB)
     
     call disk_read
-    
+
     ; Far jump to the loaded second stage
     jmp 0:0x8000             ; Jump to where we loaded the bootloader
 

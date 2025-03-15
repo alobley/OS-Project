@@ -1,5 +1,5 @@
 #ifndef STDALIGN_H
-#define STDALIGN_H 1
+#define STDALIGN_H
 
 #define alignas _Alignas        // C11 keyword for specifying alignment
 

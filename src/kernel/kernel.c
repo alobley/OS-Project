@@ -17,8 +17,7 @@
 #include <users.h>
 #include <vfs.h>
 #include <devices.h>
-#include <vbe.h>
-//#include <ata.h>
+#include <tty.h>
 
 size_t memSize = 0;
 size_t memSizeMiB = 0;
@@ -43,43 +42,7 @@ multiboot_info_t mbootCopy;
 */
 
 
-/* Expected driver setup:
- * - VGA driver (integrated into kernel)
- * - Ramdisk driver (integrated into kernel)
- * - Keyboard Driver (loadable module in initrd)
- * - Mouse Driver (loadable module)
- * - PCI/PCIe Driver (Integrated into kernel?)
- * - ACPI Driver (Integrated into kernel)
- * - PATA Driver (loadable module in initrd)
- * - AHCI Driver (loadable module in initrd)
- * - VBE driver (loadable module)
- * - Network Driver (loadable module)
- * - Sound Driver (loadable module)
- * - USB Driver (loadable module in initrd)
- * - Filesystem Drivers (loadable modules in initrd)
- * - i915 driver (loadable module)
- * - Page kernel to the higher half of memory instead of at 2MiB
- *  
- * How drivers work:
- * - Physical devices can also have virtual children (i.e. a disk device can have a child device as a filesystem driver, and each one for a partition)
- * - Monolithic design is typically easier
- * - Physical and virtual devices should be considered as entirely separate devices (i.e. sda is not the same as sda1)
- * - Some filesystem and disk drivers should be directly integrated into the kernel
- * - The kernel should be able to identify all the devices on the system
- * 
- * How I might set them up:
- * - Create a device registry
- * - Create a root bus
- * - Scan for all hardware devices
- * - Create a media descriptor for each device
- * - Load the appropriate driver for each device (if one exists)
- * - Add the device to the device registry
- * - Create virtual devices as needed, such as for filesystems. One for each partition most likely
- * - Add the virtual devices to the device registry
- * - Initialize the VFS
- * - Add each device as a symbolic file in /dev
- * 
- * Driver design considerations:
+/* Driver design considerations:
  * - Each driver should be a loadable module
  * - Should the drivers run in userland as a microkernel environment?
  * - If the drivers don't run in kernelspace, does that require them to be "servers"? What about the single CPU this OS is designed for?
@@ -95,8 +58,6 @@ multiboot_info_t mbootCopy;
  * - Create a libc
  * - Create a shell
  */
-
-void InitializeAta();
 
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     if(magic != MULTIBOOT2_MAGIC && magic != MULTIBOOT_MAGIC){
@@ -138,7 +99,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Stress test the memory allocator
     printf("Stress testing the heap allocator...\n");
-    for(int i = 1; i <= 1000; i++){
+    for(int i = 1; i < 1000; i++){
         uint8_t* test = halloc(PAGE_SIZE * 6);
         if(test == NULL){
             printf("Failed to allocate memory!\n");
@@ -159,26 +120,19 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     printf("Testing the timer...\n");
     sleep(1000);    
 
+    printf("Creating device registry...\n");
+    if(CreateDeviceRegistry() != DRIVER_SUCCESS){
+        printf("Failed to create device registry!\n");
+        STOP
+    }
+    printf("Device registry created successfully!\n");
+
     // Test the PC speaker
     //PCSP_Beep();
 
-    // Create device registry
-    InitDeviceRegistry();
-
-    // Create the root bus...
-
-    // Create the ramfs media descriptor...
-
-    // Load the ramfs driver...
-
-    // Add the ramfs device to the device registry...
-
-    // Initialize the VFS
-    InitializeVfs(&mbootCopy);
+    InitializeVfs(mbootInfo);
 
     InitializeKeyboard();
-
-    InitializeAta();
 
     // Load a users file and create the users...
 
@@ -186,6 +140,10 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Create the kernel's PCB
     pcb_t* kernelPCB = CreateProcess(NULL, "syscore", VFS_ROOT, ROOT_UID, true, true, true, KERNEL, 0);
+
+    InitializeTTY();
+
+    // Setup the drivers for the TTYs and keyboard...
 
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", VFS_ROOT, ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE);
@@ -198,6 +156,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // - Load the shell from the filesystem
     // - Make the shell a userland application
     int result = shellPCB->EntryPoint();
+
     DestroyProcess(shellPCB);
 
     // Schedule the first process

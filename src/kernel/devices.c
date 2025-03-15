@@ -1,165 +1,88 @@
 #include <devices.h>
 #include <alloc.h>
-#include <console.h>
 #include <vfs.h>
 
-device_registry_t* deviceRegistry;
+device_registry_t* registry = NULL;
 
-
-int InitDeviceRegistry(){
-    deviceRegistry = (device_registry_t*)halloc(sizeof(device_registry_t));
-    if(deviceRegistry == NULL){
-        return REGISTER_OUT_OF_MEMORY;
+int CreateDeviceRegistry(){
+    registry = (device_registry_t*)halloc(sizeof(device_registry_t));
+    if(registry == NULL){
+        return DRIVER_OUT_OF_MEMORY;
     }
-    deviceRegistry->firstDevice = NULL;
-    deviceRegistry->lastDevice = NULL;
-    deviceRegistry->numDevices = 0;
-    return REGISTER_SUCCESS;
+
+    registry->firstDevice = NULL;
+    registry->lastDevice = NULL;
+    registry->numDevices = 0;
+
+    return DRIVER_SUCCESS;
 }
 
-int DestroyDeviceRegistry(){
-    if(deviceRegistry == NULL){
-        return REGISTER_FAILURE;
-    }
-    device_t* current = deviceRegistry->firstDevice;
+void DestroyDeviceRegistry(){
+    device_t* current = registry->firstDevice;
     while(current != NULL){
         device_t* next = current->next;
-        DestroyDevice(current);
+        hfree(current);
         current = next;
     }
-    hfree(deviceRegistry);
-    deviceRegistry = NULL;
-    return REGISTER_SUCCESS;
+    hfree(registry);
 }
 
-driver_t* CreateDriver(char* name, char* description, driverstatus (*init)()){
-    driver_t* driver = (driver_t*)halloc(sizeof(driver_t));
-    if(driver == NULL){
-        return NULL;
-    }
-    memset(driver, 0, sizeof(driver_t));
-    driver->name = name;
-    driver->description = description;
-    driver->init = init;
-    driver->device = NULL;
-    return driver;
-}
-
-int DestroyDriver(driver_t* driver){
-    if(driver == NULL){
-        return -1;
-    }
-    hfree(driver->name);
-    hfree(driver->description);
-    hfree(driver);
-    return 0;
-}
-
-device_t* CreateDevice(device_id_t deviceID, vendor_id_t vendorID, device_status_t status, char* name, char* description, void* deviceInfo, device_type_t type){
-    device_t* device = (device_t*)halloc(sizeof(device_t));
-    if(device == NULL){
-        return NULL;
-    }
-    memset(device, 0, sizeof(device_t));
-    device->deviceID = deviceID;
-    device->vendorID = vendorID;
-    device->status = status;
-    device->name = name;
-    device->description = description;
-    device->deviceInfo = deviceInfo;
-    device->driver = NULL;
-    device->type = type;
-    device->next = NULL;
-    device->prev = NULL;
-    device->parent = NULL;
-    device->firstChild = NULL;
-    device->lock = MUTEX_INIT;
-    return device;
-}
-
-int DestroyDevice(device_t* device){
-    if(device == NULL){
-        return -1;
-    }
-    hfree(device->name);
-    hfree(device->description);
-    hfree(device);
-    return 0;
-}
-
-int RegisterDevice(device_t* device, device_t* parent){
-    if(deviceRegistry == NULL){
-        return REGISTER_FAILURE;
-    }
-    if(device == NULL){
-        return REGISTER_FAILURE;
-    }
-    if(deviceRegistry->firstDevice == NULL){
-        if(parent != NULL){
-            // Registering a child of an unregistered device is not allowed
-            return REGISTER_FAILURE;
-        }
-        deviceRegistry->firstDevice = device;
-        deviceRegistry->lastDevice = device;
+int RegisterDevice(device_t* device){
+    if(registry->firstDevice == NULL){
+        registry->firstDevice = device;
+        registry->lastDevice = device;
+        device->next = NULL;
     }else{
-        if(parent != NULL){
-            parent->firstChild = device;
-        }else{
-            deviceRegistry->lastDevice->next = device;
-            device->prev = deviceRegistry->lastDevice;
-            deviceRegistry->lastDevice = device;
-        }
+        registry->lastDevice->next = device;
+        registry->lastDevice = device;
+        device->next = NULL;
     }
-    deviceRegistry->numDevices++;
-
-    // Add device to the VFS
-    VfsAddDevice(device, device->name, "/dev");
-    return REGISTER_SUCCESS;
+    registry->numDevices++;
+    return DRIVER_SUCCESS;
 }
 
 int UnregisterDevice(device_t* device){
-    if(deviceRegistry == NULL){
-        return REGISTER_FAILURE;
+    if(registry->firstDevice == NULL){
+        return DRIVER_NOT_INITIALIZED;
     }
-    if(device == NULL){
-        return REGISTER_DEVICE_NOT_FOUND;
+
+    if(registry->firstDevice == device){
+        registry->firstDevice = device->next;
+        if(registry->lastDevice == device){
+            registry->lastDevice = NULL;
+        }
+    }else{
+        device_t* current = registry->firstDevice;
+        while(current != NULL && current->next != device){
+            current = current->next;
+        }
+        if(current == NULL){
+            return DRIVER_NOT_INITIALIZED;
+        }
+        current->next = device->next;
+        if(registry->lastDevice == device){
+            registry->lastDevice = current;
+        }
     }
-    if(deviceRegistry->firstDevice == device){
-        deviceRegistry->firstDevice = device->next;
-    }
-    if(deviceRegistry->lastDevice == device){
-        deviceRegistry->lastDevice = device->prev;
-    }
-    if(device->prev != NULL){
-        device->prev->next = device->next;
-    }
-    if(device->next != NULL){
-        device->next->prev = device->prev;
-    }
-    deviceRegistry->numDevices--;
-    VfsRemoveNode(VfsFindNode(JoinPath("/dev", device->name)));
-    return REGISTER_SUCCESS;
+    hfree(device);
+    registry->numDevices--;
+    return DRIVER_SUCCESS;
 }
 
 int RegisterDriver(driver_t* driver, device_t* device){
-    if(driver == NULL || device == NULL){
-        return REGISTER_FAILURE;
-    }
-    if(device->driver != NULL){
-        return REGISTER_DEVICE_ALREADY_REGISTERED;
-    }
     device->driver = driver;
-    driver->device = device;
-    return REGISTER_SUCCESS;
+    return DRIVER_SUCCESS;
 }
 
-device_t* GetDeviceByID(device_id_t deviceID){
-    if(deviceRegistry == NULL){
-        return NULL;
-    }
-    device_t* current = deviceRegistry->firstDevice;
+int UnregisterDriver(driver_t* driver, device_t* device){
+    device->driver = NULL;
+    return DRIVER_SUCCESS;
+}
+
+device_t* GetDeviceByID(device_id_t id){
+    device_t* current = registry->firstDevice;
     while(current != NULL){
-        if(current->deviceID == deviceID){
+        if(current->id == id){
             return current;
         }
         current = current->next;
@@ -167,11 +90,8 @@ device_t* GetDeviceByID(device_id_t deviceID){
     return NULL;
 }
 
-device_t* GetFirstDevice(device_type_t type){
-    if(deviceRegistry == NULL){
-        return NULL;
-    }
-    device_t* current = deviceRegistry->firstDevice;
+device_t* GetFirstDeviceByType(DEVICE_TYPE type){
+    device_t* current = registry->firstDevice;
     while(current != NULL){
         if(current->type == type){
             return current;
@@ -179,4 +99,36 @@ device_t* GetFirstDevice(device_type_t type){
         current = current->next;
     }
     return NULL;
+}
+
+device_t* GetNextDeviceByType(device_t* previous, DEVICE_TYPE type){
+    device_t* current = previous->next;
+    while(current != NULL){
+        if(current->type == type){
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+device_t* GetDeviceFromVfs(char* path){
+    vfs_node_t* node = VfsFindNode(path);
+    if(node == NULL){
+        return NULL;
+    }
+    return (device_t*)node->data;
+}
+
+driver_t* CreateDriver(const char* name, const char* description, driver_id_t id, uint32_t version, DRIVERSTATUS (*init)(void), DRIVERSTATUS (*deinit)(void), DRIVERSTATUS (*probe)(device_t* device)){
+    driver_t* driver = (driver_t*)halloc(sizeof(driver_t));
+    memset(driver, 0, sizeof(driver_t));
+    driver->name = name;
+    driver->description = description;
+    driver->id = id;
+    driver->version = version;
+    driver->init = init;
+    driver->deinit = deinit;
+    driver->probe = probe;
+    return driver;
 }

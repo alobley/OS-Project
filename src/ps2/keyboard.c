@@ -5,6 +5,8 @@
 #include <acpi.h>
 #include <alloc.h>
 #include <vfs.h>
+#include <kernel.h>
+#include <devices.h>
 
 #define KEYBOARD_ISR 0x21
 #define KEYBOARD_IRQ 1
@@ -372,10 +374,38 @@ void InitializeKeyboard(){
         return;
     }
 
+    keyboard_t* keyboardDeviceInfo = (keyboard_t*)halloc(sizeof(keyboard_t));
+    memset(keyboardDeviceInfo, 0, sizeof(keyboard_t));
+    keyboardDeviceInfo->AddCallback = InstallKeyboardCallback;
+    keyboardDeviceInfo->RemoveCallback = RemoveKeyboardCallback;
+
+    device_t* keyboardDevice = (device_t*)halloc(sizeof(device_t));
+    memset(keyboardDevice, 0, sizeof(device_t));
+    keyboardDevice->name = "keyboard";
+    keyboardDevice->description = "PS/2 Keyboard";
+    keyboardDevice->type = DEVICE_TYPE_INPUT;
+    keyboardDevice->id = 0;
+    keyboardDevice->driver = NULL;
+    keyboardDevice->next = NULL;
+    keyboardDevice->status = DEVICE_STATUS_IDLE;
+    keyboardDevice->read = NULL;
+    keyboardDevice->write = NULL;
+    keyboardDevice->ioctl = NULL;
+    keyboardDevice->lock = MUTEX_INIT;
+    keyboardDevice->deviceInfo = keyboardDeviceInfo;
+    keyboardDevice->devName = "kb0";
+
+    driver_t* keyboardDriver = CreateDriver("ps2_keyboard", "PS/2 Keyboard Driver", 0, 1, NULL, NULL, NULL);
+    do_syscall(SYS_MODULE_LOAD, (uintptr_t)keyboardDriver, (uintptr_t)keyboardDevice, 0, 0, 0);
+
+
+    //do_syscall(SYS_ADD_VFS_DEV, (uint32_t)tty, (uint32_t)"tty0", (uint32_t)"/dev", 0, 0);
+
+    do_syscall(SYS_ADD_VFS_DEV, (uintptr_t)keyboardDevice, (uintptr_t)keyboardDevice->devName, (uintptr_t)"/dev", 0, 0);
+
     // Install the keyboard interrupt
-    InstallISR(KEYBOARD_ISR, kb_handler);
-    InstallIRQ(KEYBOARD_IRQ, kb_handler);
+    do_syscall(SYS_REQUEST_IRQ, KEYBOARD_IRQ, (uintptr_t)kb_handler, 0, 0, 0);
 
     // Add the keyboard device to the VFS (just do it like this for now, later I will properly make the keyboard driver)
-    VfsAddDevice(NULL, "kb0", "/dev/input");
+    do_syscall(SYS_REGISTER_DEVICE, (uintptr_t)keyboardDevice, 0, 0, 0, 0);
 }

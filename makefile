@@ -2,12 +2,12 @@
 ASM=nasm
 CCOM=i686-elf-gcc
 ARCH=i386
-BOOTDISK=boot.img
+BOOTDISK=main.iso
 
 # QEMU Arguments
 EMARGS=-m 512M -smp 1 -vga vmware -display sdl,gl=on -machine pc
-EMARGS+=-fda bin/$(BOOTDISK)
-EMARGS+=-hda bin/harddisk.vdi 
+EMARGS+=-cdrom bin/$(BOOTDISK)
+EMARGS+=-hda bin/harddisk.vdi
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
 EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-d int -no-reboot -no-shutdown
@@ -25,7 +25,7 @@ INT_DIR=$(SRC_DIR)/interrupts
 MEM_DIR=$(SRC_DIR)/memory
 PS2_DIR=$(SRC_DIR)/ps2
 TIME_DIR=$(SRC_DIR)/time
-FS_DIR=$(SRC_DIR)/filesystem
+VFS_DIR=$(SRC_DIR)/vfs
 MULTITASK_DIR=$(SRC_DIR)/multitasking
 USER_DIR=$(SRC_DIR)/userland
 SOUND_DIR=$(SRC_DIR)/sound
@@ -36,16 +36,16 @@ GRAPHICS_DIR=$(SRC_DIR)/graphics
 
 # Include Directories
 INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(GRAPHICS_DIR)
-INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(FS_DIR) -I $(DISK_DIR) -I $(STRUCT_DIR)
+INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(VFS_DIR) -I $(DISK_DIR) -I $(STRUCT_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -lgcc $(INCLUDES) -Wno-unused -Wno-array-bounds -Werror
 
 # Libraries to compile with
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c 
-LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(FS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
+LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c 
-LIBS+=$(DISK_DIR)/ata.c
+LIBS+=$(CONSOLE_DIR)/tty.c
 
 # Assembly and Kernel Files
 ASMFILE=boot
@@ -55,7 +55,7 @@ CFILE=kernel
 PROGRAM_FILE=programtoload
 
 # Build Targets
-all: assemble compile boot_image addfiles qemu
+all: assemble compile drive_image addfiles qemu
 
 create_dirs:
 	mkdir -p $(BUILD_DIR) $(BIN_DIR) $(MNT_DIR)
@@ -66,7 +66,7 @@ boot_image: create_dirs
 	dd if=/dev/zero of=$(BIN_DIR)/boot.img bs=512 count=2880
 	mkfs.fat -F 12 -R 11 $(BIN_DIR)/boot.img
 	sudo mount -o loop,rw $(BIN_DIR)/boot.img mnt
-	sudo cp $(BUILD_DIR)/$(CFILE).bin mnt/$(CFILE).bin
+	sudo cp $(BUILD_DIR)/$(CFILE).bin mnt/KERNEL.BIN
 	sync
 	sudo umount mnt
 	dd if=$(BUILD_DIR)/$(ASMFILE).bin of=$(BIN_DIR)/boot.img conv=notrunc
@@ -102,7 +102,6 @@ addfiles: create_dirs
 	sudo mount -o loop,rw bin/harddisk.vdi mnt
 #sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
 	sync
-	@sleep 1
 	sudo umount mnt
 
 # Create the Hard Drive Image, for some reason .qcow2 doesn't show sectors properly.

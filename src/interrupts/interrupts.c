@@ -5,6 +5,7 @@
 #include <kernel.h>
 #include <time.h>
 #include <devices.h>
+#include <tty.h>
 
 #define NUM_ISRS 49
 
@@ -137,6 +138,13 @@ bool CheckPrivelige(){
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 HOT void syscall_handler(struct Registers *regs){
     int result;
+    if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
+        // Better to check once at the beginning rather than checking every time
+        printf("Unpriveliged Application requesting system resources. Killing process.\n");
+        // Log the error
+        // Kill the process
+        return;
+    }
     switch(regs->eax){
         case SYS_DBG: {
             // SYS_DBG
@@ -144,14 +152,31 @@ HOT void syscall_handler(struct Registers *regs){
             regs->eax = 1;
             break;
         }
-        case SYS_INSTALL_KBD_HANDLE:
+        case SYS_INSTALL_KBD_HANDLE: {
             // SYS_INSTALL_KBD_HANDLE
-            InstallKeyboardCallback((KeyboardCallback)regs->ebx);
+            // Installs a keyboard callback on the first keyboard in the system. For more keyboards developers will have to open the keyboard device and install a callback.
+            device_t* keyboardDevice = GetDeviceFromVfs("/dev/kb0");
+            if(keyboardDevice != NULL){
+                keyboard_t* keyboardDeviceInfo = (keyboard_t*)keyboardDevice->deviceInfo;
+                keyboardDeviceInfo->AddCallback((KeyboardCallback)regs->ebx);
+                regs->eax = 0;
+            }else{
+                regs->eax = -1;
+            }
             break;
-        case SYS_REMOVE_KBD_HANDLE:
+        }
+        case SYS_REMOVE_KBD_HANDLE: {
             // SYS_REMOVE_KBD_HANDLE
-            RemoveKeyboardCallback((KeyboardCallback)regs->ebx);
+            device_t* keyboardDevice = GetDeviceFromVfs("/dev/kb0");
+            if(keyboardDevice != NULL){
+                keyboard_t* keyboardDeviceInfo = (keyboard_t*)keyboardDevice->deviceInfo;
+                keyboardDeviceInfo->RemoveCallback((KeyboardCallback)regs->ebx);
+                regs->eax = 0;
+            }else{
+                regs->eax = -1;
+            }
             break;
+        }
         case SYS_WRITE:
             // SYS_WRITE
             // EBX contains the file descriptor
@@ -161,8 +186,12 @@ HOT void syscall_handler(struct Registers *regs){
             // Write data to the file descriptor
             switch(regs->ebx){
                 case STDOUT_FILENO: {
-                    // TODO: change STDOUT_FILENO to the actual file descriptor
-                    WriteStringSize((char*)regs->ecx, regs->edx);
+                    tty_t* tty = GetActiveTTY();
+                    if(strncmp((const char*)regs->ecx, ANSI_ESCAPE, 8) == 0){
+                        tty->clear(tty);
+                    }else{
+                        tty->write(tty, (const char*)regs->ecx, regs->edx);
+                    }
                     break;
                 }
                 default: {
@@ -173,6 +202,11 @@ HOT void syscall_handler(struct Registers *regs){
             break;
         case SYS_READ:
             // SYS_READ
+            // EBX contains the path to the file to read
+            // TODO: use open and close and file descriptors
+
+            // Get a VFS node for now, do disk reading later
+            regs->eax = (uintptr_t)VfsFindNode((char*)regs->ebx);
             break;
         case SYS_EXIT:
             // SYS_EXIT
@@ -201,13 +235,8 @@ HOT void syscall_handler(struct Registers *regs){
             break;
         case SYS_GET_PCB:
             // SYS_GET_PCB
-            // Gets own PCB when not priveliged, otherwise gets PCB of process with PID in ebx
-            if(!CheckPrivelige()){
-                regs->eax = (uint32_t)GetCurrentProcess();
-            }else{
-                // Don't have this yet, just do the same thing as above
-                regs->eax = (uint32_t)GetCurrentProcess();
-            }
+            // Gets own process PCB
+            regs->eax = (uint32_t)GetCurrentProcess();
             break;
         case SYS_OPEN:
             // SYS_OPEN
@@ -255,16 +284,9 @@ HOT void syscall_handler(struct Registers *regs){
         // Note - these will always be the highest system calls.
         // Microkernel for now? Is it easier? What about speed?
         case SYS_MODULE_LOAD:
-            // SYS_MODULE_LOAD
-            if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting system resources. Killing process.\n");
-                // Log the error
-                // Kill the process
-                break;
-            }
             // EBX contains a pointer to the driver struct
             // ECX contains a pointer to the device the driver is aquiring
-            // ESI contains a pointer to the PCB (if the driver is a process, otherwise NULL)
+            // ESI contains a pointer to the PCB (if the driver is a non-kernel process, otherwise NULL)
 
             // Get the driver's PCB and set the proper flags
             if(regs->esi != 0){
@@ -273,19 +295,35 @@ HOT void syscall_handler(struct Registers *regs){
                 driverPCB->timeSlice = 0;
             }
 
-            // Load the device driver
-            result = RegisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
-            regs->eax = result;
-            if(result == DRIVER_SUCCESS){
-                ((driver_t*)regs->ebx)->init();
-            }else{
-                printf("Failed to load driver: %d\n", result);
+            if(regs->ebx == 0 || regs->ecx == 0){
+                regs->eax = -1;
+                break;
             }
+
+            RegisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
 
             break;
         case SYS_MODULE_UNLOAD:
             // SYS_MODULE_UNLOAD
             // Remove a driver and delete its entry in the device registry
+            // EBX contains a pointer to the driver struct
+            // ECX contains a pointer to the device the driver is in charge of
+            UnregisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
+            break;
+        case SYS_ADD_VFS_DEV:
+            // SYS_ADD_VFS_DEV
+            // Add a device entry to the VFS
+            // EBX contains a pointer to the device to add to the VFS
+            // ECX contains the device name
+            // EDX contains the path to add the device to (i.e. /dev)
+            if(strncmp((char*)regs->edx, "/dev", 4) == 0){
+                // Add the device to the VFS
+                int result = VfsAddDevice((device_t*)regs->ebx, (char*)regs->ecx, (char*)regs->edx);
+                regs->eax = result;
+            }else{
+                printf("Error: a path outside of /dev is against the rules!\n");
+                regs->eax = -1;
+            }
             break;
         case SYS_MODULE_QUERY:
             // SYS_MODULE_QUERY
@@ -293,40 +331,33 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_REGISTER_DEVICE:
             // SYS_REGISTER_DEVICE
             // EBX contains a pointer to the device to register
-            // ECX contains a pointer to the parent device (if any)
-            if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting system resources. Killing process.\n");
-                // Log the error
-                // Kill the process
-                break;
-            }
-            result = RegisterDevice((device_t*)regs->ebx, (device_t*)regs->ecx);
-            regs->eax = result;
+            RegisterDevice((device_t*)regs->ebx);
 
             // Check the module type and load it
             // Do what is neccecary for the type of module (device, filesystem, etc.)
             break;
         case SYS_UNREGISTER_DEVICE:
             // SYS_UNREGISTER_DEVICE
-            // EBX contains a value signaling what kind of device to unload
-            // ECX contains a pointer to the struct containing the device data
+            // EBX contains a pointer to the struct containing the device data
+            UnregisterDevice((device_t*)regs->ebx);
 
-            // Search for the device in the device list and unload it
             // The driver is responsible for its own memory management
             break;
         case SYS_GET_DEVICE:
             // SYS_GET_DEVICE
-            // EBX contains the device ID to get
-            regs->eax = (uint32_t)GetDeviceByID((device_id_t)regs->ebx);
+            // EBX contains a pointer to the path of the device to get
+            GetDeviceFromVfs((char*)regs->ebx);
             break;
         case SYS_GET_FIRST_DEVICE:
             // SYS_GET_FIRST_DEVICE
             // EBX contains the device type to get
-            regs->eax = (uint32_t)GetFirstDevice((device_type_t)regs->ebx);
+            GetFirstDeviceByType((DEVICE_TYPE)regs->ebx);
             break;
         case SYS_REQUEST_IRQ:
             // SYS_REQUEST_IRQ
-            // This should be pretty simple. EBX contains the IRQ number to request, ECX contains a pointer to the handler function
+            // EBX contains the IRQ number to request
+            // ECX contains a pointer to the handler function
+            InstallIRQ(regs->ebx, (void(*)(struct Registers*))regs->ecx);
             break;
         case SYS_RELEASE_IRQ:
             // SYS_RELEASE_IRQ
@@ -357,12 +388,6 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_IO_PORT_READ
             // EBX contains the port to read from
             // ECX contains the size of the read (1, 2, or 4 bytes)
-            if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting system resources. Killing process.\n");
-                // Log the error
-                // Kill the process
-                break;
-            }
 
             switch(regs->ecx){
                 case 8:
@@ -385,12 +410,6 @@ HOT void syscall_handler(struct Registers *regs){
             // EBX contains the port to write to
             // ECX contains the size of the write (1, 2, or 4 bytes)
             // EDX contains the value to write
-            if(!CheckPrivelige()){
-                printf("Unpriveliged Application requesting system resources. Killing process.\n");
-                // Log the error
-                // Kill the process
-                break;
-            }
 
             switch(regs->ecx){
                 case 8:
