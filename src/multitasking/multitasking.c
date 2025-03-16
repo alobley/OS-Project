@@ -1,4 +1,5 @@
 #include <multitasking.h>
+#include <kernel.h>
 
 pcb_t* currentProcess = NULL;
 pcb_t* processList = NULL;
@@ -47,7 +48,7 @@ void MutexLock(mutex_t* mutex){
         // Mutex is locked, enqueue process
         EnqueueProcess(mutex, currentProcess);
         currentProcess->state = WAITING;
-        SwitchProcess(currentProcess->next); // Switch to the next process and assume no child processes since this one is asking for the lock (is this a good idea?)
+        do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
         return;
     }else{
         asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");
@@ -83,10 +84,16 @@ void KernelOverrideUnlock(mutex_t* mutex){
 
 // Spinlock functions...
 
+extern pcb_t* kernelPCB; // Defined in kernel.c
+
 // Process control functions
 // TODO: implement process paging, stack, and heap allocation. For now, we'll just create a process with a NULL stack and heap.
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice){
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent){
     pcb_t* process = (pcb_t*)halloc(sizeof(pcb_t));
+    if(process == NULL){
+        return NULL; // Failed to allocate memory for process
+    }
+    memset(process, 0, sizeof(pcb_t));
     process->pid = numProcesses++;
     process->flags.priveliged = priveliged;
     process->flags.kernel = kernel;
@@ -99,9 +106,26 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
 
     process->workingDirectory = directory;
 
-    process->next = NULL;
-    process->firstChild = NULL;
-    process->parent = NULL;
+    if(parent == NULL && kernelPCB == NULL){
+        // This is the kernel process
+        parent = NULL;
+    }else{
+        // Add the process as a child of the kernel and append it to the process list
+        process->parent = parent;
+        if(kernelPCB->firstChild == NULL){
+            kernelPCB->firstChild = process;
+        }else{
+            pcb_t* current = kernelPCB->firstChild;
+            while(current->next != NULL){
+                current = current->next;
+            }
+            current->next = process;
+            process->previous = current;
+        }
+        process->next = NULL;
+    }
+
+    process->pageDirectory = 0; // TODO: implement process paging
 
     // TODO: implement stack allocation
     process->stack = 0;
@@ -116,6 +140,9 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
     process->next = processList;
     processList = process;
 
+    process->registers = halloc(sizeof(struct Registers));
+    memset(process->registers, 0, sizeof(struct Registers));
+
     process->name = name;
 
     return process;
@@ -126,15 +153,9 @@ void DestroyProcess(pcb_t* process){
         return;
     }
 
-    if(process == processList){
-        processList = process->next;
-    }else{
-        pcb_t* current = processList;
-        while(current->next != process){
-            current = current->next;
-        }
-        current->next = process->next;
-    }
+    hfree(process->registers);
+    hfree(process->workingDirectory);
+    // Deallocate other things...
 
     // Search the device tree for any devices owned by the process and destroy them...
 
@@ -149,6 +170,25 @@ void Scheduler(void){
     return;
 }
 
-void SwitchProcess(pcb_t* process){
+void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs){
     currentProcess = process;
+    //memcpy(currentProcess->registers, regs, sizeof(struct Registers));
+}
+
+void SetCurrentProcess(pcb_t* process){
+    currentProcess = process;
+}
+
+void SwitchProcess(bool kill, struct Registers* context){
+    if(kill){
+        currentProcess->next->previous = currentProcess->previous;
+        DestroyProcess(currentProcess);
+    }
+    // Search for the next process to run
+    memcpy(currentProcess->registers, context, sizeof(struct Registers));
+    if(currentProcess->next != NULL){
+        // Save the registers of the current process
+        currentProcess = currentProcess->next;
+    }
+
 }

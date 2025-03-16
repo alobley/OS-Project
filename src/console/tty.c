@@ -80,7 +80,7 @@ void InitializeTTY(void){
     tty_t* tty = CreateTTY("tty0");
 
     // Driver for the TTY (can just be built into the kernel)
-    driver_t* ttyDriver = CreateDriver("TTY Driver", "A simple TTY driver", 0, 1, NULL, NULL, NULL);
+    driver_t* ttyDriver = CreateDriver("TTY Driver", "A simple TTY driver", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
 
     // Register the driver (this will cause an error since we aren't using the actual device_t struct) (should I use it?)
     do_syscall(SYS_MODULE_LOAD, (uint32_t)ttyDriver, 0, 0, 0, 0);

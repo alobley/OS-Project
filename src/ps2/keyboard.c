@@ -76,6 +76,12 @@ static char ASCIIUpper[104] = {
     0, 0, 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+void PS2Reboot(){
+    uint8_t good = 0x02;
+    while (good & 0x02) good = inb(0x64);
+    outb(0x64, 0xFE);
+}
+
 // Function to wait until the input buffer is empty
 void wait_for_input_buffer() {
     while (inb(PS2_READ_PORT) & 0x02);
@@ -395,7 +401,7 @@ void InitializeKeyboard(){
     keyboardDevice->deviceInfo = keyboardDeviceInfo;
     keyboardDevice->devName = "kb0";
 
-    driver_t* keyboardDriver = CreateDriver("ps2_keyboard", "PS/2 Keyboard Driver", 0, 1, NULL, NULL, NULL);
+    driver_t* keyboardDriver = CreateDriver("ps2_keyboard", "PS/2 Keyboard Driver", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
     do_syscall(SYS_MODULE_LOAD, (uintptr_t)keyboardDriver, (uintptr_t)keyboardDevice, 0, 0, 0);
 
 

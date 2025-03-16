@@ -3,6 +3,8 @@
 #include <interrupts.h>
 #include <console.h>
 #include <alloc.h>
+#include <mbr.h>
+//#include <gpt.h>      // Doesn't exist yet
 
 #define NUM_BUS_PORTS 7
 
@@ -42,7 +44,7 @@
 #define MASTER_DRIVE 0xA0
 #define SLAVE_DRIVE 0xB0
 
-#define FLOATING_BUS 0xFF           // If the regular status byte contains this, there are no drives on this bus
+#define FLOATING_BUS 0xFF                       // If the regular status byte contains this, there are no drives on this bus
 
 // These macros get ATA ports based on a given base
 #define DataPort(basePort) basePort             // The data port is the base port, but this makes things more readable.
@@ -432,10 +434,12 @@ DRIVERSTATUS FindDisk(uint8_t diskno, device_t* ataDevice, blkdev_t* ataBlkDev){
     return 0;
 }
 
-// Since this driver is built into the kernel and it uses PIO mode, it's best to just directly interface with I/O ports and not worry about the overhead of system calls
+// First 64 bits of buffer = LBA offset
+// Next 16 bits are the sector count
 DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
-    // First 64 bits of buffer = LBA offset
-    // Next 16 bits are the sector count
+    if(buffer == NULL || size == 0){
+        return DRIVER_FAILURE; // Invalid buffer or size
+    }
     lba offset = *((lba*)((uint8_t*)buffer));
     uint16_t sectorCount = *((uint16_t*)((uint8_t*)buffer + 8));
 
@@ -549,6 +553,11 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
     return DRIVER_SUCCESS;
 }
 
+DRIVERSTATUS WriteSectors(device_t* this, void* buffer, size_t size){
+    // Not implemented yet
+    return DRIVER_FAILURE;
+}
+
 void SoftwareReset(blkdev_t* blkdev){
     // Software reset
     outb(CmdPort(blkdev->basePort), CMD_SRST);
@@ -580,61 +589,24 @@ DRIVERSTATUS ProcessIoctl(device_t* this, IOCTL_CMD request, void* argp){
     }
 }
 
-device_t* CreateDevice(char* devName, char* description, driver_t* driver){
-    device_t* ataDevice = (device_t*)halloc(sizeof(device_t));
-    if(ataDevice == NULL){
-        return NULL;
-    }
-    memset(ataDevice, 0, sizeof(device_t));
-    ataDevice->id = 1;
-    ataDevice->vendorId = 1;
-    ataDevice->status = DEVICE_STATUS_IDLE;
-    ataDevice->flags.readonly = false;
-    ataDevice->flags.removable = false;
-    ataDevice->flags.virtual = false;
-    ataDevice->flags.initialized = false;
-    ataDevice->flags.shared = false;
-    ataDevice->flags.exclusive = true;
-    ataDevice->name = "PATA device";
-    ataDevice->description = description;
-    ataDevice->devName = devName;
-    ataDevice->driver = driver;
-    ataDevice->deviceInfo = NULL;                                   // Partitions identified by filesystem drivers
-    ataDevice->type = DEVICE_TYPE_BLOCK;
-    ataDevice->read = ReadSectors;
-    ataDevice->write = NULL;
-    ataDevice->ioctl = ProcessIoctl;
-    ataDevice->last_error[0] = '\0';
-    ataDevice->lock = MUTEX_INIT;
-    ataDevice->parent = NULL;
-    ataDevice->next = NULL;
-    ataDevice->firstChild = NULL;
-
-    return ataDevice;
-}
-
 char* name = "pat0";
 
-// At the moment all I need is writing functions then this driver will be complete
+/* TODO:
+ * - Add a write function
+ * - Replace the many allocations with a single allocation and split that up here, at least for the drive names (known as an arena)
+ * - Make a driver specifically for more advanced disk interaction and load it from the disk
+*/
 DRIVERSTATUS InitializeAta(){
-    driver_t* ataDriver = (driver_t*)halloc(sizeof(driver_t));
+    driver_t* ataDriver = CreateDriver("ATA Driver", "A simple PIO PATA driver", 1, DEVICE_TYPE_BLOCK, NULL, NULL, NULL);
     if(ataDriver == NULL){
         return DRIVER_OUT_OF_MEMORY;
     }
-    memset(ataDriver, 0, sizeof(driver_t));
-    ataDriver->name = "ATA Driver";
-    ataDriver->description = "A simple PIO PATA driver";
-    ataDriver->id = 1;
-    ataDriver->version = 1;
-    ataDriver->init = NULL;
-    ataDriver->deinit = NULL;
-    ataDriver->probe = NULL;
 
     do_syscall(SYS_GET_PID, 0, 0, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (ataDriver->driverProcess));
 
     // Create the first PATA device to assign
-    device_t* ataDevice = CreateDevice(strcpy(halloc(5), name), "PATA Hard Drive", ataDriver);
+    device_t* ataDevice = CreateDevice("PATA Disk", strcpy(halloc(5), name), "PATA Hard Drive", ataDriver, DEVICE_TYPE_BLOCK, 0, (device_flags_t){0}, ReadSectors, WriteSectors, ProcessIoctl);
 
     blkdev_t* ataBlkDev = (blkdev_t*)halloc(sizeof(blkdev_t));
     memset(ataBlkDev, 0, sizeof(blkdev_t));
@@ -643,6 +615,9 @@ DRIVERSTATUS InitializeAta(){
     ataBlkDev->next = NULL;
     ataDevice->deviceInfo = ataBlkDev;
 
+    blkdev_t* currentBlk = ataBlkDev;
+    device_t* currentDev = ataDevice;
+
     uint8_t currentDisk = 0;
 
     for(int i = 0; i < MAX_ATA_DRIVES; i++){
@@ -650,21 +625,39 @@ DRIVERSTATUS InitializeAta(){
             do_syscall(SYS_REGISTER_DEVICE, (uint32_t)ataDevice, 0, 0, 0, 0);
             do_syscall(SYS_ADD_VFS_DEV, (uint32_t)ataDevice, (uint32_t)ataDevice->devName, (uint32_t)"/dev", 0, 0);
 
+            currentBlk = ataBlkDev;
+            currentDev = ataDevice;
+
             name[3]++; // Increment the device name (i.e. pat0 -> pat1)
 
             if(i != MAX_ATA_DRIVES - 1){
-                ataDevice = CreateDevice(strcpy(halloc(5), name), "PATA Hard Drive", ataDriver);
+                ataDevice = CreateDevice("PATA Disk", strcpy(halloc(5), name), "PATA Hard Drive", ataDriver, DEVICE_TYPE_BLOCK, 0, (device_flags_t){0}, ReadSectors, NULL, ProcessIoctl);
                 ataBlkDev = (blkdev_t*)halloc(sizeof(blkdev_t));
                 memset(ataBlkDev, 0, sizeof(blkdev_t));
+                //currentBlk->next = ataBlkDev;
+                //currentDev->next = ataDevice;
                 ataBlkDev->device = ataDevice;
                 ataBlkDev->firstPartition = NULL;
                 ataBlkDev->next = NULL;
                 ataDevice->deviceInfo = ataBlkDev;
             }
+        }else{
+            currentBlk->next = NULL;
+            currentDev->next = NULL;
         }
         currentDisk++;
     }
 
+    if(currentDisk == 0){
+        // No disks found
+        hfree(ataDriver);
+        hfree((char*)ataDevice->devName);
+        hfree(ataDevice);
+        hfree(ataBlkDev);
+        return DRIVER_NOT_SUPPORTED;
+    }
+
+    // Register the driver
     do_syscall(SYS_MODULE_LOAD, (uint32_t)ataDriver, (uint32_t)ataDevice, 0, 0, 0);
 
     return 0;

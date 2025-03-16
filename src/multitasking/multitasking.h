@@ -8,6 +8,7 @@
 #include <alloc.h>
 #include <string.h>
 #include <users.h>
+#include <paging.h>
 
 #define process_switch_stub()
 
@@ -53,6 +54,7 @@ typedef struct Process_Control_Block {
     char** argv;                                // Argument vector
 
     // Memory information
+    physaddr_t pageDirectory;                   // Page directory location
     uintptr_t stack;                            // Stack pointer
     uintptr_t stackBase;                        // Stack base
     uintptr_t stackTop;                         // Stack top
@@ -65,6 +67,7 @@ typedef struct Process_Control_Block {
 
     // Other process information
     struct Process_Control_Block* next;         // Next process in the list
+    struct Process_Control_Block* previous;     // Previous process in the list
     struct Process_Control_Block* firstChild;   // First child process
     struct Process_Control_Block* parent;       // Parent process
 
@@ -99,10 +102,12 @@ typedef struct {
 #define SPINLOCK_INIT (spinlock_t){ false, NULL }
 
 pcb_t* GetCurrentProcess(void);
-void SwitchProcess(pcb_t* process);
+void SwitchProcess(bool kill, struct Registers* regs);
+void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs);
 void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice);
+pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent);
 void Scheduler(void);
+void SetCurrentProcess(pcb_t* process);
 
 void MutexLock(mutex_t* mutex);
 void MutexUnlock(mutex_t* mutex);

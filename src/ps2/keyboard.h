@@ -154,4 +154,6 @@ bool MouseExists();
 void InstallKeyboardCallback(KeyboardCallback callback);        // Add a keyboard callback to the linked list of keyboard callbacks
 void RemoveKeyboardCallback(KeyboardCallback callback);         // Remove a keyboard callback from the linked list of keyboard callbacks
 
+void PS2Reboot();
+
 #endif

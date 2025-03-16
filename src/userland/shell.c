@@ -28,13 +28,17 @@ pcb_t* shellPCB = NULL;
 void PrintPrompt(){
     WriteChar('[');
     // Get only the last part of the working directory
-    char* lastPart = strrchr(shellPCB->workingDirectory, '/');
-    if(strlen(shellPCB->workingDirectory) == strlen(VFS_ROOT)){
-        lastPart = shellPCB->workingDirectory;
+    if(shellPCB == NULL || shellPCB->workingDirectory == NULL){
+        WriteString("ERROR");
     }else{
-        lastPart++;
+        char* lastPart = strrchr(shellPCB->workingDirectory, '/');
+        if(strlen(shellPCB->workingDirectory) == strlen(VFS_ROOT)){
+            lastPart = shellPCB->workingDirectory;
+        }else{
+            lastPart++;
+        }
+        WriteString(lastPart);
     }
-    WriteString(lastPart);
     WriteChar(']');
     printf(prompt);
 }
@@ -179,6 +183,10 @@ void ls(UNUSED char* cmd){
         printf("Error: current directory is not a directory\n");
         return;
     }
+    if(strcmp(current->name, "/") != 0){
+        // Print .. for the previous directory
+        printf("..\n");
+    }
     vfs_node_t* child = current->firstChild;
     for(size_t i = 0; i < current->size; i++){
         if(child != NULL){
@@ -293,8 +301,14 @@ int shell(void){
 
     printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
-    do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
-    asm volatile("mov %%eax, %0" : "=r" (shellPCB));
+
+    shellPCB = halloc(sizeof(pcb_t));
+    if(shellPCB == NULL){
+        printf("Error allocating memory for process information!\n");
+        return 1;
+    }
+    memset(shellPCB, 0, sizeof(pcb_t));
+    do_syscall(SYS_GET_PCB, (uintptr_t)shellPCB, 0, 0, 0, 0);
     if(shellPCB == NULL){
         printf("Error finding process information!\n");
         return 1;

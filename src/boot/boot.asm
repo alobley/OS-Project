@@ -202,5 +202,7 @@ bootmsg: db "Loading bootloader stage 1...", 0x0D, 0x0A, 0
 ;loadmsg: db "Stage 1 loaded, jumping to code...", 0x0D, 0x0A, 0
 errmsg: db "Error reading disk", 0x0D, 0x0A, 0
 
-times 510-($-$$) db 0
+times 446-($-$$) db 0
+; MBR partition entries (should I set this up?)
+times 64 db 0
 dw 0xAA55

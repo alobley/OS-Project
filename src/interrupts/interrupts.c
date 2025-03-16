@@ -6,6 +6,7 @@
 #include <time.h>
 #include <devices.h>
 #include <tty.h>
+#include <acpi.h>
 
 #define NUM_ISRS 49
 
@@ -60,6 +61,29 @@ extern void _isr47(struct Registers*);
 extern void _isr48(struct Registers*);
 
 //extern void syscall_handler(struct Registers* regs);
+
+NORET void reboot(){
+    if(PS2ControllerExists()){
+        // 8042 reset
+        uint8_t good = 0x02;
+        while (good & 0x02) good = inb(0x64);
+        outb(0x64, 0xFE);
+    }
+    if(acpiInfo.exists){
+        // ACPI reboot
+        AcpiReboot();
+    }
+
+        uint32_t idt = 0;
+    // If we get here, just triple fault
+    lidt(idt)
+    do_syscall(0, 0, 0, 0, 0, 0);
+
+    STOP
+    UNREACHABLE
+}
+
+extern pcb_t* kernelPCB;
 
 struct IDTEntry{
     uint16_t offset_low;
@@ -136,6 +160,7 @@ bool CheckPrivelige(){
 
 // System call handler
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
+// NOTE: The keyboard handler needs to be updated for multitasking in the future
 HOT void syscall_handler(struct Registers *regs){
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
@@ -236,7 +261,12 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_GET_PCB:
             // SYS_GET_PCB
             // Gets own process PCB
-            regs->eax = (uint32_t)GetCurrentProcess();
+            // EBX contains the buffer to write the PCB to (it assumes the buffer is large enough, beware)
+            if(regs->ebx != 0){
+                pcb_t* pcb = GetCurrentProcess();
+                memcpy((pcb_t*)regs->ebx, pcb, sizeof(pcb_t));
+                regs->eax = 0;
+            }
             break;
         case SYS_OPEN:
             // SYS_OPEN
@@ -259,6 +289,10 @@ HOT void syscall_handler(struct Registers *regs){
             break;
         case SYS_YIELD:
             // SYS_YIELD
+            // Context switching (The kernel can also call this to preemptively multitask)
+            SwitchProcess(false, regs);
+            struct Registers* newRegs = GetCurrentProcess()->registers;
+            memcpy(regs, newRegs, sizeof(struct Registers));            // This should make iret return to the new process
             break;
         case SYS_MMAP:
             // SYS_MMAP
@@ -277,12 +311,38 @@ HOT void syscall_handler(struct Registers *regs){
             // Dump the CPU's registers to the console for debugging reasons
             regdump(regs);
             break;
-        case SYS_DEVICE_READ:
+
+        // I need a way to make these functions more secure... Technically any userland process can just call the read/write functions instead of using this system call...
+        // The problem is, to get a read, I need to know things about the device...
+        // Will memory protection be enough to prevent this issue? It might cause a segfault or page fault
+        // Do I need to also switch the registers to the driver's PCB? Is it fine to keep them at the kernel?
+        case SYS_DEVICE_READ: {
             // SYS_DEVICE_READ
+            // EBX contains the pointer to the device to read from
+            // ECX contains the pointer to the buffer to read into
+            // EDX contains the size of the buffer
+            MutexLock(&((device_t*)regs->ebx)->lock);                                                       // Lock the device
+            pcb_t* current = GetCurrentProcess();                                                           // Save the calling process
+            SetCurrentProcess(((device_t*)regs->ebx)->driver->driverProcess);                               // Switch to the driver
+            regs->eax = ((device_t*)regs->ebx)->read((device_t*)regs->ebx, (char*)regs->ecx, regs->edx);    // Call the device's read function
+            SetCurrentProcess(current);                                                                     // Switch back to the caller
+            MutexUnlock(&((device_t*)regs->ebx)->lock);                                                     // Unlock the device
             break;
-        case SYS_DEVICE_WRITE:
+        }
+        case SYS_DEVICE_WRITE: {
             // SYS_DEVICE_WRITE
+            // EBX contains the pointer to the device to write to
+            // ECX contains the pointer to the buffer to write from
+            // EDX contains the size of the buffer
+            MutexLock(&((device_t*)regs->ebx)->lock);                                                       // Lock the device
+            pcb_t* current = GetCurrentProcess();                                                           // Save the calling process
+            memcpy(regs, current->registers, sizeof(struct Registers));                                     // Save the calling process's registers
+            SwitchToSpecificProcess(((device_t*)regs->ebx)->driver->driverProcess, regs);                   // Switch to the driver
+            regs->eax = ((device_t*)regs->ebx)->write((device_t*)regs->ebx, (char*)regs->ecx, regs->edx);   // Call the device's write function
+            SwitchToSpecificProcess(current, regs);                                                         // Switch back to the caller
+            MutexUnlock(&((device_t*)regs->ebx)->lock);                                                     // Unlock the device
             break;
+        }
         
 
 
@@ -292,18 +352,18 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_MODULE_LOAD:
             // EBX contains a pointer to the driver struct
             // ECX contains a pointer to the device the driver is aquiring
-            // ESI contains a pointer to the PCB (if the driver is a non-kernel process, otherwise NULL)
 
-            // Get the driver's PCB and set the proper flags
-            if(regs->esi != 0){
-                pcb_t* driverPCB = (pcb_t*)regs->esi;
-                driverPCB->state = DRIVER;
-                driverPCB->timeSlice = 0;
-            }
-
-            if(regs->ebx == 0 || regs->ecx == 0){
+            if(regs->ebx == 0){
+                // NULL pointer passed
                 regs->eax = -1;
                 break;
+            }
+
+            // Get the driver's PCB and set the proper flags
+            pcb_t* driverPCB = GetCurrentProcess();
+            if(driverPCB != kernelPCB){
+                driverPCB->state = DRIVER;
+                driverPCB->timeSlice = 0; // No time slice for drivers
             }
 
             RegisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
@@ -549,6 +609,16 @@ void ISRHandler(struct Registers *regs){
 extern void reboot();
 
 static void ExceptionHandler(struct Registers *regs){
+    if(regs->int_no == 14){
+        // Gracefully handle a page fault
+        pcb_t* current = GetCurrentProcess();
+        if(current != kernelPCB){
+            printf("Segmentation fault\n", current->pid);
+            regdump(regs);
+            SwitchProcess(true, regs);
+            DestroyProcess(current);
+        }
+    }
     printf("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
     regdump(regs);
     cli

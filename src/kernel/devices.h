@@ -42,6 +42,7 @@ typedef enum {
     DEVICE_TYPE_PCI,                            // PCI device
     DEVICE_TYPE_PCIe,                           // PCIe device
     DEVICE_TYPE_VIRTUAL,                        // Virtual device (i.e. a ramdisk)
+    DEVICE_TYPE_FILESYSTEM,                     // Filesystem device (i.e. a mounted filesystem)
     DEVICE_TYPE_OTHER,                          // Other device type (not defined by the kernel and may not be supported)
     DEVICE_TYPE_UNKNOWN,                        // Unknown device type
 } DEVICE_TYPE;
@@ -55,15 +56,27 @@ typedef enum {
 
 typedef struct Device device_t;
 
-typedef struct {
+typedef DRIVERSTATUS (*readhandle_t)(struct Device* this, void* buffer, size_t size);
+typedef DRIVERSTATUS (*writehandle_t)(struct Device* this, void* buffer, size_t size);
+typedef DRIVERSTATUS (*ioctlhandle_t)(struct Device* this, IOCTL_CMD request, void* argp);
+
+typedef DRIVERSTATUS (*driver_init_t)(void);
+typedef DRIVERSTATUS (*driver_deinit_t)(void);
+typedef DRIVERSTATUS (*driver_probe_t)(device_t* device);
+
+typedef struct Driver {
     const char* name;                           // Name of the driver
     const char* description;                    // Description of the driver
     driver_id_t id;                             // Unique ID for the driver
     uint32_t version;                           // Version of the driver
     pcb_t* driverProcess;                       // Pointer to the PCB of the driver for this (switch to it when using the device)
-    DRIVERSTATUS (*init)(void);                 // Initialize the driver
-    DRIVERSTATUS (*deinit)(void);               // Shutdown and clean up the driver
-    DRIVERSTATUS (*probe)(device_t* device);    // Probe the device to see if the driver supports it
+
+    DEVICE_TYPE supportedType;                  // Type of device this driver supports
+    driver_init_t init;                         // Initialize the driver
+    driver_deinit_t deinit;                     // Shutdown and clean up the driver
+    driver_probe_t probe;                       // Probe the device to see if the driver supports it
+    DEVICE_TYPE type;                           // Type of device this driver supports
+    struct Driver* next;                        // Pointer to the next driver (for driver registry)
 } driver_t;
 
 typedef struct {
@@ -92,9 +105,9 @@ typedef struct Device {
     DEVICE_TYPE type;                           // Type of device
 
     // Note: OS MUST switch to the driver's PCB when using the device
-    DRIVERSTATUS (*read)(struct Device* this, void* buffer, size_t size);       // Read from the device
-    DRIVERSTATUS (*write)(struct Device* this, void* buffer, size_t size);      // Write to the device
-    DRIVERSTATUS (*ioctl)(struct Device* this, IOCTL_CMD request, void* argp);        // Control the device (i.e. set options, get status)
+    readhandle_t read;       // Read from the device
+    writehandle_t write;      // Write to the device
+    ioctlhandle_t ioctl;        // Control the device (i.e. set options, get status)
 
     char last_error[64];                        // Last error message from the device in human-readable format
 
@@ -123,7 +136,11 @@ typedef enum {
 } FS_TYPE;
 
 typedef unsigned long long lba;                 // Logical Block Addressing (LBA) offset on a disk
-typedef unsigned long long uuid_t;              // Universally Unique Identifier (UUID) for a filesystem
+
+// Universally Unique Identifier (UUID) for a filesystem or GPT partition
+typedef struct PACKED UUID {
+    uint8_t data[16];                           // 128-bit identifier
+} PACKED uuid_t;
 
 // Resolve circular dependencies
 typedef struct Partition partition_t;
@@ -161,6 +178,8 @@ typedef struct Partition {
     const char* type;                           // Type of the partition in human-readable format
     device_t* device;                           // Pointer to the block device
     blkdev_t* blkdev;                           // Pointer to the block device info
+    uint8_t fsID;                               // MBR filesystem ID
+    uuid_t uuid;                                // UUID of the partition (if GPT, otherwise 0)
     filesystem_t* filesystem;                   // Pointer to the filesystem (if any)
     struct Partition* next;                     // Pointer to the next partition (if any)
     struct Partition* previous;                 // Pointer to the previous partition (if any)
@@ -174,7 +193,7 @@ typedef struct Filesystem {
     partition_t* partition;                     // Pointer to the partition this filesystem is on
     blkdev_t* blkdev;                           // Pointer to the block device this filesystem is on
     driver_t* driver;                           // Pointer to the driver for this filesystem
-    uuid_t uuid;                                // UUID of the filesystem
+    
     void* fsInfo;                               // Filesystem-specific information (i.e. superblock)
 
     char* name;                                 // Name of the filesystem (i.e. ext4, ntfs, etc.)
@@ -280,6 +299,9 @@ typedef struct {
 typedef struct Device_Registry {
     device_t* firstDevice;                      // Pointer to the first device in the registry
     device_t* lastDevice;                       // Pointer to the last device in the registry
+
+    driver_t* firstDriver;                      // Pointer to the first driver in the registry
+    driver_t* lastDriver;                       // Pointer to the last driver in the registry
     size_t numDevices;                          // Number of devices in the registry
 } device_registry_t;
 
@@ -303,6 +325,9 @@ device_t* GetFirstDeviceByType(DEVICE_TYPE type);                       // Get t
 device_t* GetNextDeviceByType(device_t* previous, DEVICE_TYPE type);    // Get the next device of a certain type
 device_t* GetDeviceFromVfs(char* path);                                 // Get a device from the VFS by its name (i.e. /dev/sda)
 
-driver_t* CreateDriver(const char* name, const char* description, driver_id_t id, uint32_t version, DRIVERSTATUS (*init)(void), DRIVERSTATUS (*deinit)(void), DRIVERSTATUS (*probe)(device_t* device));  // Create a new driver
+device_t* CreateDevice(const char* name, const char* devName, const char* description, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl);  // Create a new device
+driver_t* CreateDriver(const char* name, const char* description, uint32_t version, DEVICE_TYPE type, driver_init_t init, driver_deinit_t deinit, driver_probe_t probe);  // Create a new driver
+
+driver_t* FindDriver(device_t* device, DEVICE_TYPE type /*if not the specified device's type*/);                                  // Find a compatible driver for a device (if any)
 
 #endif // DEVICES_H

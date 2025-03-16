@@ -30,6 +30,13 @@ typedef struct VFS_Node {
     mutex_t lock;                       // Mutex for thread safety
 } vfs_node_t;
 
+typedef struct VFS_mount{
+    filesystem_t* filesystem;           // Pointer to the filesystem struct
+    char* mountPath;                    // Path to the mount point of the filesystem (i.e. /, /home, /usr, /mnt, etc.)
+    vfs_node_t* mountPoint;             // Pointer to the mount point in the VFS
+    struct VFS_mount* next;             // Pointer to the next mount (if any)
+} mountpoint_t;
+
 extern vfs_node_t* root;
 
 vfs_node_t* VfsFindNode(char* path);
@@ -40,5 +47,12 @@ int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
 void InitializeVfs(multiboot_info_t* mbootInfo);
 char* GetFullPath(vfs_node_t* node);
 char* JoinPath(const char* base, const char* path);
+
+int mountfs(filesystem_t* fs, mountpoint_t* mountPoint);
+mountpoint_t* GetMountedFsFromPath(char* path);
+mountpoint_t* GetMountedFsFromNode(vfs_node_t* node);
+
+// Read a file from a mounted filesystem
+void* VfsReadFile(vfs_node_t* node, size_t* size);
 
 #endif

@@ -31,6 +31,8 @@
 
 #define STOP cli hlt
 
+#define lidt(x) asm("lidt %0" : : "m"(x));
+
 FORCE_INLINE static inline unsigned char inb(unsigned short port){
     unsigned char value;
     asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
