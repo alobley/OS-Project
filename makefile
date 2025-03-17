@@ -43,7 +43,7 @@ INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $
 CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -lgcc $(INCLUDES) -Wno-unused -Wno-array-bounds -Werror
 
 # Libraries to compile with
-LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c 
+LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(KERNEL_DIR)/system.c $(KERNEL_DIR)/drivers.c
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c 
 LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c

@@ -25,15 +25,22 @@ void DestroyDeviceRegistry(){
 }
 
 int RegisterDevice(device_t* device){
+    if(device == NULL || device->userDevice == NULL){
+        printf("Error: NULL device passed to RegisterDevice\n");
+        return DRIVER_NOT_INITIALIZED;
+    }
+
     if(registry->firstDevice == NULL){
         registry->firstDevice = device;
         registry->lastDevice = device;
         device->next = NULL;
     }else{
         registry->lastDevice->next = device;
+        registry->lastDevice->userDevice->next = device->userDevice;
         registry->lastDevice = device;
         device->next = NULL;
     }
+    
     registry->numDevices++;
     return DRIVER_SUCCESS;
 }
@@ -57,11 +64,11 @@ int UnregisterDevice(device_t* device){
             return DRIVER_NOT_INITIALIZED;
         }
         current->next = device->next;
+        current->userDevice->next = device->userDevice->next;
         if(registry->lastDevice == device){
             registry->lastDevice = current;
         }
     }
-    hfree(device);
     registry->numDevices--;
     return DRIVER_SUCCESS;
 }
@@ -70,7 +77,7 @@ int UnregisterDevice(device_t* device){
 /// @param driver Pointer to the driver to register
 /// @param device Pointer to the device this driver is responsible for - can be null.
 /// @return Code based on the result of the operation
-int RegisterDriver(driver_t* driver, device_t* device){
+DRIVERSTATUS RegisterDriver(driver_t* driver, device_t* device){
     if(device != NULL){
         device->driver = driver;
     }
@@ -89,7 +96,7 @@ int RegisterDriver(driver_t* driver, device_t* device){
     return DRIVER_SUCCESS;
 }
 
-int UnregisterDriver(driver_t* driver, device_t* device){
+DRIVERSTATUS UnregisterDriver(driver_t* driver, device_t* device){
     device->driver = NULL;
     if(registry->firstDriver == NULL){
         return DRIVER_NOT_INITIALIZED;
@@ -157,7 +164,7 @@ device_t* GetDeviceFromVfs(char* path){
 }
 
 device_id_t devid = 0;
-device_t* CreateDevice(const char* name, const char* devName, const char* description, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl){
+device_t* CreateDevice(const char* name, const char* devName, const char* description, void* data, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl, device_t* parent){
     device_t* device = (device_t*)halloc(sizeof(device_t));
     if(device == NULL){
         return NULL;
@@ -172,16 +179,37 @@ device_t* CreateDevice(const char* name, const char* devName, const char* descri
     device->description = description;
     device->devName = devName;
     device->driver = driver;
-    device->deviceInfo = NULL;                                   // Partitions identified by filesystem drivers
+    device->deviceInfo = data;                                   // Partitions identified by filesystem drivers
     device->type = DEVICE_TYPE_BLOCK;
     device->read = read;
     device->write = write;
     device->ioctl = ioctl;
     device->last_error[0] = '\0';
     device->lock = MUTEX_INIT;
-    device->parent = NULL;
+    device->parent = parent;
     device->next = NULL;
     device->firstChild = NULL;
+
+    user_device_t* userDevice = (user_device_t*)halloc(sizeof(user_device_t));
+    if(userDevice == NULL){
+        hfree(device);
+        return NULL;
+    }
+    userDevice->id = device->id;
+    userDevice->vendorId = device->vendorId;
+    userDevice->name = device->name;
+    userDevice->description = device->description;
+    userDevice->devName = device->devName;
+    userDevice->type = device->type;
+    userDevice->last_error[0] = '\0';
+    userDevice->parent = NULL;
+    userDevice->next = NULL;
+    userDevice->firstChild = NULL;
+    userDevice->deviceInfo = data;
+    if(parent != NULL){
+        userDevice->parent = parent->userDevice;
+    }
+    device->userDevice = userDevice;
 
     return device;
 }

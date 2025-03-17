@@ -139,20 +139,9 @@ typedef struct PS2Info {
     uint8_t scanCodeSet;
 } PS2Info;
 
-typedef struct KeyboardEvent {
-    uint8_t scanCode;
-    char ascii;
-    bool keyUp;
-} KeyboardEvent_t;
-
-typedef void (*KeyboardCallback)(KeyboardEvent_t event);
-
 void InitializeKeyboard();
 
 bool MouseExists();
-
-void InstallKeyboardCallback(KeyboardCallback callback);        // Add a keyboard callback to the linked list of keyboard callbacks
-void RemoveKeyboardCallback(KeyboardCallback callback);         // Remove a keyboard callback from the linked list of keyboard callbacks
 
 void PS2Reboot();
 

@@ -1,4 +1,5 @@
 #include <interrupts.h>
+#include <system.h>
 
 #define PIC_WAIT() do {         \
         asm volatile ("jmp 1f\n\t"       \
@@ -38,13 +39,13 @@ static void RemapIRQ(){
     outb(PIC2_DATA, mask2);
 }
 
-/*
+
 static void SetIRQMask(size_t i){
     uint16_t port = i < 8 ? PIC1_DATA : PIC2_DATA;
     uint8_t value = inb(port) | 1 << i;
     outb(port, value);
 }
-*/
+
 
 static void ClearIRQMask(size_t i){
     uint16_t port = i < 8 ? PIC1_DATA : PIC2_DATA;
@@ -52,11 +53,24 @@ static void ClearIRQMask(size_t i){
     outb(port, value);
 }
 
-void InstallIRQ(size_t i, void (*handler)(struct Registers*)){
+int InstallIRQ(size_t i, void (*handler)(struct Registers*)){
+    if(handlers[i] != stub && handlers[i] != NULL){
+        return STANDARD_FAILURE; // IRQ already installed
+    }
     cli;
     handlers[i] = handler;
     ClearIRQMask(i);
     sti;
+
+    return STANDARD_SUCCESS;
+}
+
+int RemoveIRQ(size_t i){
+    cli;
+    handlers[i] = stub;
+    SetIRQMask(i);
+    sti;
+    return STANDARD_SUCCESS;
 }
 
 void InitIRQ(){

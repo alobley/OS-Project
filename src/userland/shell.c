@@ -8,6 +8,7 @@
 #include <string.h>
 #include <vfs.h>
 #include <hash.h>
+#include <system.h>
 
 hash_table_t* cmdTable;
 
@@ -21,7 +22,7 @@ char* cmdBuffer = NULL;
 uint8_t cmdBufferIndex = 0;
 
 volatile bool enterPressed = false;         // Must be volatile so the compiler doesn't optimize it away
-volatile bool exit = false;
+volatile bool done = false;
 
 pcb_t* shellPCB = NULL;
 
@@ -73,7 +74,7 @@ void handler(KeyboardEvent_t event){
 }
 
 void clear(UNUSED char* cmd){
-    ClearScreen();
+    write(STDOUT_FILENO, ANSI_ESCAPE, strlen(ANSI_ESCAPE));
 }
 
 void help(UNUSED char* cmd){
@@ -94,19 +95,16 @@ void help(UNUSED char* cmd){
 
 void exitShell(UNUSED char* cmd){
     printf("Exiting shell...\n");
-    exit = true;
+    done = true;
 }
 
 void syscall(UNUSED char* cmd){
-    uint32_t result = 0;
-    do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
-    asm volatile("mov %%eax, %0" : "=r" (result));
-    printf("System call returned: %d\n", result);
+    int result = 0;
+    result = sys_debug();
+    printf("System call returned: 0x%x\n", result);
 }
 
 void pinfo(UNUSED char* cmd){
-    do_syscall(SYS_GET_PCB, 0, 0, 0, 0, 0);
-    asm volatile("mov %%eax, %0" : "=r" (shellPCB));
     printf("Process info:\n");
     printf("PID: %d\n", shellPCB->pid);
     printf("Name: %s\n", shellPCB->name);
@@ -119,7 +117,6 @@ void pinfo(UNUSED char* cmd){
     printf("State: %d\n", shellPCB->state);
     printf("Priority: %d\n", shellPCB->priority);
     printf("Time slice: %d ms\n", shellPCB->timeSlice);
-    printf("Stack: 0x%x\n", shellPCB->stack);
     printf("Stack base: 0x%x\n", shellPCB->stackBase);
     printf("Stack top: 0x%x\n", shellPCB->stackTop);
     printf("Heap base: 0x%x\n", shellPCB->heapBase);
@@ -147,11 +144,12 @@ void settz(char* cmd){
     if(strcmp(tz, "UTC") == 0){
         SetTime();
     }else if(strcmp(tz, "EST") == 0){
-        // EST is UTC-5, calculate the offset
-        if(currentTime.hour >= 5){
-            currentTime.hour -= 5;
+        // EST is UTC-4 during Spring to Fall and it is UTC-5 during Fall to Spring, calculate the offset
+        // TODO: make this more advanced or (hopefully) wait for daylight savings to be abolished
+        if(currentTime.hour >= 4){
+            currentTime.hour -= 4;
         }else{
-            currentTime.hour += 19;
+            currentTime.hour += 20;
             if(currentTime.day > 1){
                 currentTime.day--;
             }else{
@@ -170,7 +168,19 @@ void settz(char* cmd){
 }
 
 void pwd(UNUSED char* cmd){
-    printf("%s\n", shellPCB->workingDirectory);
+    // Allocate a buffer for the directory
+    size_t dirSize = 1024;
+    char* dir = (char*)halloc(dirSize);
+    if(dir == NULL){
+        printf("Error: failed to allocate memory for directory\n");
+        return;
+    }
+    if(getcwd(dir, dirSize) != STANDARD_FAILURE){
+        printf("%s\n", dir);
+    }else{
+        printf("Error: failed to get current working directory\n");
+    }
+    hfree(dir);
 }
 
 void ls(UNUSED char* cmd){
@@ -202,29 +212,10 @@ void cd(char* cmd){
         printf("Usage: cd <directory>\n");
         return;
     }
-    vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
-    if(current == NULL){
-        printf("Error: current directory does not exist\n");
-        return;
+    
+    if(chdir(dir) == STANDARD_FAILURE){
+        printf("Error: directory %s does not exist\n", dir);
     }
-    if(!current->isDirectory){
-        printf("Error: current directory is not a directory\n");
-        return;
-    }
-    if(strcmp(dir, "..") == 0 && current->parent != NULL){
-        shellPCB->workingDirectory = GetFullPath(current->parent);
-        return;
-    }else if(strcmp(dir, ".") == 0){
-        return;
-    }
-    char* fullPath = JoinPath(shellPCB->workingDirectory, dir);
-    vfs_node_t* newDir = VfsFindNode(fullPath);
-    if(newDir != NULL && newDir->isDirectory){
-        shellPCB->workingDirectory = GetFullPath(newDir);
-        hfree(fullPath);
-        return;
-    }
-    printf("Error: directory %s does not exist\n", dir);
 }
 
 void shutdown(UNUSED char* cmd){
@@ -274,7 +265,7 @@ void ProcessCommand(char* cmd){
     }else{
         printf("Command not found: %s\n", cmd);
     }
-    if(!exit){
+    if(!done){
         PrintPrompt();
     }
 }
@@ -302,21 +293,21 @@ int shell(void){
     printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
 
-    shellPCB = halloc(sizeof(pcb_t));
+    shellPCB = GetCurrentProcess();
     if(shellPCB == NULL){
-        printf("Error allocating memory for process information!\n");
-        return 1;
+        printf("Error: shell PCB does not exist!\n");
+        return STANDARD_FAILURE;
     }
-    memset(shellPCB, 0, sizeof(pcb_t));
-    do_syscall(SYS_GET_PCB, (uintptr_t)shellPCB, 0, 0, 0, 0);
-    if(shellPCB == NULL){
-        printf("Error finding process information!\n");
-        return 1;
-    }
+
     PrintPrompt();
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
-    do_syscall(SYS_INSTALL_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
-    while(!exit){
+    if(cmdBuffer == NULL){
+        printf("Error: failed to allocate memory for command buffer\n");
+        return STANDARD_FAILURE;
+    }
+
+    install_keyboard_handler(handler);
+    while(!done){
         if(enterPressed){
             cmdBuffer[cmdBufferIndex] = '\0';
             cmdBufferIndex = 0;
@@ -324,8 +315,9 @@ int shell(void){
             ProcessCommand(cmdBuffer);
         }
     }
-    do_syscall(SYS_REMOVE_KBD_HANDLE, (uint32_t)handler, 0, 0, 0, 0);
+
+    remove_keyboard_handler(handler);
     hfree(cmdBuffer);
     ClearTable(cmdTable);
-    return 0;
+    return STANDARD_SUCCESS;
 }

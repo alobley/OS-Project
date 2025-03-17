@@ -45,7 +45,8 @@ typedef struct PACKED PageTable {
 
 void MapBitmap(uint32_t memSize, mmap_entry_t* mmap, size_t mmapLength /* In total entries */);
 
-void pfree(virtaddr_t virt);
+int pfree(virtaddr_t virt);
+int user_pfree(virtaddr_t virt);                            // Specifically for drivers and/or user applications
 
 int palloc(virtaddr_t virt, uint32_t flags);
 

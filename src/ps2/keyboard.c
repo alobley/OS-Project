@@ -6,7 +6,7 @@
 #include <alloc.h>
 #include <vfs.h>
 #include <kernel.h>
-#include <devices.h>
+#include <drivers.h>
 
 #define KEYBOARD_ISR 0x21
 #define KEYBOARD_IRQ 1
@@ -385,33 +385,16 @@ void InitializeKeyboard(){
     keyboardDeviceInfo->AddCallback = InstallKeyboardCallback;
     keyboardDeviceInfo->RemoveCallback = RemoveKeyboardCallback;
 
-    device_t* keyboardDevice = (device_t*)halloc(sizeof(device_t));
-    memset(keyboardDevice, 0, sizeof(device_t));
-    keyboardDevice->name = "keyboard";
-    keyboardDevice->description = "PS/2 Keyboard";
-    keyboardDevice->type = DEVICE_TYPE_INPUT;
-    keyboardDevice->id = 0;
-    keyboardDevice->driver = NULL;
-    keyboardDevice->next = NULL;
-    keyboardDevice->status = DEVICE_STATUS_IDLE;
-    keyboardDevice->read = NULL;
-    keyboardDevice->write = NULL;
-    keyboardDevice->ioctl = NULL;
-    keyboardDevice->lock = MUTEX_INIT;
-    keyboardDevice->deviceInfo = keyboardDeviceInfo;
-    keyboardDevice->devName = "kb0";
+    device_t* keyboardDevice = CreateDevice("PS/2 Keyboard", "kb0", "PS/2 Keyboard", (void*)keyboardDeviceInfo, NULL, DEVICE_TYPE_CHAR, 0, (device_flags_t){0}, NULL, NULL, NULL, NULL);
 
     driver_t* keyboardDriver = CreateDriver("ps2_keyboard", "PS/2 Keyboard Driver", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
-    do_syscall(SYS_MODULE_LOAD, (uintptr_t)keyboardDriver, (uintptr_t)keyboardDevice, 0, 0, 0);
+    module_load(keyboardDriver, keyboardDevice);
 
-
-    //do_syscall(SYS_ADD_VFS_DEV, (uint32_t)tty, (uint32_t)"tty0", (uint32_t)"/dev", 0, 0);
-
-    do_syscall(SYS_ADD_VFS_DEV, (uintptr_t)keyboardDevice, (uintptr_t)keyboardDevice->devName, (uintptr_t)"/dev", 0, 0);
+    add_vfs_device(keyboardDevice, keyboardDevice->devName, "/dev");
 
     // Install the keyboard interrupt
-    do_syscall(SYS_REQUEST_IRQ, KEYBOARD_IRQ, (uintptr_t)kb_handler, 0, 0, 0);
+    request_irq(KEYBOARD_IRQ, kb_handler);
 
     // Add the keyboard device to the VFS (just do it like this for now, later I will properly make the keyboard driver)
-    do_syscall(SYS_REGISTER_DEVICE, (uintptr_t)keyboardDevice, 0, 0, 0, 0);
+    register_device(keyboardDevice);
 }

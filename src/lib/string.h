@@ -246,6 +246,8 @@ static inline size_t strlen(const char* str){
     return len;
 }
 
-// Skipping strdup and strndup
+char* strdup(const char* str);
+
+// Skipping strndup
 
 #endif

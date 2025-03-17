@@ -41,28 +41,35 @@ pcb_t* DequeueProcess(mutex_t* mutex){
     return mutex->owner;
 }
 
+MUTEXSTATUS PeekMutex(mutex_t* mutex){
+    if(mutex->locked){
+        return MUTEX_IS_LOCKED;
+    }else{
+        return MUTEX_IS_UNLOCKED;
+    }
+}
+
 // Lock a mutex for the current process
-void MutexLock(mutex_t* mutex){
+MUTEXSTATUS MutexLock(mutex_t* mutex){
     asm volatile("" ::: "memory");
     if(mutex->locked){
         // Mutex is locked, enqueue process
         EnqueueProcess(mutex, currentProcess);
         currentProcess->state = WAITING;
         do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
-        return;
+
+        // We will return here when the mutex is unlocked
+        return MUTEX_AQUIRED;
     }else{
         asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");
         mutex->owner = currentProcess;
+        return MUTEX_AQUIRED;
     }
 }
 
 // Unlock a mutex
-void MutexUnlock(mutex_t* mutex){
+MUTEXSTATUS MutexUnlock(mutex_t* mutex){
     asm volatile("" ::: "memory");
-    if(mutex->owner != currentProcess){
-        // Mutex is not owned by the current process
-        return;
-    }
     asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
     if(mutex->waitQueue.first != NULL){
         // Dequeue process
@@ -70,6 +77,8 @@ void MutexUnlock(mutex_t* mutex){
             mutex->owner->state = RUNNING;
         }
     }
+
+    return MUTEX_IS_UNLOCKED;
 }
 
 // Force unlock a mutex (for kernel use only)
@@ -128,7 +137,6 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
     process->pageDirectory = 0; // TODO: implement process paging
 
     // TODO: implement stack allocation
-    process->stack = 0;
     process->stackBase = 0;
     process->stackTop = 0;
 
@@ -153,11 +161,15 @@ void DestroyProcess(pcb_t* process){
         return;
     }
 
-    hfree(process->registers);
-    hfree(process->workingDirectory);
+    if(process->registers != NULL){
+        hfree(process->registers);
+    }
+    if(process->workingDirectory != NULL){
+        hfree(process->workingDirectory);
+    }
     // Deallocate other things...
 
-    // Search the device tree for any devices owned by the process and destroy them...
+    // Search the device tree for any devices owned by the process and destroy them... (needed?)
 
     hfree(process);
     numProcesses--;

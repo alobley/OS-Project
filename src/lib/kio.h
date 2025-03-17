@@ -12,6 +12,8 @@
 #define FILE_FLAG_WRITE 0x02
 #define FILE_FLAG_APPEND 0x04
 
+#define FILE_MAGIC 0xDADCAFE
+
 // Define file types and file descriptors
 typedef struct STDIO_FILE {
     int fd;

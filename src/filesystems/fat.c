@@ -6,6 +6,11 @@
 
 char* partName = "p1";
 
+// File Reading...
+
+// File Writing...
+
+// TODO: actually detect and validate a FAT filesytstem
 DRIVERSTATUS ProbeFATFilesystem(device_t* device){
     //printf("Probing...\n");
     if(device->type == DEVICE_TYPE_BLOCK){
@@ -14,7 +19,7 @@ DRIVERSTATUS ProbeFATFilesystem(device_t* device){
             // This device has a partition, check if it's FAT
             partition_t* partition = ((blkdev_t*)device->deviceInfo)->firstPartition;
             while(partition != NULL){
-                if(partition->filesystem != NULL && (partition->filesystem->fs == FS_FAT12 || partition->filesystem->fs == FS_FAT16 || partition->filesystem->fs == FS_FAT32)){
+                if(partition->fsID == ID_FAT12 || partition->fsID == ID_SMALL_FAT16 || partition->fsID == ID_BIG_FAT16 || partition->fsID == ID_FAT32 || partition->fsID == ID_FAT32_LBA || partition->fsID == ID_EXFAT){
                     // Make a device entry in the VFS for each partition, saying this driver supports it...
                     return DRIVER_INITIALIZED; // This driver supports this device, the kernel can assign it to the device
                 }
@@ -31,7 +36,8 @@ DRIVERSTATUS ProbeFATFilesystem(device_t* device){
             }
             *(uint64_t*)mbr = 0;
             *(((uint8_t*)mbr) + 8) = 1;
-            do_syscall(SYS_DEVICE_READ, (uint32_t)device, (uint32_t)mbr, sizeof(mbr_t), 0, 0);
+            device_read(device->id, (void*)mbr, sizeof(mbr_t)); // Read the first sector of the disk
+            //do_syscall(SYS_DEVICE_READ, device->id, (uint32_t)mbr, sizeof(mbr_t), 0, 0);
             if(IsValidMBR(mbr)){
                 // Just return a success for now since this isn't completely implemented
 
@@ -41,7 +47,12 @@ DRIVERSTATUS ProbeFATFilesystem(device_t* device){
                 memset(name, 0, 7);
                 strcpy(name, device->devName);
                 strcat(name, partName);                 // No need to manipulate partName since no MBR partitioning means only one partition
-                do_syscall(SYS_ADD_VFS_DEV, 0 /*Change this to the filesystem struct*/, (uint32_t)name, (uint32_t)"/dev", 0, 0);
+
+                partition_t* partition = (partition_t*)halloc(sizeof(partition_t));
+                memset(partition, 0, sizeof(partition_t));
+                device_t* fsDevice = CreateDevice("FAT Filesystem", name, "FAT Filesystem", partition, NULL/*The kernel will assign this*/, DEVICE_TYPE_FILESYSTEM, 0, (device_flags_t){0}, NULL, NULL, NULL, device);
+                register_device(fsDevice);                  // Register the device with the kernel
+                add_vfs_device(fsDevice, name, "/dev");     // Add the device to the VFS
 
                 hfree(mbr);
                 return DRIVER_INITIALIZED;
@@ -54,10 +65,6 @@ DRIVERSTATUS ProbeFATFilesystem(device_t* device){
     //printf("Not a block device!\n");
     return DRIVER_NOT_SUPPORTED; // This driver does not support this device
 }
-
-// File Reading...
-
-// File Writing...
 
 // FAT driver initialization
 DRIVERSTATUS InitializeFAT(){

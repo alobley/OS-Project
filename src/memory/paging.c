@@ -1,6 +1,7 @@
 #include <paging.h>
 #include <alloc.h>
 #include <acpi.h>
+#include <system.h>
 
 #define TOTAL_PAGES (0xFFFFFFFF / PAGE_SIZE)    // 1048576 pages
 #define TOTAL_BITS (TOTAL_PAGES / 8)            // 131072 bytes
@@ -134,7 +135,14 @@ int palloc(virtaddr_t virt, uint32_t flags){
     }
 }
 
-void pfree(virtaddr_t virt){
+extern uintptr_t heapEnd;
+
+// Free a page at the specified virtual address, avoiding kernel memory
+// Takes the virtual address so that the page can be freed regardless of the physical address (better for getting memory near the kernel)
+int user_pfree(virtaddr_t virt){
+    if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= heapEnd)){
+        return STANDARD_FAILURE; // Not page-aligned or requested address was inside the kernel
+    }
     uint32_t pd_idx = PD_INDEX(virt);
     uint32_t pt_idx = PT_INDEX(virt);
 
@@ -151,6 +159,32 @@ void pfree(virtaddr_t virt){
 
         asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
     }
+
+    return STANDARD_SUCCESS;
+}
+
+int pfree(virtaddr_t virt){
+    if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= (uintptr_t)&__kernel_end)){
+        return STANDARD_FAILURE; // Not page-aligned or requested address was inside the kernel
+    }
+    uint32_t pd_idx = PD_INDEX(virt);
+    uint32_t pt_idx = PT_INDEX(virt);
+
+    // Check if page directory entry is present
+    if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
+        physaddr_t table = currentPageDir[pd_idx] & 0xFFFFF000;
+        page_table_t* pt = (page_table_t*)table;
+        if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
+            pt->pages[pt_idx] = 0;
+            totalPages--;
+        }
+
+        SetBit(virt / PAGE_SIZE);
+
+        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
+    }
+
+    return STANDARD_SUCCESS;
 }
 
 // Allocate a page at the specified physical and virtual address
@@ -170,10 +204,9 @@ int physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags) {
 
         totalPages++;
 
-        return 1;
+        return STANDARD_SUCCESS;
     }else{
-        // Allocate a new page table...
-        return -1;
+        return STANDARD_FAILURE;
     }
 }
 

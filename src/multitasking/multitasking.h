@@ -9,10 +9,10 @@
 #include <string.h>
 #include <users.h>
 #include <paging.h>
+#include <system.h>
 
-#define process_switch_stub()
-
-#define PROCESS_DEFAULT_TIME_SLICE 100          // Default time slice in milliseconds
+#define PROCESS_DEFAULT_TIME_SLICE 10           // Default time slice in milliseconds (0.01 seconds should be enough, right? We're talking 100 MHz or greater for i686-compatible...)
+#define DEFAULT_DRIVER_TIME_SLICE 100           // Give drivers a little extra time
 
 typedef enum {
     KERNEL = 0,                                 // Kernel processes
@@ -38,7 +38,7 @@ typedef struct {
 
 typedef struct Process_Control_Block {
     // Process information
-    uint32_t pid;                               // Process ID
+    pid_t pid;                                  // Process ID
     uid owner;                                  // User ID
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
@@ -55,7 +55,6 @@ typedef struct Process_Control_Block {
 
     // Memory information
     physaddr_t pageDirectory;                   // Page directory location
-    uintptr_t stack;                            // Stack pointer
     uintptr_t stackBase;                        // Stack base
     uintptr_t stackTop;                         // Stack top
     uintptr_t heapBase;                         // Heap base
@@ -94,6 +93,8 @@ typedef struct {
 #define MUTEX_INIT (mutex_t){ false, NULL, { NULL, NULL } }
 
 // First come first serve semaphore (for very short wait times)
+// What should these be used for? I thought maybe files, but those have mutexes right now...
+// These are also not fully implemented (functions not defined)
 typedef struct {
     volatile bool locked;                       // Spinlock lock state
     pcb_t* owner;                               // Spinlock owner
@@ -109,8 +110,9 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
 void Scheduler(void);
 void SetCurrentProcess(pcb_t* process);
 
-void MutexLock(mutex_t* mutex);
-void MutexUnlock(mutex_t* mutex);
+MUTEXSTATUS PeekMutex(mutex_t* mutex);
+MUTEXSTATUS MutexLock(mutex_t* mutex);
+MUTEXSTATUS MutexUnlock(mutex_t* mutex);
 void SpinlockLock(spinlock_t* spinlock);
 void SpinlockUnlock(spinlock_t* spinlock);
 

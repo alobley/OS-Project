@@ -1,7 +1,13 @@
 #include <vfs.h>
 #include <alloc.h>
 
-// TODO: Add mutex checking in the VFS
+// TODO:
+// - Add mutex checking in the VFS
+// - Implement file reading and writing
+// - Overhaul file descriptors and create a proper file descriptor table
+
+// File descriptor counter (linear should be fine, who has 4 billion files?)
+int currentfd = 2;              // 0 and 1 are stdin and stdout while 2 is stderr (should stderr have a file descriptor?)
 
 vfs_node_t* root = NULL;
 
@@ -57,7 +63,7 @@ char* GetFullPath(vfs_node_t* node) {
     return fullPath;
 }
 
-vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* data){
+vfs_node_t* VfsMakeNode(char* name, bool isDirectory, bool readOnly, bool writeOnly, size_t size, unsigned int permissions, uid owner, void* data){
     vfs_node_t* node = (vfs_node_t*)halloc(sizeof(vfs_node_t));
     memset(node, 0, sizeof(vfs_node_t));
     node->name = strdup(name);
@@ -76,6 +82,12 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int 
     node->accessed = currentTime;
     node->lock = MUTEX_INIT;
     node->data = data;                   // This is a union, so it's safe to do this
+    
+    if(isDirectory) {
+        node->fd = INVALID_FD;           // For directories, this will be invalid
+    } else {
+        node->fd = currentfd++;          // For files, this will be the next available file descriptor
+    }
     return node;
 }
 
@@ -133,17 +145,17 @@ vfs_node_t* VfsFindNode(char* path) {
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child) {
     // Validate parameters
     if (parent == NULL || child == NULL) {
-        return -1;
+        return STANDARD_FAILURE;
     }
 
     // Parent must be a directory
     if (!parent->isDirectory) {
-        return -1;
+        return STANDARD_FAILURE;
     }
 
     // Check if child is already attached somewhere
     if (child->parent != NULL || child->next != NULL) {
-        return -1;  // Child is already in a tree
+        return STANDARD_FAILURE;  // Child is already in a tree
     }
 
     // Clean child's connections to be safe
@@ -166,12 +178,12 @@ int VfsAddChild(vfs_node_t* parent, vfs_node_t* child) {
     // Set up child's parent reference and increment size
     child->parent = parent;
     parent->size++;
-    return 0;
+    return STANDARD_SUCCESS;
 }
 
 int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     if(parent == NULL || child == NULL){
-        return -1;
+        return STANDARD_FAILURE;
     }
     if(parent->isDirectory){
         vfs_node_t* current = parent->firstChild;
@@ -186,27 +198,31 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
                 parent->size--;
                 hfree(current->name);
                 hfree(current);
-                return 0;
+                return STANDARD_SUCCESS;
             }
             prev = current;
             current = current->next;
         }
     }
-    return -1;
+    return STANDARD_FAILURE;
 }
 
 int VfsAddDevice(device_t* device, char* name, char* path){
-    vfs_node_t* node = VfsMakeNode(name, false, 0, 0755, ROOT_UID, device);
+    vfs_node_t* node = VfsMakeNode(name, false, true, true, 0, 0755, ROOT_UID, device);
     if(node == NULL){
-        return -1;
+        return STANDARD_FAILURE;
     }
     VfsAddChild(VfsFindNode(path), node);
-    return 0;
+    return STANDARD_SUCCESS;
 }
 
 int VfsRemoveNode(vfs_node_t* node){
     if(node == NULL){
-        return -1;
+        return STANDARD_FAILURE;
+    }
+    if(node->fd != INVALID_FD && node->fd == currentfd - 1){
+        // Might as well reclaim file descriptors whenever we can
+        currentfd--;
     }
     if(node->parent != NULL){
         VfsRemoveChild(node->parent, node);
@@ -218,10 +234,14 @@ int VfsRemoveNode(vfs_node_t* node){
     }
     hfree(node->name);
     hfree(node);
-    return 0;
+    return STANDARD_SUCCESS;
 }
 
 char* JoinPath(const char* base, const char* path) {
+    if(base == NULL || path == NULL){
+        return NULL;
+    }
+
     // Handle absolute paths
     if (path[0] == '/') {
         return strdup(path);
@@ -240,21 +260,68 @@ char* JoinPath(const char* base, const char* path) {
     return result;
 }
 
+vfs_node_t* VfsGetNodeFromFd(int fd){
+    vfs_node_t* current = root;
+    // Recursively search for the node with the matching file descriptor from the root directory and all its child directories
+    while(current != NULL){
+        if(current->fd == fd){
+            return current;
+        }
+        // Check children
+        if(current->isDirectory){
+            vfs_node_t* child = current->firstChild;
+            while(child != NULL){
+                if(child->fd == fd){
+                    return child;
+                }
+                child = child->next;
+            }
+            current = current->next;
+        }
+    }
+    return NULL;
+}
+
 // Create the bare minimum needed for a functional VFS on boot
-void InitializeVfs(multiboot_info_t* mbootInfo) {
+int InitializeVfs(multiboot_info_t* mbootInfo) {
     // Initialize the virtual filesystem
     // Create the root directory
-    root = VfsMakeNode("/", true, 2, 0755, ROOT_UID, NULL);
+    root = VfsMakeNode("/", true, false, false, 2, 0755, ROOT_UID, NULL);
+    if(root == NULL){
+        return STANDARD_FAILURE;
+    }
 
-    // Make the core directories needed on boot (They will be properly mounted later)
-    vfs_node_t* dev = VfsMakeNode("dev", true, 0, 0755, ROOT_UID, NULL);
-    VfsAddChild(root, dev);
+    int status = 0;
 
-    vfs_node_t* initrd = VfsMakeNode("initrd", true, 0, 0755, ROOT_UID, NULL);
-    VfsAddChild(root, initrd);
+    // Make the /dev directory
+    vfs_node_t* dev = VfsMakeNode("dev", true, false, false, 0, 0755, ROOT_UID, NULL);
+    if(dev == NULL){
+        return STANDARD_FAILURE;
+    }
+    status = VfsAddChild(root, dev);
+    if(status != STANDARD_SUCCESS){
+        return STANDARD_FAILURE;
+    }
 
-    vfs_node_t* mnt = VfsMakeNode("mnt", true, 0, 0755, ROOT_UID, NULL);
-    VfsAddChild(root, mnt);
+    // Make the /initrd directory
+    vfs_node_t* initrd = VfsMakeNode("initrd", true, false, false, 0, 0755, ROOT_UID, NULL);
+    if(initrd == NULL){
+        return STANDARD_FAILURE;
+    }
+    status = VfsAddChild(root, initrd);
+    if(status != STANDARD_SUCCESS){
+        return STANDARD_FAILURE;
+    }
+
+    // Make the /mnt directory
+    vfs_node_t* mnt = VfsMakeNode("mnt", true, false, false, 0, 0755, ROOT_UID, NULL);
+    if(mnt == NULL){
+        return STANDARD_FAILURE;
+    }
+    status = VfsAddChild(root, mnt);
+    if(status != STANDARD_SUCCESS){
+        return STANDARD_FAILURE;
+    }
 
     // More directories?
 
@@ -265,4 +332,6 @@ void InitializeVfs(multiboot_info_t* mbootInfo) {
     // extract the data and convert it into VFS nodes...
 
     // Can now return and have the kernel load drivers and stuff
+
+    return STANDARD_SUCCESS;
 }

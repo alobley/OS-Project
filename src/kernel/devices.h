@@ -4,6 +4,9 @@
 #include <multitasking.h>
 #include <keyboard.h>
 #include <stddef.h>
+#include <system.h>                             // Since this header is for drivers, this include can stay
+
+#define DEVICE_MAGIC 0xDEDEDEDE
 
 // Values returned by driver functions
 typedef signed int DRIVERSTATUS;
@@ -17,10 +20,6 @@ typedef signed int DRIVERSTATUS;
 #define DRIVER_NOT_INITIALIZED -6
 #define DRIVER_ALREADY_INITIALIZED -7
 
-// These two are assigned by the hardware of the device
-typedef unsigned short device_id_t;
-typedef unsigned short vendor_id_t;
-
 typedef unsigned short driver_id_t;    // Unique ID for the driver (assigned by the kernel)
 
 typedef enum {
@@ -29,23 +28,6 @@ typedef enum {
     DEVICE_STATUS_ERROR,                        // Device is in an error state
     DEVICE_STATUS_UNKNOWN,                      // Typically means no driver
 } DEVICE_STATUS;
-
-typedef enum {
-    DEVICE_TYPE_ROOTDEV,                        // Motherboards and daughterboards (essentially the root of the device tree) (needed?)
-    DEVICE_TYPE_BLOCK,                          // Block device (i.e. hard drive, SSD)
-    DEVICE_TYPE_CHAR,                           // Character device (i.e. keyboard, mouse, serial port)
-    DEVICE_TYPE_NETWORK,                        // Network device (i.e. Ethernet, Wi-Fi)
-    DEVICE_TYPE_INPUT,                          // Input device (i.e. keyboard, mouse)
-    DEVICE_TYPE_DISPLAY,                        // Display device (i.e. GPU, framebuffer)
-    DEVICE_TYPE_SOUND,                          // Sound device (i.e. sound card)
-    DEVICE_TYPE_USB,                            // USB device
-    DEVICE_TYPE_PCI,                            // PCI device
-    DEVICE_TYPE_PCIe,                           // PCIe device
-    DEVICE_TYPE_VIRTUAL,                        // Virtual device (i.e. a ramdisk)
-    DEVICE_TYPE_FILESYSTEM,                     // Filesystem device (i.e. a mounted filesystem)
-    DEVICE_TYPE_OTHER,                          // Other device type (not defined by the kernel and may not be supported)
-    DEVICE_TYPE_UNKNOWN,                        // Unknown device type
-} DEVICE_TYPE;
 
 typedef enum {
     IOCTL_GET_STATUS,                           // Get the status of the device
@@ -116,6 +98,8 @@ typedef struct Device {
     struct Device* parent;                      // Pointer to the parent device (if any)
     struct Device* next;                        // Pointer to the next sibling device (if any)
     struct Device* firstChild;                  // Pointer to the first child device (if any) (do I need this?)
+
+    user_device_t* userDevice;                  // Pointer to the userland device struct
 } device_t;
 
 /*
@@ -149,7 +133,7 @@ typedef struct Block_Device blkdev_t;
 
 // Block device structure (will be defined as, for example, /dev/sda)
 typedef struct Block_Device {
-    device_t* device;                           // Pointer to the device struct
+    user_device_t* device;                      // Pointer to the device struct
     partition_t* firstPartition;                // Pointer to the first partition (if any)
 
     lba size;                                   // Size of the block device in sectors
@@ -176,23 +160,22 @@ typedef struct Partition {
     lba size;                                   // Size of the partition in sectors
     const char* name;                           // Name of the partition
     const char* type;                           // Type of the partition in human-readable format
-    device_t* device;                           // Pointer to the block device
+    user_device_t* device;                      // Pointer to the block device
     blkdev_t* blkdev;                           // Pointer to the block device info
     uint8_t fsID;                               // MBR filesystem ID
     uuid_t uuid;                                // UUID of the partition (if GPT, otherwise 0)
-    filesystem_t* filesystem;                   // Pointer to the filesystem (if any)
+    //filesystem_t* filesystem;                   // Pointer to the filesystem (if any)
     struct Partition* next;                     // Pointer to the next partition (if any)
     struct Partition* previous;                 // Pointer to the previous partition (if any)
 } partition_t;
 
 // Filesystem structure (will be defined as, for example, /dev/sda1)
+// This will have to be private and based on partitions and mountpoints
 typedef struct Filesystem {
     FS_TYPE fs;                                 // Filesystem type
     lba start;                                  // Starting LBA of the filesystem
     lba size;                                   // Size of the filesystem in sectors
     partition_t* partition;                     // Pointer to the partition this filesystem is on
-    blkdev_t* blkdev;                           // Pointer to the block device this filesystem is on
-    driver_t* driver;                           // Pointer to the driver for this filesystem
     
     void* fsInfo;                               // Filesystem-specific information (i.e. superblock)
 
@@ -201,12 +184,11 @@ typedef struct Filesystem {
 
     char* devName;                              // String that will be presented in /dev (i.e. sda1, sda2, etc.)
 
+    user_device_t* device;                      // Pointer to the userland device struct
+
+    // Mount/unmount should check the device for locks
     DRIVERSTATUS (*mount)(filesystem_t* this, char* mountpoint);                           // Mount the filesystem
     DRIVERSTATUS (*unmount)(filesystem_t* this);                                           // Unmount the filesystem
-
-    // File operations (should I have VFS files be returned?)
-    DRIVERSTATUS (*read)(filesystem_t* this, void* buffer, size_t size, char* path);       // Read a file or directory from the filesystem (requires absolute paths, NULL path is root directory)
-    DRIVERSTATUS (*write)(filesystem_t* this, void* buffer, size_t size, char* path);      // Write a file or directory to the filesystem (requires absolute paths, NULL path is root directory)
 } filesystem_t;
 
 /*
@@ -325,7 +307,7 @@ device_t* GetFirstDeviceByType(DEVICE_TYPE type);                       // Get t
 device_t* GetNextDeviceByType(device_t* previous, DEVICE_TYPE type);    // Get the next device of a certain type
 device_t* GetDeviceFromVfs(char* path);                                 // Get a device from the VFS by its name (i.e. /dev/sda)
 
-device_t* CreateDevice(const char* name, const char* devName, const char* description, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl);  // Create a new device
+device_t* CreateDevice(const char* name, const char* devName, const char* description, void* data, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl, device_t* parent);  // Create a new device
 driver_t* CreateDriver(const char* name, const char* description, uint32_t version, DEVICE_TYPE type, driver_init_t init, driver_deinit_t deinit, driver_probe_t probe);  // Create a new driver
 
 driver_t* FindDriver(device_t* device, DEVICE_TYPE type /*if not the specified device's type*/);                                  // Find a compatible driver for a device (if any)

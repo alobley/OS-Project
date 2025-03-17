@@ -12,9 +12,14 @@
 
 #define VFS_ROOT "/"
 
+// File descriptor for invalid file
+#define INVALID_FD -1
+
 typedef struct VFS_Node {
     char* name;                         // Name of the file or directory
     bool isDirectory;                   // Whether the node is a file or directory
+    bool readOnly;                      // Whether the file is read-only
+    bool writeOnly;                     // Whether the file is write-only
     size_t size;                        // If file, the size in bytes (if loaded), if directory, the number of children it has
     union {
         struct VFS_Node* firstChild;    // Pointer to the first child (if directory)
@@ -28,6 +33,8 @@ typedef struct VFS_Node {
     datetime_t modified;                // Date and time the file or directory was last modified
     datetime_t accessed;                // Date and time the file or directory was last accessed
     mutex_t lock;                       // Mutex for thread safety
+
+    int fd;                             // File descriptor for the node (if file)
 } vfs_node_t;
 
 typedef struct VFS_mount{
@@ -40,11 +47,12 @@ typedef struct VFS_mount{
 extern vfs_node_t* root;
 
 vfs_node_t* VfsFindNode(char* path);
-vfs_node_t* VfsMakeNode(char* name, bool isDirectory, size_t size, unsigned int permissions, uid owner, void* data);
+vfs_node_t* VfsMakeNode(char* name, bool isDirectory, bool readOnly, bool writeOnly, size_t size, unsigned int permissions, uid owner, void* data);
+vfs_node_t* VfsGetNodeFromFd(int fd);
 int VfsRemoveNode(vfs_node_t* node);
 int VfsAddDevice(device_t* device, char* name, char* path);
 int VfsAddChild(vfs_node_t* parent, vfs_node_t* child);
-void InitializeVfs(multiboot_info_t* mbootInfo);
+int InitializeVfs(multiboot_info_t* mbootInfo);
 char* GetFullPath(vfs_node_t* node);
 char* JoinPath(const char* base, const char* path);
 

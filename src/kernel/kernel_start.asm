@@ -193,6 +193,8 @@ section .data
 
 section .bss
 align 16
+global stack_begin
+global stack
 stack_begin:
     resb 0x10000
 stack:

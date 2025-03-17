@@ -1,4 +1,5 @@
 #include <mbr.h>
+#include <system.h>
 #include <kernel.h>
 #include <alloc.h>
 
@@ -6,7 +7,7 @@ lba ChsToLba(uint8_t head, uint8_t sector, uint16_t cylinder){
     return (cylinder * 255 * 63) + (head * 63) + (sector - 1);
 }
 
-DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
+DRIVERSTATUS GetPartitionsFromMBR(user_device_t* disk){
     if(disk == NULL){
         return DRIVER_FAILURE; // Invalid disk
     }
@@ -22,7 +23,7 @@ DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
         return DRIVER_OUT_OF_MEMORY; // Failed to allocate memory for buffer
     }
     
-    do_syscall(SYS_DEVICE_READ, (uint32_t)disk, (uint32_t)buffer, 512, 0, 0);
+    do_syscall(SYS_DEVICE_READ, (uint32_t)disk->id, (uint32_t)buffer, 512, 0, 0);
     int result = 0;
     asm volatile("mov %%eax, %0" : "=r" (result));
     if(result != DRIVER_SUCCESS){
@@ -65,7 +66,6 @@ DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
                 partition->previous = current;
             }
             partition->fsID = mbr->partitions[i].systemID;
-            partition->filesystem = NULL; // Filesystem not yet mounted
             partition->next = NULL;
             partition->previous = NULL;
 

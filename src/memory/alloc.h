@@ -7,6 +7,7 @@
 #define MEMBLOCK_MAGIC 0xDEADBEEF
 
 extern uintptr_t heapStart;
+extern uintptr_t heapEnd;
 
 // Allocate a block of memory on the heap of the specified size
 void* halloc(size_t size);

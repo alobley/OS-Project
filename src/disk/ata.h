@@ -4,7 +4,7 @@
 #include <util.h>
 #include <stdint.h>
 #include <stddef.h>
-#include <devices.h>
+#include <drivers.h>
 
 #define PRIMARY_ATA_IRQ 14
 #define SECONDARY_ATA_IRQ 15

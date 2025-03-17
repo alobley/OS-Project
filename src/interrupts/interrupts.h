@@ -30,7 +30,8 @@ struct Registers {
 #define TIMER_IRQ 0
 #define KB_IRQ 1
 
-void InstallIRQ(size_t i, void (*handler)(struct Registers*));
+int InstallIRQ(size_t i, void (*handler)(struct Registers*));
+int RemoveIRQ(size_t i);
 void InitIRQ();
 
 // The maximum number of ISRs we can have (including number 0)
