@@ -1,8 +1,68 @@
 #include <fat.h>
-#include <kernel.h>
 #include <stdint.h>
 #include <vfs.h>
 #include <mbr.h>
+#include <devices.h>
+#include <util.h>
+
+#define FAT1216
+#define FAT32
+#define EXFAT
+
+// Non-integer fixed-size types
+typedef unsigned char BYTE;
+typedef unsigned short WORD;
+typedef unsigned int DWORD;
+
+typedef struct PACKED BIOS_Param_Block {
+    // Traditional BPB
+    BYTE jmpnop[3];
+    char oemID[8];
+    uint16_t bytesPerSector;
+    uint8_t sectorsPerCluster;
+    uint16_t reservedSectors;
+    uint8_t numFATs;
+    uint16_t numRootDirEntries;
+    uint16_t totalSectors16;                    // Is zero if totalSectors32 is used
+    uint8_t mediaDescriptor;
+    FAT1216 uint16_t sectorsPerFAT16;           // FAT12/16 only
+    uint16_t sectorsPerTrack;
+    uint16_t numHeads;
+    lba hiddenSectors;                          // The number of hidden sectors (or, alternatively, the start of the partition)
+    size_t totalSectors32;                      // The number of sectors if above USHORT_MAX
+
+    // EBR
+    union PACKED {
+        struct PACKED {
+            FAT1216 uint8_t driveNum;           // BIOS drive number
+            FAT1216 BYTE _ntReserved;           // Reserved by Windows NT
+            FAT1216 uint8_t signature;          // Must be 0x28 or 0x29
+            FAT1216 DWORD serialNum;            // Can be safely ignored
+            FAT1216 char volumeLabel[11];       // The name of the volume
+            FAT1216 char fileSystemType[8];     // Spec says not to trust this. That's kind of weird, so I'm going to ignore that. I'll have to make sure my formatter implements this.
+            FAT1216 BYTE bootCode[448];         // System boot code
+            FAT1216 WORD bootSig;               // Should be 0xAA55
+        } fat1216;
+        struct PACKED {
+            FAT32 size_t sectorsPerFAT32;       // The number of sectors per FAT in a FAT32 filesystem
+            FAT32 WORD flags;                   // Unknown
+            FAT32 uint8_t versionMinor;         // Minor version of the FAT filesystem
+            FAT32 uint8_t versionMajor;         // Major version of the FAT filesystem
+            FAT32 uint32_t rootCluster;         // Usually this is 2. Contains the root directory cluster.
+            FAT32 uint16_t fsInfoSector;        // Sector containing the first FSInfo structure
+            FAT32 uint16_t backupBoot;          // Location of the backup boot sector
+            FAT32 BYTE _reserved[0];            // Wasted space ig
+            FAT32 uint8_t driveNo;              // Best to ignore this
+            FAT32 BYTE _ntReserved;             // Reserved by Windows NT, unused otherwise
+            FAT32 uint8_t signature;            // Must be 0x28 or 0x29
+            FAT32 DWORD serialNum;              // Can be safely ignored
+            FAT32 char volumeLabel[11];         // Volume label string
+            FAT32 char fileSystemType[8];       // Once again, spec says don't trust. That's dumb. Why else would this be here?
+            FAT32 BYTE bootCode[420];           // Bootloader code
+            FAT32 WORD bootSig;                 // Should be 0xAA55
+        } fat32;
+    };
+} PACKED bpb_t;
 
 char* partName = "p1";
 
