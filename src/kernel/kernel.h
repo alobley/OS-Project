@@ -56,6 +56,7 @@ enum System_Calls {
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
     SYS_ENTER_V86_MODE,                     // Set the CPU into virtual 8086 mode
+    SYS_ENTER_RING0,                        // Set the CPU into ring 0 (kernel mode)
     SYS_SHUTDOWN,                           // Shutdown the system
     SYS_REBOOT,                             // Reboot the system
 };

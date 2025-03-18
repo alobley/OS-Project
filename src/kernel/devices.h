@@ -19,6 +19,8 @@ typedef signed int DRIVERSTATUS;
 #define DRIVER_INVALID_ARGUMENT -5
 #define DRIVER_NOT_INITIALIZED -6
 #define DRIVER_ALREADY_INITIALIZED -7
+#define DRIVER_INVALID_STATE -8
+#define DRIVER_PERMISSION_DENIED -9
 
 typedef unsigned short driver_id_t;    // Unique ID for the driver (assigned by the kernel)
 

@@ -16,6 +16,14 @@
 #define STANDARD_FAILURE -1
 #define STANDARD_SUCCESS 0
 
+// System call returns
+#define SYSCALL_SUCCESS 0
+#define SYSCALL_FAILURE -1
+#define SYSCALL_ACCESS_DENIED -2
+#define SYSCALL_INVALID_ARGUMENT -3
+#define SYSCALL_NOT_FOUND -4
+#define SYSCALL_OUT_OF_MEMORY -5
+
 typedef struct Date_Time {
     unsigned char second;
     unsigned char minute;

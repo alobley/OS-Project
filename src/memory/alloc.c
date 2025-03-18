@@ -1,6 +1,7 @@
 #include <alloc.h>
 #include <kernel.h>
 #include <system.h>
+#include <multitasking.h>
 
 // Get the start of the kernel's heap
 uintptr_t heapStart = 0;
@@ -20,6 +21,9 @@ typedef struct MemoryBlock {
 
 block_header_t* firstBlock = NULL;
 
+// Although targeting a single-CPU environment, multiple processes might request kernel resources at the same time. Allocation is quick so wait times likely won't be long.
+mutex_t heapMutex = MUTEX_INIT;
+
 void InitializeAllocator(void){
     firstBlock = (block_header_t*)heapStart;
     firstBlock->size = PAGE_SIZE - HEADER_SIZE;
@@ -33,6 +37,14 @@ void InitializeAllocator(void){
 // More complex memory allocation algorithm that takes blocks and makes them exactly the correct size
 MALLOC void* halloc(size_t size){ 
     // Get the kernel's first heap memory block
+    if(size == 0){
+        return NULL;
+    }
+
+    // MutexLock uses this function so to prevent deadlocks or infinite recursion we should do this
+    while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
+    MutexLock(&heapMutex);
+
     block_header_t* current = firstBlock;
     block_header_t* previous = NULL;
     while(current != NULL){
@@ -53,12 +65,14 @@ MALLOC void* halloc(size_t size){
             current->free = false;
             current->next = newBlock;
             //WriteString("Found block, split it\n");
+            MutexUnlock(&heapMutex);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }else if(current->free && current->size >= size){
             // The block is free and the right size
             // If there is not enough space for another block but it's too big, just allocate the whole block
             current->free = false;
             //WriteString("Found block, allocating whole block\n");
+            MutexUnlock(&heapMutex);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         if(current->next == NULL && current->free && current->size < size + HEADER_SIZE){
@@ -97,6 +111,7 @@ MALLOC void* halloc(size_t size){
             current->free = false;
             current->magic = MEMBLOCK_MAGIC;
             heapEnd += pagesToAdd * PAGE_SIZE;
+            MutexUnlock(&heapMutex);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         previous = current;
@@ -108,6 +123,7 @@ MALLOC void* halloc(size_t size){
     if(heapEnd >= totalMemSize || heapEnd + size + HEADER_SIZE >= heapEnd){
         // Out of memory
         //WriteString("Out of memory\n");
+        MutexUnlock(&heapMutex);
         return NULL;
     }
 
@@ -129,6 +145,7 @@ MALLOC void* halloc(size_t size){
     newBlock->prev = current;
     current->next = newBlock;
     heapEnd += pagesToAdd * PAGE_SIZE;
+    MutexUnlock(&heapMutex);
     return (void*)((uint8_t*)newBlock + HEADER_SIZE);
 }
 
@@ -137,6 +154,9 @@ void hfree(void* ptr){
     if(ptr == NULL){
         return;
     }
+
+    while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
+    MutexLock(&heapMutex);
 
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
@@ -191,6 +211,8 @@ void hfree(void* ptr){
             current = current->next;
         }
     } while(modified); // Continue until no more blocks can be coalesced
+
+    MutexUnlock(&heapMutex);
 }
 
 // Reallocate some memory to a new size

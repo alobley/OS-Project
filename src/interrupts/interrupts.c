@@ -60,8 +60,6 @@ extern void _isr46(struct Registers*);
 extern void _isr47(struct Registers*);
 extern void _isr48(struct Registers*);
 
-//extern void syscall_handler(struct Registers* regs);
-
 NORET void reboot_system(){
     if(PS2ControllerExists()){
         // 8042 reset
@@ -165,6 +163,7 @@ HOT void syscall_handler(struct Registers *regs){
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
         // Better to check once at the beginning rather than checking every time
+        // Why not just return DRIVER_ACCESS_DENIED?
         printk("Unpriveliged Application requesting system resources. Killing process.\n");
         // Log the error
         
@@ -187,9 +186,9 @@ HOT void syscall_handler(struct Registers *regs){
             if(keyboardDevice != NULL){
                 keyboard_t* keyboardDeviceInfo = (keyboard_t*)keyboardDevice->deviceInfo;
                 keyboardDeviceInfo->AddCallback((KeyboardCallback)regs->ebx);
-                regs->eax = STANDARD_SUCCESS;
+                regs->eax = SYSCALL_SUCCESS;
             }else{
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
             }
             break;
         }
@@ -239,8 +238,8 @@ HOT void syscall_handler(struct Registers *regs){
                     }
                 }
 
-                if((regs->ebx == STDOUT_FILENO || regs->ebx == STDERR_FILENO) && IsTTY((tty_t*)context->node->data)){
-                    // If printing to a standard file descriptor, no need to do this for each character. Tell the TTY to print and leave the system call.
+                if(IsTTY((tty_t*)context->node->data)){
+                    // Just in case the file is a TTY and not actually a file
                     context->node->offset = ttyNode->offset;
                     TTYWrite(GetActiveTTY(), ((const char*)regs->ecx + i), regs->edx);
                     context->node->offset = ttyNode->offset;
@@ -273,8 +272,8 @@ HOT void syscall_handler(struct Registers *regs){
                 break;
             }
 
-            if(regs->ebx == STDIN_FILENO && IsTTY((tty_t*)context->node->data)){
-                // Read from the TTY if STDIN points to a TTY
+            if(IsTTY((tty_t*)context->node->data)){
+                // Just in case the file is a TTY and not actually a file
                 context->node->offset = ttyNode->offset;
                 int result = TTYRead((tty_t*)context->node->data, (char*)regs->ecx, regs->edx);
                 //printk((char*)regs->ecx);
