@@ -223,11 +223,7 @@ typedef struct tty {
     unsigned short width;               // Width of the TTY
     unsigned short height;              // Height of the TTY
 
-    // Convenience functions (can still write to the buffer though)
-    DRIVERSTATUS (*write)(struct tty* this, const char* text, size_t size);      // Write some text to the TTY
-    DRIVERSTATUS (*read)(struct tty* this, char* buffer, size_t size);           // Read some text from the TTY
-    DRIVERSTATUS (*clear)(struct tty* this);                                     // Clear the TTY
-    //DRIVERSTATUS (*scroll)(struct tty* this, bool up);                           // Scroll the TTY
+    vfs_node_t* node;                   // Pointer to the VFS node for this TTY
 
     char* devName;                      // String that will be presented in /dev (i.e. tty0, tty1, etc.)
 

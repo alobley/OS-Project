@@ -15,6 +15,9 @@ void* halloc(size_t size);
 // Deallocate a block of memory on the heap
 void hfree(void* ptr);
 
+// Reallocate a block of memory
+void* rehalloc(void* ptr, size_t newSize);
+
 void InitializeAllocator(void);
 
 #endif

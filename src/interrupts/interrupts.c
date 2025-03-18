@@ -167,7 +167,9 @@ HOT void syscall_handler(struct Registers *regs){
         // Better to check once at the beginning rather than checking every time
         printf("Unpriveliged Application requesting system resources. Killing process.\n");
         // Log the error
+        
         // Kill the process
+        SwitchProcess(true, regs);
         return;
     }
     switch(regs->eax){
@@ -203,33 +205,55 @@ HOT void syscall_handler(struct Registers *regs){
             }
             break;
         }
-        case SYS_WRITE:
+        case SYS_WRITE:{
             // SYS_WRITE
             // EBX contains the file descriptor
             // ECX contains the pointer to the data to write
             // EDX contains the number of bytes to write
 
-            // Write data to the file descriptor
-            switch(regs->ebx){
-                case STDOUT_FILENO: {
-                    tty_t* tty = GetActiveTTY();
-                    if(strncmp((const char*)regs->ecx, ANSI_ESCAPE, 8) == 0){
-                        tty->clear(tty);
+            // EAX contains the result
+            // Write data to a file descriptor
+
+            file_list_t* processFiles = GetCurrentProcess()->fileList;
+            file_context_t* context = FindFile(processFiles, regs->ebx);
+            if(context == NULL){
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+
+            if(context->node->readOnly == true){
+                regs->eax = FILE_READ_ONLY;
+                break;
+            }
+
+            // Write the data to the file's buffer
+            for(uint32_t i = 0; i < regs->edx; i++){
+                if(context->node->offset + i >= context->node->size){
+                    // Stop writing if we go past the end of the buffer
+                    if(context->node->isResizeable == false){
+                        regs->eax = FILE_NOT_RESIZEABLE;
+                        break;
                     }else{
-                        tty->write(tty, (const char*)regs->ecx, regs->edx);
+                        context->node->data = rehalloc(context->node->data, context->node->size * 2);
+                        context->node->size *= 2;
                     }
-                    break;
                 }
-                default: {
-                    // Search the file descriptor table for the file descriptor
-                    // Write to the file
-                    // Write to disk?
-                    printf("Unknown file descriptor: %d\n", regs->ebx);
+
+                if((regs->ebx == STDOUT_FILENO || regs->ebx == STDERR_FILENO) && IsTTY((tty_t*)context->node->data)){
+                    // If printing to a standard file descriptor, no need to do this for each character. Tell the TTY to print and leave the system call.
+                    context->node->offset = ttyNode->offset;
+                    TTYWrite(GetActiveTTY(), ((const char*)regs->ecx + i), regs->edx);
+                    context->node->offset = ttyNode->offset;
                     break;
+                }else{
+                    ((char*)context->node->data)[context->node->offset++] = ((char*)regs->ecx)[i];
                 }
             }
+
+            regs->eax = FILE_WRITE_SUCCESS;
             break;
-        case SYS_READ:
+        }
+        case SYS_READ:{
             // SYS_READ
             // EBX contains the file descriptor
             // ECX contains the pointer to the buffer to read into (found using the open syscall)
@@ -237,7 +261,45 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Read data from a file descriptor
 
+            file_list_t* processFiles = GetCurrentProcess()->fileList;
+            file_context_t* context = FindFile(processFiles, regs->ebx);
+            if(context == NULL){
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+
+            if(context->node->writeOnly == true){
+                regs->eax = FILE_WRITE_ONLY;
+                break;
+            }
+
+            if(regs->ebx == STDIN_FILENO && IsTTY((tty_t*)context->node->data)){
+                // Read from the TTY if STDIN points to a TTY
+                context->node->offset = ttyNode->offset;
+                int result = TTYRead((tty_t*)context->node->data, (char*)regs->ecx, regs->edx);
+                //printf((char*)regs->ecx);
+                context->node->offset = ttyNode->offset;
+                //printf("Offset: %u\n", context->node->offset);
+                //printf("Data located at offset in node buffer: %s\n", (char*)context->node->data + (context->node->offset - result));
+
+                //strcpy((char*)regs->ecx, (char*)context->node->data + (context->node->offset - result));
+                regs->eax = FILE_READ_SUCCESS;
+                break;
+            }
+
+            // Read the data from the file's buffer
+            for(size_t i = 0; i < regs->edx; i++){
+                if(context->node->offset + i >= context->node->size){
+                    // Stop reading if we go past the end of the buffer
+                    regs->eax = FILE_READ_INCOMPLETE;
+                    break;
+                }
+                ((char*)regs->ecx)[i] = ((char*)context->node->data)[context->node->offset++];
+            }
+
+            regs->eax = FILE_READ_SUCCESS;
             break;
+        }
         case SYS_EXIT:
             // SYS_EXIT
             // EBX contains the exit code
@@ -277,6 +339,11 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_GET_PID
             // Get the PID of the current process
             regs->eax = (uint32_t)GetCurrentProcess()->pid;
+            break;
+        case SYS_GET_PPID:
+            // SYS_GET_PPID
+            // Get the PID of the parent process
+            regs->eax = (uint32_t)GetCurrentProcess()->parent->pid;
             break;
         case SYS_GETCWD:
             // SYS_GETCWD
@@ -345,23 +412,6 @@ HOT void syscall_handler(struct Registers *regs){
             // Open a file from the VFS
             // EBX contains the pointer to the path of the file
 
-            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
-            if(node == NULL || node->data == NULL || node->isDirectory){
-                // Node doesn't exist, is a directory, or is a device
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-
-            if(PeekMutex(&node->lock) == MUTEX_IS_LOCKED){
-                // The file is already open
-                regs->eax = FILE_LOCKED;
-                break;
-            }
-
-            MutexLock(&node->lock);
-            regs->eax = FILE_OPEN;
-            regs->ebx = node->fd; // Return the file descriptor
-
             // EAX will contain the result
             // EBX will contain the file descriptor
             break;
@@ -370,13 +420,7 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_CLOSE
             // Close a file
             // EBX contains the file descriptor to close
-            vfs_node_t* node = VfsGetNodeFromFd(regs->ebx);
-            if(node == NULL){
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            MutexUnlock(&node->lock);
-            regs->eax = FILE_CLOSED;
+            
             break;
         }
         case SYS_SEEK:
@@ -384,7 +428,34 @@ HOT void syscall_handler(struct Registers *regs){
             // EBX contains the file descriptor
             // ECX contains the offset to seek to
             // EDX contains the whence (0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END)
-            // Seek to a position in a file (is this needed? Why not just have a pointer to the file's buffer or something? Should I make the file interaction based on STDIO files? That would simplify libc...)
+            // Seek to a position in a file
+            // Will return the new offset or 0xFFFFFFFF (-1) if the seek failed
+            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
+            if(context == NULL){
+                regs->eax = FILE_INVALID_OFFSET;
+                break;
+            }
+            switch(regs->edx){
+                case SEEK_SET:
+                    if(regs->ecx > context->node->size){
+                        regs->eax = FILE_INVALID_OFFSET;
+                    }
+                    context->node->offset = regs->ecx;
+                    regs->eax = context->node->offset;
+                    break;
+                case SEEK_CUR:
+                    if(context->node->offset += regs->ecx > context->node->size){
+                        regs->eax = FILE_INVALID_OFFSET;
+                    }else{
+                        context->node->offset += regs->ecx;
+                        context->node->offset;
+                    }
+                    break;
+                case SEEK_END:
+                    context->node->offset = context->node->size;
+                    regs->eax = context->node->offset;
+                    break;
+            }
             break;
         case SYS_SLEEP:
             // SYS_SLEEP
@@ -420,6 +491,16 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Yield the CPU
             SwitchProcess(false, regs);
+            break;
+        case SYS_PIPE:
+            // Create a new file for reading and another one for writing but don't add it to the VFS or write it to the disk. It's specifically for inter-process communication.
+            break;
+        case SYS_REPDUP:
+            // SYS_REPDUP
+            // Replace and duplicate a file descriptor
+            // EBX contains the old file descriptor
+            // ECX contains the new file descriptor
+            // Replace the old file descriptor with the new one
             break;
         case SYS_MMAP:
             // SYS_MMAP
@@ -693,7 +774,7 @@ HOT void syscall_handler(struct Registers *regs){
             // Unmap/Unpage a memory region for a driver to access
             break;
         }
-        case SYS_IO_PORT_READ:
+        case SYS_IO_PORT_READ:{
             // SYS_IO_PORT_READ
             // EBX contains the port to read from
             // ECX contains the size of the read (1, 2, or 4 bytes)
@@ -713,7 +794,8 @@ HOT void syscall_handler(struct Registers *regs){
                     break;
             }
             break;
-        case SYS_IO_PORT_WRITE:
+        }
+        case SYS_IO_PORT_WRITE: {
             // SYS_IO_PORT_WRITE
             // EBX contains the port to write to
             // ECX contains the size of the write (1, 2, or 4 bytes)
@@ -734,8 +816,9 @@ HOT void syscall_handler(struct Registers *regs){
                     return;
             }
 
-            regs->eax = STANDARD_SUCCESS;
+            regs->eax = DRIVER_SUCCESS;
             break;
+        }
         case SYS_ENTER_V86_MODE:
             // SYS_ENTER_V86_MODE
             // Needed?
@@ -845,6 +928,7 @@ void InstallISR(size_t i, void (*handler)(struct Registers*)){
 }
 
 void ISRHandler(struct Registers *regs){
+    sti
     if (handlers[regs->int_no]) {
         handlers[regs->int_no](regs);
     }
@@ -875,6 +959,7 @@ enum exception {
 };
 
 static void ExceptionHandler(struct Registers *regs){
+    cli
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
         // Exception was thrown by the kernel - cannot recover

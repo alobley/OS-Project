@@ -1,5 +1,6 @@
 #include <multitasking.h>
 #include <kernel.h>
+#include <vfs.h>
 
 pcb_t* currentProcess = NULL;
 pcb_t* processList = NULL;
@@ -134,24 +135,27 @@ pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid o
         process->next = NULL;
     }
 
-    process->pageDirectory = 0; // TODO: implement process paging
+    if(kernel){
+        // Kernel-level processes can do this themselves
+        process->pageDirectory = 0; // TODO: implement process paging
 
-    // TODO: implement stack allocation
-    process->stackBase = 0;
-    process->stackTop = 0;
+        // TODO: implement stack allocation
+        process->stackBase = 0;
+        process->stackTop = 0;
+        process->esp = process->stackTop; // Set ESP to the top of the stack
 
-    // TODO: implement heap allocation
-    process->heapBase = 0;
-    process->heapEnd = 0;
+        // TODO: implement heap allocation
+        process->heapBase = 0;
+        process->heapEnd = 0;
+    }
 
     // Add process to process list
     process->next = processList;
     processList = process;
 
-    process->registers = halloc(sizeof(struct Registers));
-    memset(process->registers, 0, sizeof(struct Registers));
-
     process->name = name;
+
+    process->fileList = CreateFileList();
 
     return process;
 }
@@ -161,13 +165,33 @@ void DestroyProcess(pcb_t* process){
         return;
     }
 
-    if(process->registers != NULL){
-        hfree(process->registers);
+    if(currentProcess->next != NULL){
+        currentProcess->next->previous = currentProcess->previous;
     }
+
+    if(process->fileList != NULL){
+        DestroyFileList(process->fileList);
+    }
+    
+    // Recursively kill all children
+    // Should I reparent instead?
+    pcb_t* child = process->firstChild;
+    while(child != NULL){
+        pcb_t* nextChild = child->next;
+        DestroyProcess(child);
+        child = nextChild;
+    }
+
     if(process->workingDirectory != NULL){
+        // Free the working directory of the process
         hfree(process->workingDirectory);
     }
+
+    // Deallocate the file descriptor tree...
+
     // Deallocate other things...
+
+    // Unpage stack and heap...
 
     // Search the device tree for any devices owned by the process and destroy them... (needed?)
 
@@ -193,11 +217,10 @@ void SetCurrentProcess(pcb_t* process){
 
 void SwitchProcess(bool kill, struct Registers* context){
     if(kill){
-        currentProcess->next->previous = currentProcess->previous;
         DestroyProcess(currentProcess);
     }
     // Search for the next process to run
-    memcpy(currentProcess->registers, context, sizeof(struct Registers));
+    //memcpy(currentProcess->registers, context, sizeof(struct Registers));
     if(currentProcess->next != NULL){
         // Save the registers of the current process
         currentProcess = currentProcess->next;

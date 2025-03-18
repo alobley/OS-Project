@@ -25,14 +25,14 @@ int remove_keyboard_handler(KeyboardCallback callback){
     return result;
 }
 
-int write(int fd, const void* buf, unsigned int count){
+FILESTATUS write(int fd, const void* buf, unsigned int count){
     int result = 0;
     do_syscall(SYS_WRITE, fd, (_ADDRESS)buf, count, 0, 0);
     getresult(result);
     return result;
 }
 
-int read(int fd, void* buf, unsigned int count){
+FILESTATUS read(int fd, void* buf, unsigned int count){
     int result = 0;
     do_syscall(SYS_READ, fd, (_ADDRESS)buf, count, 0, 0);
     getresult(result);
@@ -71,6 +71,13 @@ pid_t getpid(void){
     return result;
 }
 
+pid_t getppid(void){
+    pid_t result = 0;
+    do_syscall(SYS_GET_PPID, 0, 0, 0, 0, 0);
+    getresult(result);
+    return result;
+}
+
 int getcwd(char* buf, unsigned int size){
     int result = 0;
     do_syscall(SYS_GETCWD, (_ADDRESS)buf, size, 0, 0, 0);
@@ -100,9 +107,9 @@ FILESTATUS close(int fd){
     return result;
 }
 
-int seek(int fd, unsigned int offset){
+unsigned int seek(int fd, unsigned int* offset, int whence){
     int result = 0;
-    do_syscall(SYS_SEEK, fd, offset, 0, 0, 0);
+    do_syscall(SYS_SEEK, fd, offset, whence, 0, 0);
     getresult(result);
     return result;
 }

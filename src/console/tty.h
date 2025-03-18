@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+extern vfs_node_t* ttyNode;
+
 void InitializeTTY(void);                                   // Initialize the TTYs
 tty_t* GetActiveTTY(void);                                  // Get the active tty
 int SetActiveTTYByNum(short ttyNum);                        // Set the active tty by using its number
@@ -18,6 +20,8 @@ int TTYWrite(tty_t* tty, const char* text, size_t size);    // Write some text t
 int TTYRead(tty_t* tty, char* buffer, size_t size);         // Read some text from the tty
 int TTYClear(tty_t* tty);                                   // Clear the tty
 void UpdateTTY();
+void ttykeypress(KeyboardEvent_t event);
+bool IsTTY(tty_t* tty);                                     // Check if a given pointer is a TTY
 //int TTYScroll(tty_t* tty, bool up);                       // Scroll the tty up or down
 
 #endif

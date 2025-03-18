@@ -191,6 +191,52 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Test the PC speaker (removed because it is loud af)
     //PCSP_Beep();
 
+
+    // NOTE: The file contexts of files should remain constant. Only the file descriptors should change. However, that is for another time.
+    // Create STDIN at /dev/stdin
+    vfs_node_t* stdin = VfsMakeNode("stdin", false, false, false, false, 0, 0, ROOT_UID, NULL);
+    if(stdin == NULL){
+        printf("KERNEL PANIC: Failed to create stdin node!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+    result = VfsAddChild(VfsFindNode("/dev"), stdin);
+    if(result != STANDARD_SUCCESS){
+        printf("KERNEL PANIC: Failed to add stdin node to /dev!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+
+    // Create STDOUT at /dev/stdout
+    vfs_node_t* stdout = VfsMakeNode("stdout", false, false, false, false, 0, 0, ROOT_UID, NULL);
+    if(stdout == NULL){
+        printf("KERNEL PANIC: Failed to create stdout node!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+    result = VfsAddChild(VfsFindNode("/dev"), stdout);
+    if(result != STANDARD_SUCCESS){
+        printf("KERNEL PANIC: Failed to add stdout node to /dev!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+
+    // Create STDERR at /dev/stderr
+    vfs_node_t* stderr = VfsMakeNode("stderr", false, false, false, false, 0, 0, ROOT_UID, NULL);
+    if(stderr == NULL){
+        printf("KERNEL PANIC: Failed to create stderr node!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+    result = VfsAddChild(VfsFindNode("/dev"), stderr);
+    if(result != STANDARD_SUCCESS){
+        printf("KERNEL PANIC: Failed to add stderr node to /dev!\n");
+        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+        STOP
+    }
+    printf("STDIN, STDOUT, and STDERR created successfully!\n");
+
+    // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     // Create the kernel's PCB
     kernelPCB = CreateProcess(NULL, "syscore", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, true, true, KERNEL, 0, NULL);
     if(kernelPCB == NULL){
@@ -205,8 +251,6 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     kernelPCB->heapBase = heapStart;                                // Set the heap base to the start of the heap
     kernelPCB->heapEnd = memSize;                                   // Set the heap end to the total memory size of the system (the kernel has access to everything after all) (change?)
     printf("Kernel PCB created successfully!\n");
-
-    // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     SetCurrentProcess(kernelPCB);
 
     InitializeKeyboard();                                           // Initialize the keyboard driver
@@ -314,6 +358,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
     // The kernel is the steward of all processes
     kernelPCB->firstChild = shellPCB;
+
     SetCurrentProcess(shellPCB);
     
     // Jump to the built-in debug shell

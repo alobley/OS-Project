@@ -83,13 +83,22 @@ typedef int MUTEXSTATUS;
 #define MUTEX_FAILURE -2
 
 typedef int FILESTATUS;
-#define FILE_CLOSED 0
-#define FILE_LOCKED -1
+#define FILE_INVALID_OFFSET -1
+#define FILE_LOCKED -2
+#define FILE_NOT_FOUND -3
 #define FILE_OPEN 1
-#define FILE_NOT_FOUND -2
-#define FILE_EXISTS 2
-#define FILE_READ_ONLY 3
-#define FILE_WRITE_ONLY 4
+#define FILE_CLOSED 2
+#define FILE_EXISTS 3
+#define FILE_READ_ONLY 4
+#define FILE_WRITE_ONLY 5
+#define FILE_WRITE_SUCCESS 6
+#define FILE_READ_SUCCESS 7
+#define FILE_READ_INCOMPLETE 8
+#define FILE_NOT_RESIZEABLE 9
+
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
 typedef struct {
     FILESTATUS status;          // Result of the open operation
@@ -106,10 +115,10 @@ int install_keyboard_handler(KeyboardCallback callback);
 int remove_keyboard_handler(KeyboardCallback callback);
 
 // Write to a file descriptor
-int write(int fd, const void* buf, unsigned int count);
+FILESTATUS write(int fd, const void* buf, unsigned int count);
 
 // Read from a file descriptor
-int read(int fd, void* buf, unsigned int count);
+FILESTATUS read(int fd, void* buf, unsigned int count);
 
 // Exit the current process
 void exit(int status);
@@ -126,6 +135,9 @@ int waitpid(pid_t pid);
 // Get the PID of the current process
 pid_t getpid(void);
 
+// Get the PID of the parent process
+pid_t getppid(void);
+
 // Get the current working directory
 int getcwd(char* buf, unsigned int size);
 
@@ -139,7 +151,7 @@ file_result open(const char* path);
 FILESTATUS close(int fd);
 
 // Seek to a position in a file
-int seek(int fd, unsigned int offset);
+unsigned int seek(int fd, unsigned int* offset, int whence);
 
 // Sleep for a certain amount of time (in milliseconds)
 int sleep(unsigned long long milliseconds);

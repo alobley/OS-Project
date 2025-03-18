@@ -11,6 +11,11 @@
 #include <paging.h>
 #include <system.h>
 
+typedef struct VFS_Node vfs_node_t;
+typedef struct FileContext file_context_t;
+typedef struct FileListNode file_list_node_t;
+typedef struct FileList file_list_t;
+
 #define PROCESS_DEFAULT_TIME_SLICE 10           // Default time slice in milliseconds (0.01 seconds should be enough, right? We're talking 100 MHz or greater for i686-compatible...)
 #define DEFAULT_DRIVER_TIME_SLICE 100           // Give drivers a little extra time
 
@@ -56,6 +61,7 @@ typedef struct Process_Control_Block {
     // Memory information
     physaddr_t pageDirectory;                   // Page directory location
     uintptr_t stackBase;                        // Stack base
+    uintptr_t esp;                              // Stack pointer (ESP)
     uintptr_t stackTop;                         // Stack top
     uintptr_t heapBase;                         // Heap base
     uintptr_t heapEnd;                          // Heap end
@@ -70,8 +76,7 @@ typedef struct Process_Control_Block {
     struct Process_Control_Block* firstChild;   // First child process
     struct Process_Control_Block* parent;       // Parent process
 
-    // Registers
-    struct Registers* registers;                // Registers
+    file_list_t* fileList;                      // File list (for file descriptors)
 } pcb_t;
 
 typedef struct QueueNode {

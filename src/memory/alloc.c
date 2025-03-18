@@ -1,5 +1,6 @@
 #include <alloc.h>
 #include <kernel.h>
+#include <system.h>
 
 // Get the start of the kernel's heap
 uintptr_t heapStart = 0;
@@ -190,4 +191,27 @@ void hfree(void* ptr){
             current = current->next;
         }
     } while(modified); // Continue until no more blocks can be coalesced
+}
+
+// Reallocate some memory to a new size
+MALLOC void* rehalloc(void* ptr, size_t newSize){
+    block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
+    if(block->magic != MEMBLOCK_MAGIC){
+        printf("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
+        
+        STOP
+    }
+    if(block->size >= newSize){
+        // The new size is too small
+        return ptr;
+    }
+
+    void* newPtr = halloc(newSize);
+    if(newPtr == NULL){
+        // Failed to allocate new memory
+        return NULL;
+    }
+    memcpy(newPtr, ptr, block->size);
+    hfree(ptr);
+    return newPtr;
 }

@@ -290,7 +290,9 @@ int shell(void){
     HashInsert(cmdTable, "shutdown", shutdown);
     HashInsert(cmdTable, "sysinfo", sysinfo);
 
-    printf("Kernel-Integrated Shell (KISh)\n");
+    // Test the write system call by using it to print the welcome message
+    write(STDOUT_FILENO, "Kernel-Integrated Shell (KISh)\n", strlen("Kernel-Integrated Shell (KISh)\n"));
+    //printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
 
     shellPCB = GetCurrentProcess();
@@ -305,18 +307,20 @@ int shell(void){
         printf("Error: failed to allocate memory for command buffer\n");
         return STANDARD_FAILURE;
     }
+    memset(cmdBuffer, 0, CMD_MAX_SIZE);
 
-    install_keyboard_handler(handler);
     while(!done){
-        if(enterPressed){
-            cmdBuffer[cmdBufferIndex] = '\0';
-            cmdBufferIndex = 0;
-            enterPressed = false;
-            ProcessCommand(cmdBuffer);
+        if(read(STDIN_FILENO, cmdBuffer, CMD_MAX_SIZE) != FILE_READ_SUCCESS){
+            printf("Error: failed to read from stdin\n");
+            return STANDARD_FAILURE;
         }
+        size_t bufferLen = strlen(cmdBuffer);
+        cmdBuffer[bufferLen - 1] = '\0';
+        //printf("%s\n", cmdBuffer);
+        ProcessCommand(cmdBuffer);
+        memset(cmdBuffer, 0, bufferLen);
     }
-
-    remove_keyboard_handler(handler);
+    
     hfree(cmdBuffer);
     ClearTable(cmdTable);
     return STANDARD_SUCCESS;

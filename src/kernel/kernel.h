@@ -20,6 +20,7 @@ enum System_Calls {
     SYS_EXEC,                               // Execute a new process which replaces the current one
     SYS_WAIT_PID,                           // Wait for a process to exit
     SYS_GET_PID,                            // Get the PID of the current process
+    SYS_GET_PPID,                           // Get the PID of the parent process
     SYS_GETCWD,                             // Get the current working directory
     SYS_CHDIR,                              // Change the current working directory
     SYS_OPEN,                               // Open a file
@@ -29,6 +30,8 @@ enum System_Calls {
     SYS_GET_TIME,                           // Get the current time
     SYS_KILL,                               // Kill a process
     SYS_YIELD,                              // Voluntarily yield the CPU
+    SYS_PIPE,                               // Create a pipe (returns a file descriptor, to remove the pipe, simple use close)
+    SYS_REPDUP,                             // Replace and Duplicate a file descriptor - replaces the original file descriptor pointer with a new one (like dup2 on Linux)
     SYS_MMAP,                               // Map memory pages
     SYS_MUNMAP,                             // Unmap memory pages
     SYS_BRK,                                // Change the heap size
@@ -56,7 +59,7 @@ enum System_Calls {
     SYS_DRIVER_MUNMAP,                      // Unmap a region of MMIO from userland
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
-    SYS_ENTER_V86_MODE,                     // Set the CPU into V86 mode
+    SYS_ENTER_V86_MODE,                     // Set the CPU into virtual 8086 mode
 };
 
 static const char* kernelRelease = "Alpha";

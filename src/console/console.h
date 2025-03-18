@@ -42,4 +42,8 @@ uintptr_t GetVGAAddress(void);
 
 HOT void MoveCursor(uint16_t x, uint16_t y);
 
+extern int16_t cursor_x;
+
+extern int16_t cursor_y;
+
 #endif

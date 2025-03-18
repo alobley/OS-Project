@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <util.h>
+#include <system.h>
 
 // The keyboard ports
 #define PS2_READ_PORT 0x64      // Status Register
@@ -144,5 +145,7 @@ void InitializeKeyboard();
 bool MouseExists();
 
 void PS2Reboot();
+
+void InstallKeyboardCallback(KeyboardCallback callback);
 
 #endif
