@@ -21,7 +21,7 @@
 // Clear the screen
 HOT void ClearScreen(void);
 
-// Write a single character to the screen without using printf
+// Write a single character to the screen without using printk
 HOT void WriteChar(char c);
 
 // Write a non-formatted string to the screen
@@ -31,7 +31,7 @@ HOT void WriteString(const char* str);
 HOT void WriteStringSize(const char* str, size_t size);
 
 // Print a formatted string to the screen
-HOT void printf(const char* fmt, ...);
+HOT void printk(const char* fmt, ...);
 
 // Scroll the screen up one line
 HOT void Scroll(void);

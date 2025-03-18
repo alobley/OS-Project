@@ -39,6 +39,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 ## Goals to reach before 1.0
 - EXT2 support [*]
 - ISO9660 support [*]
+- Optimization, especially of TTY interaction and file descriptors [*]
 - HD audio support [-]
 - Networking [-]
 - Window manager (no promises) [-]

@@ -26,7 +26,7 @@ void DestroyDeviceRegistry(){
 
 int RegisterDevice(device_t* device){
     if(device == NULL || device->userDevice == NULL){
-        printf("Error: NULL device passed to RegisterDevice\n");
+        printk("Error: NULL device passed to RegisterDevice\n");
         return DRIVER_NOT_INITIALIZED;
     }
 
@@ -233,7 +233,7 @@ driver_t* CreateDriver(const char* name, const char* description, uint32_t versi
 // Search for a compatible driver in the device tree
 driver_t* FindDriver(device_t* device, DEVICE_TYPE type){
     if(device == NULL || registry->firstDriver == NULL){
-        //printf("No drivers found!\n");
+        //printk("No drivers found!\n");
         return NULL;
     }
     driver_t* current = registry->firstDriver;
@@ -243,11 +243,11 @@ driver_t* FindDriver(device_t* device, DEVICE_TYPE type){
             continue;
         }
         if(current->probe(device) == DRIVER_INITIALIZED && current->type == type){
-            //printf("Found driver %s for device %s\n", current->name, device->name);
+            //printk("Found driver %s for device %s\n", current->name, device->name);
             return current;
         }
         current = current->next;
     }
-    //printf("No valid drivers found!\n");
+    //printk("No valid drivers found!\n");
     return NULL;
 }

@@ -1,8 +1,10 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+// I would like to keep this but I should also make a unistd.h
+
 // Header file containing macros and functions for system calls and other system-level functions
-// The intention is to include as few external headers as possible
+// This file is meant to be used both in the kernel and in userland
 
 #define ANSI_ESCAPE "\033[2J\033[H"
 
@@ -105,6 +107,18 @@ typedef struct {
     int fd;                     // File descriptor
 } file_result;
 
+struct sysinfo {
+    unsigned int totalMemory;             // Total memory in bytes
+    unsigned int usedMemory;              // Used memory in bytes
+    unsigned int freeMemory;              // Free memory in bytes
+    unsigned long long uptime;            // Uptime in seconds
+    int numProcesses;                     // Number of processes
+    version_t kernelVersion;              // Kernel version string
+    char kernelRelease[64];               // Kernel release string
+    char cpuID[16];                       // CPU ID string
+    _Bool acpiSupported;                  // Whether ACPI is supported
+};
+
 // Debug system call - prints a confirmation to the screen
 int sys_debug(void);
 
@@ -177,6 +191,10 @@ int brk(unsigned int size);
 // Change the flags of an area of the application's memory
 int mprotect(void* addr, unsigned int length, unsigned int flags);
 
+int sys_dumpregs();
+
+int sysinfo(struct sysinfo* info);
+
 // Open a device from the VFS
 int open_device(char* path, user_device_t* device);
 
@@ -185,5 +203,11 @@ int device_read(int deviceID, void* buffer, unsigned int size);
 
 // Call a device's write function
 int device_write(int deviceID, const void* buffer, unsigned int size);
+
+// Priveliged system call. Shuts down the system.
+int shutdown(void);
+
+// Priveliged system call. Reboots the system.
+int reboot(void);
 
 #endif      // SYSTEM_H

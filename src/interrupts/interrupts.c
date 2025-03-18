@@ -62,7 +62,7 @@ extern void _isr48(struct Registers*);
 
 //extern void syscall_handler(struct Registers* regs);
 
-NORET void reboot(){
+NORET void reboot_system(){
     if(PS2ControllerExists()){
         // 8042 reset
         uint8_t good = 0x02;
@@ -106,31 +106,31 @@ static struct {
 extern void LoadIDT();
 
 static void regdump(struct Registers* regs){
-    printf("EAX: 0x%x\n", regs->eax);
-    printf("EBX: 0x%x\n", regs->ebx);
-    printf("ECX: 0x%x\n", regs->ecx);
-    printf("EDX: 0x%x\n", regs->edx);
-    printf("ESI: 0x%x\n", regs->esi);
-    printf("EDI: 0x%x\n", regs->edi);
-    printf("EBP: 0x%x\n", regs->ebp);
-    printf("ESP: 0x%x\n", regs->esp);
-    printf("EIP: 0x%x\n", regs->eip);
-    printf("CS: 0x%x\n", regs->cs);
-    printf("DS: 0x%x\n", regs->ds);
-    printf("ES: 0x%x\n", regs->es);
-    printf("FS: 0x%x\n", regs->fs);
-    printf("SS: 0x%x\n", regs->ss);
-    printf("EFLAGS: 0x%x\n", regs->eflags);
+    printk("EAX: 0x%x\n", regs->eax);
+    printk("EBX: 0x%x\n", regs->ebx);
+    printk("ECX: 0x%x\n", regs->ecx);
+    printk("EDX: 0x%x\n", regs->edx);
+    printk("ESI: 0x%x\n", regs->esi);
+    printk("EDI: 0x%x\n", regs->edi);
+    printk("EBP: 0x%x\n", regs->ebp);
+    printk("ESP: 0x%x\n", regs->esp);
+    printk("EIP: 0x%x\n", regs->eip);
+    printk("CS: 0x%x\n", regs->cs);
+    printk("DS: 0x%x\n", regs->ds);
+    printk("ES: 0x%x\n", regs->es);
+    printk("FS: 0x%x\n", regs->fs);
+    printk("SS: 0x%x\n", regs->ss);
+    printk("EFLAGS: 0x%x\n", regs->eflags);
 
     uint32_t cr0, cr2, cr3, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     asm volatile("mov %%cr2, %0" : "=r"(cr2));
     asm volatile("mov %%cr3, %0" : "=r"(cr3));
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
-    printf("CR0: 0x%x ", cr0);
-    printf("CR2: 0x%x ", cr2);
-    printf("CR3: 0x%x ", cr3);
-    printf("CR4: 0x%x\n", cr4);
+    printk("CR0: 0x%x ", cr0);
+    printk("CR2: 0x%x ", cr2);
+    printk("CR3: 0x%x ", cr3);
+    printk("CR4: 0x%x\n", cr4);
 }
 
 void SetIDT(uint8_t index, void(*base)(struct Registers*), uint16_t selector, uint8_t flags){
@@ -165,7 +165,7 @@ HOT void syscall_handler(struct Registers *regs){
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
         // Better to check once at the beginning rather than checking every time
-        printf("Unpriveliged Application requesting system resources. Killing process.\n");
+        printk("Unpriveliged Application requesting system resources. Killing process.\n");
         // Log the error
         
         // Kill the process
@@ -175,7 +175,7 @@ HOT void syscall_handler(struct Registers *regs){
     switch(regs->eax){
         case SYS_DBG: {
             // SYS_DBG
-            printf("Syscall Debug!\n");
+            printk("Syscall Debug!\n");
             regs->eax = 0xFEEDBEEF;
             break;
         }
@@ -277,10 +277,10 @@ HOT void syscall_handler(struct Registers *regs){
                 // Read from the TTY if STDIN points to a TTY
                 context->node->offset = ttyNode->offset;
                 int result = TTYRead((tty_t*)context->node->data, (char*)regs->ecx, regs->edx);
-                //printf((char*)regs->ecx);
+                //printk((char*)regs->ecx);
                 context->node->offset = ttyNode->offset;
-                //printf("Offset: %u\n", context->node->offset);
-                //printf("Data located at offset in node buffer: %s\n", (char*)context->node->data + (context->node->offset - result));
+                //printk("Offset: %u\n", context->node->offset);
+                //printk("Data located at offset in node buffer: %s\n", (char*)context->node->data + (context->node->offset - result));
 
                 //strcpy((char*)regs->ecx, (char*)context->node->data + (context->node->offset - result));
                 regs->eax = FILE_READ_SUCCESS;
@@ -544,7 +544,29 @@ HOT void syscall_handler(struct Registers *regs){
             // Dump the CPU's registers to the console for debugging reasons
             regdump(regs);
             break;
-
+        case SYS_SYSINFO:
+            // SYS_SYSINFO
+            // EBX contains the pointer to the sysinfo struct to copy the info into
+            // Get system information
+            if(regs->ebx == 0){
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+            struct sysinfo* info = (struct sysinfo*)regs->ebx;
+            info->uptime = GetTicks() / 1000; // Convert to seconds
+            info->totalMemory = totalMemSize;
+            info->usedMemory = totalPages * PAGE_SIZE;
+            info->freeMemory = (totalMemSize - (totalPages * PAGE_SIZE));
+            info->numProcesses = 0; // TODO: Implement this
+            memcpy(&info->kernelVersion, &kernelVersion, sizeof(version_t));
+            memcpy(info->kernelRelease, kernelRelease, strlen(kernelRelease) + 1);
+            info->acpiSupported = acpiInfo.exists;
+            uint32_t eax = 0;
+            uint32_t others[4] = {0};
+            cpuid(eax, others[0], others[1], others[2]);
+            memcpy(info->cpuID, others, sizeof(others));
+            regs->eax = STANDARD_SUCCESS;
+            break;
         case SYS_OPEN_DEVICE: {
             // SYS_OPEN_DEVICE
             // Open a device from the VFS
@@ -675,7 +697,7 @@ HOT void syscall_handler(struct Registers *regs){
                 int result = VfsAddDevice((device_t*)regs->ebx, (char*)regs->ecx, (char*)regs->edx);
                 regs->eax = result;
             }else{
-                printf("Error: a path outside of /dev is against the rules!\n");
+                printk("Error: a path outside of /dev is against the rules!\n");
                 regs->eax = STANDARD_FAILURE;
             }
             break;
@@ -824,8 +846,22 @@ HOT void syscall_handler(struct Registers *regs){
             // Needed?
             regs->eflags |= 0x00020000;
             break;
+        case SYS_SHUTDOWN:{
+            // SYS_SHUTDOWN
+            // Shutdown the system
+            AcpiShutdown();
+            regs->eax = STANDARD_FAILURE;
+            break;
+        }
+        case SYS_REBOOT:{
+            // SYS_REBOOT
+            // Reboot the system
+            reboot_system();
+            regs->eax = STANDARD_FAILURE;
+            break;
+        }
         default: {
-            printf("Unknown syscall: 0x%x\n", regs->eax);
+            printk("Unknown syscall: 0x%x\n", regs->eax);
             break;
         }
     }
@@ -934,8 +970,6 @@ void ISRHandler(struct Registers *regs){
     }
 }
 
-extern void reboot();
-
 enum exception {
     EXCEPTION_DIVIDE_BY_ZERO,
     EXCEPTION_DEBUG,
@@ -963,28 +997,28 @@ static void ExceptionHandler(struct Registers *regs){
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
         // Exception was thrown by the kernel - cannot recover
-        printf("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+        printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
         regdump(regs);
         STOP
     }
     switch(regs->int_no){
         case PAGE_FAULT:{
             // Gracefully handle a page fault
-            printf("Segmentation fault\n", current->pid);
+            printk("Segmentation fault\n", current->pid);
             regdump(regs);
             SwitchProcess(true, regs);
             break;
         }
         case EXCEPTION_STACK_FAULT:{
             // Gracefully handle a stack fault (likely a stack overflow)
-            printf("Stack fault\n");
+            printk("Stack fault\n");
             regdump(regs);
             SwitchProcess(true, regs);
             break;
         }
         // Other exceptions thrown by user applications...
         default:{
-            printf("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+            printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
             regdump(regs);
             STOP
         }

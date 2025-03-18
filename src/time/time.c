@@ -28,14 +28,14 @@ uint16_t numTimers = 0;
 void AddTimerCallback(timer_callback_t callback, uint64_t interval){
     if(numTimers >= MAX_TIMERS){
         // There are too many timers!
-        printf("KERNEL PANIC: Too many timers!\n");
+        printk("KERNEL PANIC: Too many timers!\n");
         // Log the error, kill the caller...
         return;
     }
     TimerCallbackEntry* entry = (TimerCallbackEntry*)halloc(sizeof(TimerCallbackEntry));
     if(entry == NULL){
         // Memory allocation failed
-        printf("KERNEL PANIC: Memory allocation failed!\n");
+        printk("KERNEL PANIC: Memory allocation failed!\n");
         return;
     }
 

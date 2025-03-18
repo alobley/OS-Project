@@ -1,15 +1,16 @@
-#include <kernel.h>
-#include <keyboard.h>
+//#include <kernel.h>
+//#include <keyboard.h>
 #include <alloc.h>
-#include <time.h>
-#include <multitasking.h>
-#include <acpi.h>
-#include <time.h>
+//#include <time.h>
+//#include <multitasking.h>
+//#include <acpi.h>
 #include <string.h>
 #include <vfs.h>
 #include <hash.h>
 #include <system.h>
+#include "../libc/stdio.h"
 
+size_t dirSize = 1024;
 hash_table_t* cmdTable;
 
 // The maximum command size is 255 characters (leave space for null terminator) for now
@@ -24,53 +25,24 @@ uint8_t cmdBufferIndex = 0;
 volatile bool enterPressed = false;         // Must be volatile so the compiler doesn't optimize it away
 volatile bool done = false;
 
-pcb_t* shellPCB = NULL;
+char* currentWorkingDir = NULL;
 
-void PrintPrompt(){
-    WriteChar('[');
+void printPrompt(){
+    printf("[");
     // Get only the last part of the working directory
-    if(shellPCB == NULL || shellPCB->workingDirectory == NULL){
-        WriteString("ERROR");
+    if(currentWorkingDir == NULL){
+        printf("ERROR");
     }else{
-        char* lastPart = strrchr(shellPCB->workingDirectory, '/');
-        if(strlen(shellPCB->workingDirectory) == strlen(VFS_ROOT)){
-            lastPart = shellPCB->workingDirectory;
+        char* lastPart = strrchr(currentWorkingDir, '/');
+        if(strcmp(currentWorkingDir, VFS_ROOT) == 0){
+            lastPart = currentWorkingDir;
         }else{
             lastPart++;
         }
-        WriteString(lastPart);
+        printf(lastPart);
     }
-    WriteChar(']');
+    printf("]");
     printf(prompt);
-}
-
-// Handle a key press
-void handler(KeyboardEvent_t event){
-    if(event.keyUp || event.ascii == 0){
-        return;
-    }
-    switch(event.ascii){
-        case '\n': {
-            printf("\n");
-            enterPressed = true;
-            break;
-        }
-        case '\b': {
-            if(cmdBufferIndex > 0){
-                cmdBufferIndex--;
-                WriteChar(event.ascii);
-            }
-            break;
-        }
-        default: {
-            if(cmdBufferIndex < CMD_MAX_SIZE - 1){
-                cmdBuffer[cmdBufferIndex] = event.ascii;
-                cmdBufferIndex++;
-                WriteChar(event.ascii);
-            }
-            break;
-        }
-    }
 }
 
 void clear(UNUSED char* cmd){
@@ -105,23 +77,14 @@ void syscall(UNUSED char* cmd){
 }
 
 void pinfo(UNUSED char* cmd){
-    printf("Process info:\n");
-    printf("PID: %d\n", shellPCB->pid);
-    printf("Name: %s\n", shellPCB->name);
-    printf("Owner: %d ", shellPCB->owner);
-    if(shellPCB->owner == ROOT_UID){
-        printf("(root)\n");
+    pid_t currentPid = getpid();
+    printf("Process ID: %d\n", currentPid);
+    printf("Owner: ");
+    if(currentPid == ROOT_UID){
+        printf("root\n");
     }else{
-        printf("(user)\n");
+        printf("user\n");
     }
-    printf("State: %d\n", shellPCB->state);
-    printf("Priority: %d\n", shellPCB->priority);
-    printf("Time slice: %d ms\n", shellPCB->timeSlice);
-    printf("Stack base: 0x%x\n", shellPCB->stackBase);
-    printf("Stack top: 0x%x\n", shellPCB->stackTop);
-    printf("Heap base: 0x%x\n", shellPCB->heapBase);
-    printf("Heap end: 0x%x\n", shellPCB->heapEnd);
-    printf("Current working directory: %s\n", shellPCB->workingDirectory);
 }
 
 void time(UNUSED char* cmd){
@@ -169,22 +132,11 @@ void settz(char* cmd){
 
 void pwd(UNUSED char* cmd){
     // Allocate a buffer for the directory
-    size_t dirSize = 1024;
-    char* dir = (char*)halloc(dirSize);
-    if(dir == NULL){
-        printf("Error: failed to allocate memory for directory\n");
-        return;
-    }
-    if(getcwd(dir, dirSize) != STANDARD_FAILURE){
-        printf("%s\n", dir);
-    }else{
-        printf("Error: failed to get current working directory\n");
-    }
-    hfree(dir);
+    printf("%s\n", currentWorkingDir);
 }
 
 void ls(UNUSED char* cmd){
-    vfs_node_t* current = VfsFindNode(shellPCB->workingDirectory);
+    vfs_node_t* current = VfsFindNode(currentWorkingDir);
     if(current == NULL){
         printf("Error: current directory does not exist\n");
         return;
@@ -194,7 +146,7 @@ void ls(UNUSED char* cmd){
         return;
     }
     if(strcmp(current->name, "/") != 0){
-        // Print .. for the previous directory
+        // printf .. for the previous directory
         printf("..\n");
     }
     vfs_node_t* child = current->firstChild;
@@ -216,35 +168,39 @@ void cd(char* cmd){
     if(chdir(dir) == STANDARD_FAILURE){
         printf("Error: directory %s does not exist\n", dir);
     }
+
+    memset(currentWorkingDir, 0, strlen(currentWorkingDir));
+    getcwd(currentWorkingDir, dirSize);
 }
 
-void shutdown(UNUSED char* cmd){
-    AcpiShutdown();
+void shutdown_system(UNUSED char* cmd){
+    shutdown();
+    printf("Shutdown failed. It is safe to turn off your computer.\n");
+    while(1);
 }
 
-void sysinfo(UNUSED char* cmd){
+void systeminfo(UNUSED char* cmd){
     printf("System information:\n");
-    printf("Kernel version: %d.%d.%d %s\n", kernelVersion.major, kernelVersion.minor, kernelVersion.patch, kernelRelease);
-    printf("Total memory: %d MiB\n", memSizeMiB);
-    printf("Used memory: %d MiB\n", totalPages * PAGE_SIZE / 1024 / 1024);
+    struct sysinfo info;
+    sysinfo(&info);
+    printf("Kernel version: %d.%d.%d\n", info.kernelVersion.major, info.kernelVersion.minor, info.kernelVersion.patch);
+    printf("Kernel release: %s\n", info.kernelRelease);
+    printf("CPU ID: %s\n", info.cpuID);
+    printf("Uptime: %llu seconds\n", info.uptime);
+    printf("Total memory: %d MiB\n", info.totalMemory / 1024 / 1024);
+    printf("Used memory: %d MiB\n", info.usedMemory / 1024 / 1024);
+    printf("Free memory: %d MiB\n", info.freeMemory / 1024 / 1024);
     printf("ACPI supported: ");
-    if(acpiInfo.exists){
+    if(info.acpiSupported){
         printf("yes\n");
     }else{
         printf("no\n");
     }
-
-    uint32_t eax = 0;
-    uint32_t others[4] = {0};
-    cpuid(eax, others[0], others[1], others[2]);
-    // Combine the manufacturer string into a single string
-    printf("CPUID: 0x%x\n", eax);
-    printf("CPU Manufacturer: %s\n", others);
 }
 
 void ProcessCommand(char* cmd){
     if(strlen(cmd) == 0){
-        PrintPrompt();
+        printPrompt();
         return;
     }
 
@@ -266,10 +222,11 @@ void ProcessCommand(char* cmd){
         printf("Command not found: %s\n", cmd);
     }
     if(!done){
-        PrintPrompt();
+        printPrompt();
     }
 }
 
+// Slowly but surely, this shell is leaning away from directly calling kernel functions and moving towards using system calls.
 int shell(void){
     ClearScreen();
 
@@ -287,21 +244,23 @@ int shell(void){
     HashInsert(cmdTable, "pwd", pwd);
     HashInsert(cmdTable, "ls", ls);
     HashInsert(cmdTable, "cd", cd);
-    HashInsert(cmdTable, "shutdown", shutdown);
-    HashInsert(cmdTable, "sysinfo", sysinfo);
+    HashInsert(cmdTable, "shutdown", shutdown_system);
+    HashInsert(cmdTable, "sysinfo", systeminfo);
 
-    // Test the write system call by using it to print the welcome message
-    write(STDOUT_FILENO, "Kernel-Integrated Shell (KISh)\n", strlen("Kernel-Integrated Shell (KISh)\n"));
-    //printf("Kernel-Integrated Shell (KISh)\n");
+    // Test the write system call by using it to printf the welcome message
+    printf("Kernel-Integrated Shell (KISh)\n");
     printf("Type 'help' for a list of commands\n");
 
-    shellPCB = GetCurrentProcess();
-    if(shellPCB == NULL){
-        printf("Error: shell PCB does not exist!\n");
+
+    currentWorkingDir = (char*)halloc(dirSize);
+    if(currentWorkingDir == NULL){
+        printf("Error: failed to allocate memory for current working directory\n");
         return STANDARD_FAILURE;
     }
+    memset(currentWorkingDir, 0, dirSize);
+    getcwd(currentWorkingDir, dirSize);
 
-    PrintPrompt();
+    printPrompt();
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     if(cmdBuffer == NULL){
         printf("Error: failed to allocate memory for command buffer\n");
@@ -316,9 +275,8 @@ int shell(void){
         }
         size_t bufferLen = strlen(cmdBuffer);
         cmdBuffer[bufferLen - 1] = '\0';
-        //printf("%s\n", cmdBuffer);
         ProcessCommand(cmdBuffer);
-        memset(cmdBuffer, 0, bufferLen);
+        //memset(cmdBuffer, 0, bufferLen);
     }
     
     hfree(cmdBuffer);

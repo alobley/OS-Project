@@ -72,7 +72,7 @@ multiboot_info_t mbootCopy;
  * - Calling the function pointers from drivers directly is NOT RECOMMENDED because synchronization is done through the system calls (process switching to drivers messes with locks)
  * 
  * After drivers, when in userland:
- * - Create a standard system for interaction with the kernel (say a graphics library) (OpenGL? Framebuffer access?)
+ * - Create a standard system for interaction with the kernel (mostly done witch system call wrappers)
  * - Create a libc
  * - Create a shell
 */
@@ -91,7 +91,7 @@ extern uint8_t stack;
 NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     if(magic != MULTIBOOT2_MAGIC && magic != MULTIBOOT_MAGIC){
         // Check if the magic number is valid (if not, boot may have failed)
-        printf("KERNEL PANIC: Invalid multiboot magic number: 0x%x\n", magic);
+        printk("KERNEL PANIC: Invalid multiboot magic number: 0x%x\n", magic);
         STOP
     }
 
@@ -105,9 +105,9 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     memSizeMiB = memSize / 1024 / 1024;
 
     // Print bootloader and memory information
-    printf("Bootloader: %s\n", mbootInfo->boot_loader_name);
-    printf("Multiboot magic: 0x%x\n", magic);
-    printf("Memory: %u MiB\n", memSizeMiB);
+    printk("Bootloader: %s\n", mbootInfo->boot_loader_name);
+    printk("Multiboot magic: 0x%x\n", magic);
+    printk("Memory: %u MiB\n", memSizeMiB);
 
     InitIDT();              // Initialize the IDT
     InitISR();              // Initialize the ISRs
@@ -123,31 +123,31 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialization - second stage
 
     // Parse the memory map and map it to a bitmap for easier page frame allocation/deallocation
-    printf("Parsing memory map...\n");
+    printk("Parsing memory map...\n");
     MapBitmap(memSize, mbootInfo->mmap_addr, mbootInfo->mmap_length / sizeof(mmap_entry_t));
 
     // Initialize the page allocator and page the kernel
-    printf("Paging memory...\n");
+    printk("Paging memory...\n");
     PageKernel(memSize);
 
     // Initialize the heap allocator
-    printf("Initializing heap allocator...\n");
+    printk("Initializing heap allocator...\n");
     InitializeAllocator();
 
     // Do a debug syscall to test the syscall interface
     do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
 
     uint32_t usedMem = totalPages * PAGE_SIZE;                  // Calculate the current amount of memory used by the system (this will change - maybe add a timer handler to update it?)
-    printf("Used memory: %d MiB\n", usedMem / 1024 / 1024);     // Print the amount of used memory in MiB
+    printk("Used memory: %d MiB\n", usedMem / 1024 / 1024);     // Print the amount of used memory in MiB
 
     // Stress test the memory allocator
-    printf("Stress testing the heap allocator...\n");
+    printk("Stress testing the heap allocator...\n");
     for(int i = 1; i < 1000; i++){
         // Perform 1,000 allocations and deallocations of 6 pages (24 KiB) each - this should be stable enough to not cause any issues
         uint8_t* test = halloc(PAGE_SIZE * 6);
         if(test == NULL){
             // Memory allocation failed
-            printf("KERNEL PANIC: Heap allocation error!\n");
+            printk("KERNEL PANIC: Heap allocation error!\n");
             STOP
         }
 
@@ -156,37 +156,37 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         hfree(test);
     }
 
-    printf("Memory stress test completed successfully!\n");
+    printk("Memory stress test completed successfully!\n");
 
     // Get the system time from the CMOS
-    printf("Getting system time from CMOS...\n");
+    printk("Getting system time from CMOS...\n");
     SetTime();
 
     // Test the timer (removed for faster debugging - the timer works)
-    //printf("Testing the timer...\n");
+    //printk("Testing the timer...\n");
     //sleep(1000);
 
     // Initialization - third stage
 
     // Initialize the device registry
-    printf("Creating device registry...\n");
+    printk("Creating device registry...\n");
     if(CreateDeviceRegistry() != DRIVER_SUCCESS){
         // If there was a failure, the system can't continue as drivers can't be loaded
-        printf("KERNEL PANIC: Failed to create device registry!\n");
+        printk("KERNEL PANIC: Failed to create device registry!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
-    printf("Device registry created successfully!\n");
+    printk("Device registry created successfully!\n");
 
     // Initialize the virtual filesystem
     result = InitializeVfs(mbootInfo);
     if(result != STANDARD_SUCCESS){
         // If there was a failure, the system can't continue as the VFS is needed for most operations
-        printf("KERNEL PANIC: Failed to initialize VFS!\n");
+        printk("KERNEL PANIC: Failed to initialize VFS!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
-    printf("VFS initialized successfully!\n");
+    printk("VFS initialized successfully!\n");
 
     // Test the PC speaker (removed because it is loud af)
     //PCSP_Beep();
@@ -196,13 +196,13 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Create STDIN at /dev/stdin
     vfs_node_t* stdin = VfsMakeNode("stdin", false, false, false, false, 0, 0, ROOT_UID, NULL);
     if(stdin == NULL){
-        printf("KERNEL PANIC: Failed to create stdin node!\n");
+        printk("KERNEL PANIC: Failed to create stdin node!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
     result = VfsAddChild(VfsFindNode("/dev"), stdin);
     if(result != STANDARD_SUCCESS){
-        printf("KERNEL PANIC: Failed to add stdin node to /dev!\n");
+        printk("KERNEL PANIC: Failed to add stdin node to /dev!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
@@ -210,13 +210,13 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Create STDOUT at /dev/stdout
     vfs_node_t* stdout = VfsMakeNode("stdout", false, false, false, false, 0, 0, ROOT_UID, NULL);
     if(stdout == NULL){
-        printf("KERNEL PANIC: Failed to create stdout node!\n");
+        printk("KERNEL PANIC: Failed to create stdout node!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
     result = VfsAddChild(VfsFindNode("/dev"), stdout);
     if(result != STANDARD_SUCCESS){
-        printf("KERNEL PANIC: Failed to add stdout node to /dev!\n");
+        printk("KERNEL PANIC: Failed to add stdout node to /dev!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
@@ -224,24 +224,24 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Create STDERR at /dev/stderr
     vfs_node_t* stderr = VfsMakeNode("stderr", false, false, false, false, 0, 0, ROOT_UID, NULL);
     if(stderr == NULL){
-        printf("KERNEL PANIC: Failed to create stderr node!\n");
+        printk("KERNEL PANIC: Failed to create stderr node!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
     result = VfsAddChild(VfsFindNode("/dev"), stderr);
     if(result != STANDARD_SUCCESS){
-        printf("KERNEL PANIC: Failed to add stderr node to /dev!\n");
+        printk("KERNEL PANIC: Failed to add stderr node to /dev!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
-    printf("STDIN, STDOUT, and STDERR created successfully!\n");
+    printk("STDIN, STDOUT, and STDERR created successfully!\n");
 
     // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     // Create the kernel's PCB
     kernelPCB = CreateProcess(NULL, "syscore", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, true, true, KERNEL, 0, NULL);
     if(kernelPCB == NULL){
         // No PCB means no multitasking - the kernel can't run
-        printf("KERNEL PANIC: Failed to create kernel PCB!\n");
+        printk("KERNEL PANIC: Failed to create kernel PCB!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
@@ -250,7 +250,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     kernelPCB->stackTop = (uintptr_t)&stack;                        // Set the stack top to the bottom of the stack
     kernelPCB->heapBase = heapStart;                                // Set the heap base to the start of the heap
     kernelPCB->heapEnd = memSize;                                   // Set the heap end to the total memory size of the system (the kernel has access to everything after all) (change?)
-    printf("Kernel PCB created successfully!\n");
+    printk("Kernel PCB created successfully!\n");
     SetCurrentProcess(kernelPCB);
 
     InitializeKeyboard();                                           // Initialize the keyboard driver
@@ -263,7 +263,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Allocate a buffer to read into
     uint8_t* buffer = halloc(((blkdev_t*)ataDevice->deviceInfo)->sectorSize);
     if(buffer == NULL){
-        printf("Failed to allocate memory for buffer!\n");
+        printk("Failed to allocate memory for buffer!\n");
         STOP
     }
     memset(buffer, 0, 512);                                         // Clear the buffer
@@ -280,19 +280,19 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Check if the read was successful
     if(result != DRIVER_SUCCESS){
-        printf("Failed to read from disk! Error code: %d\n", result);
+        printk("Failed to read from disk! Error code: %d\n", result);
         STOP
     }
 
-    printf("Successfully read from disk!\n");
+    printk("Successfully read from disk!\n");
 
     // Check if the disk is an MBR disk by checking the magic number in the first sector
     mbr_t* mbr = (mbr_t*)buffer;
     if(IsValidMBR(mbr)){
-        printf("Valid MBR found!\n");
-        printf("MBR Signature: 0x%x\n", mbr->signature);
+        printk("Valid MBR found!\n");
+        printk("MBR Signature: 0x%x\n", mbr->signature);
     }else{
-        printf("This disk may not be MBR!\n");
+        printk("This disk may not be MBR!\n");
     }
 
     // Free the buffer after use
@@ -305,10 +305,10 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         result = GetPartitionsFromMBR(ataDevice->userDevice);
         if(result != DRIVER_SUCCESS){
             // If there were no partitions on the disk, print that and continue
-            printf("Could not detect partitions.\n");
+            printk("Could not detect partitions.\n");
         }else{
             // If the partitions were successfully retrieved, they were added to the devices in the device tree
-            printf("Partitions successfully retrieved from MBR!\n");
+            printk("Partitions successfully retrieved from MBR!\n");
         }
 
         // Go to the next ATA device and repeat
@@ -331,7 +331,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         driver_t* fsDriver = FindDriver(ataDevice, DEVICE_TYPE_FILESYSTEM);
         // If the driver aquired the device, it is expected to have made a filesystem device
         if(fsDriver == NULL){
-            printf("Driver not found for device %s\n", ataDevice->devName);
+            printk("Driver not found for device %s\n", ataDevice->devName);
         }
 
         // Go to the next ATA device and repeat
@@ -345,8 +345,6 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     }
 
     // Initialization - fourth stage
-
-    // Set up STDIN and the keyboard handler for it...
 
     // Load a users file and create the users...
 

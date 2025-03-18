@@ -29,7 +29,7 @@ void RemoveTimerCallback(timer_callback_t* callback);
 void InitTimer();
 void SetTimer(int hz);
 void busysleep(uint64_t ms);
-
+uint64_t GetTicks();
 void SetTime();
 
 #endif

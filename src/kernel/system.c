@@ -167,6 +167,20 @@ int mprotect(void* addr, unsigned int length, unsigned int flags){
     return result;
 }
 
+int sys_dumpregs(){
+    int result = 0;
+    do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
+    getresult(result);
+    return result;
+}
+
+int sysinfo(struct sysinfo* info){
+    int result = 0;
+    do_syscall(SYS_SYSINFO, info, 0, 0, 0, 0);
+    getresult(result);
+    return result;
+}
+
 int open_device(char* path, user_device_t* device){
     int result = 0;
     do_syscall(SYS_OPEN_DEVICE, (uintptr_t)path, (uintptr_t)device, 0, 0, 0);
@@ -186,4 +200,18 @@ int device_write(int deviceID, const void* buffer, unsigned int size){
     do_syscall(SYS_DEVICE_WRITE, deviceID, (_ADDRESS)buffer, size, 0, 0);
     getresult(result);
     return result;
+}
+
+int shutdown(void){
+    int result = 0;
+    do_syscall(SYS_SHUTDOWN, 0, 0, 0, 0, 0);
+    getresult(result);
+    return result;              // In case shutdown fails
+}
+
+int reboot(void){
+    int result = 0;
+    do_syscall(SYS_REBOOT, 0, 0, 0, 0, 0);
+    getresult(result);
+    return result;              // In case reboot fails
 }

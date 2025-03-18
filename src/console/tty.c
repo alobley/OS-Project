@@ -12,10 +12,8 @@
 tty_t* activeTTY = NULL;
 vfs_node_t* ttyNode = NULL;
 
-
-// TODO: move these into the tty struct so each TTY has its own data
+// Some variables for reading from the currently active TTY
 volatile bool readComplete = false;
-volatile bool keyPressed = false;
 volatile char lastKey = 0;
 size_t readChars = 0;
 
@@ -34,9 +32,14 @@ void ttykeypress(KeyboardEvent_t event){
     if(readChars > 0){
         TTYWrite(activeTTY, &event.ascii, 1);
     }
-    //ttyNode->offset += 1;
-    keyPressed = true;
     lastKey = event.ascii;
+}
+
+// Sync the TTY cursor with the VGA cursor (the kernel's printk doesn't use this interface)
+void SyncCursor(tty_t* tty){
+    tty->cursorX = cursor_x;
+    tty->cursorY = cursor_y;
+    MoveCursor(tty->cursorX, tty->cursorY);
 }
 
 int TTYClear(tty_t* tty){
@@ -50,10 +53,17 @@ int TTYClear(tty_t* tty){
     ClearScreen();
     MutexUnlock(&tty->lock);
     MoveCursor(tty->cursorX, tty->cursorY);
+    SyncCursor(tty);
     return 0;
 }
 
-// Scroll the TTY up or down
+void UpdateTTY(){
+    for(size_t i = 0; i < activeTTY->size; i++){
+        WriteChar(activeTTY->buffer[i]);
+    }
+    MoveCursor(activeTTY->cursorX, activeTTY->cursorY);
+}
+
 void TTYScroll(tty_t* tty){
     for(uint16_t i = 0; i < tty->width * (tty->height - 1); i++){
         tty->buffer[i] = tty->buffer[i + tty->width];
@@ -61,6 +71,9 @@ void TTYScroll(tty_t* tty){
     for(uint16_t i = tty->width * (tty->height - 1); i < tty->width * tty->height; i++){
         tty->buffer[i] = 0;
     }
+    tty->cursorY--;
+    tty->cursorX = 0;
+    UpdateTTY();
 }
 
 int TTYWrite(tty_t* tty, const char* text, size_t size){
@@ -79,7 +92,6 @@ int TTYWrite(tty_t* tty, const char* text, size_t size){
         return -1;
     }
 
-    //printf("Writing key: %c\n", *text);
     size_t actuallIterations = 0;
     for(size_t i = 0; i < size; i++){
         if(text[i] == '\b'){
@@ -94,9 +106,6 @@ int TTYWrite(tty_t* tty, const char* text, size_t size){
             if(readChars > 0){
                 readChars--;
             }
-            //printf("ReadChars: %d\n", readChars);
-            //printf(tty->buffer + ttyNode->offset);
-            //printf("Offset: %u\n", ttyNode->offset);
             if(ttyNode->offset > 0){
                 ttyNode->offset--;
             }
@@ -132,14 +141,17 @@ int TTYWrite(tty_t* tty, const char* text, size_t size){
         }
     }
 
-    //MoveCursor(tty->cursorX, tty->cursorY);
-
-    //ttyNode->offset += size;
     return 0;
 }
 
 int TTYRead(tty_t* tty, char* buffer, size_t size){
-    // Not implemented yet (should I just use keyboard handlers?)
+    if(tty == NULL || buffer == NULL || size == 0){
+        return -1;
+    }
+    if(tty->active){
+        SyncCursor(tty);
+    }
+    readComplete = false;
     tty->buffer[ttyNode->offset] = 0;
     size_t originalOffset = ttyNode->offset + 1;
     lastKey = 0;
@@ -154,26 +166,12 @@ int TTYRead(tty_t* tty, char* buffer, size_t size){
         }
     }
     readComplete = false;
-    //ttyNode->offset++;
-
-    //printf(&tty->buffer[originalOffset]);
-
-    //printf("Buffer will return: %s\n", buffer);
     MutexUnlock(&tty->lock);
     memcpy(buffer, &tty->buffer[originalOffset], size);
-    //printf("%s\n", &tty->buffer[originalOffset]);
-    //printf("%s\n", buffer);
     size_t result = readChars;
-    keyPressed = false;
     lastKey = 0;
     readChars = 0;
     return result;
-}
-
-void UpdateTTY(){
-    for(size_t i = 0; i < activeTTY->size; i++){
-        WriteChar(activeTTY->buffer[i]);
-    }
 }
 
 tty_t* CreateTTY(char* name, vfs_node_t* node){
@@ -194,7 +192,7 @@ tty_t* CreateTTY(char* name, vfs_node_t* node){
 
 void InitializeTTY(void){
     // Driver for the TTY (can just be built into the kernel)
-    driver_t* ttyDriver = CreateDriver("TTY Driver", "A simple TTY driver", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
+    driver_t* ttyDriver = CreateDriver("TTY Subsystem", "The Dedication OS TTY Subsystem", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
 
     // Register the driver (this will cause an error since we aren't using the actual device_t struct) (should I use it?)
     module_load(ttyDriver, NULL);
@@ -210,7 +208,7 @@ void InitializeTTY(void){
     ttyNode = tty->node;
     tty->active = true;
     if(install_keyboard_handler(ttykeypress) != STANDARD_SUCCESS){
-        printf("Failed to install keyboard handler!\n");
+        printk("Failed to install keyboard handler!\n");
         STOP
     }
 
@@ -257,6 +255,11 @@ void GeneralSetActiveTTY(tty_t* tty){
     if(activeTTY == tty){
         return;
     }
+
+    // Stop any reads from the active TTY
+    readComplete = true;
+    readChars = 0;
+    lastKey = 0;
     activeTTY->active = false;
     activeTTY = tty;
     activeTTY->active = true;
@@ -264,9 +267,6 @@ void GeneralSetActiveTTY(tty_t* tty){
     MoveCursor(0, 0);
     UpdateTTY();
     MoveCursor(tty->cursorX, tty->cursorY);
-
-    // Remap STDIN, STDOUT, and STDERR to the new TTY
-    // NOTE: Will need some kind of ownership system for the TTYs later
 
     // Assign STDOUT's buffer to the TTY buffer
     vfs_node_t* stdout = VfsFindNode("/dev/stdout");

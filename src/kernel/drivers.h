@@ -1,6 +1,8 @@
 #ifndef DRIVERS_H
 #define DRIVERS_H
 
+// An extension to system.h specifically for device drivers
+
 #include <devices.h>
 #include <system.h>
 

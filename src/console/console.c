@@ -107,7 +107,7 @@ HOT void PrintNum(uint64_t num, uint8_t base, bool s){
     size_t i = 0;
 
     if(base > 16){
-        printf("Error: Base must be 16 or less. Value was greater than 16.\n");
+        printk("Error: Base must be 16 or less. Value was greater than 16.\n");
     }
 
     // Check if the number is negative
@@ -137,7 +137,7 @@ HOT void PrintNum(uint64_t num, uint8_t base, bool s){
     WriteString(buffer);
 }
 
-HOT void PrintFloat(double num, int precision){
+HOT void printkloat(double num, int precision){
     char buffer[65];                    // Maximum of 64 characters for a double
 
     // Check if the number is negative
@@ -181,7 +181,7 @@ HOT void PrintFloat(double num, int precision){
     }
 }
 
-HOT void printf(const char* fmt, ...){
+HOT void printk(const char* fmt, ...){
     char c[2] = {'\0', '\0'};
     va_list args;
     va_start(args, fmt);
@@ -226,7 +226,7 @@ HOT void printf(const char* fmt, ...){
                 }
                 case 'f': {
                     double x = va_arg(args, double);
-                    PrintFloat(x, 6);
+                    printkloat(x, 6);
                     break;
                 }
                 case 'l': {
@@ -252,7 +252,7 @@ HOT void printf(const char* fmt, ...){
                             // Yes I know this isn't best practice, but it's simple and it works very well without recursion
                             goto extra_l;
                         case 'f':
-                            PrintFloat(va_arg(args, double), 6);
+                            printkloat(va_arg(args, double), 6);
                             break;
                         default:
                             WriteChar('%');

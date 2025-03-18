@@ -38,7 +38,7 @@ MALLOC void* halloc(size_t size){
     while(current != NULL){
         if(current->magic != MEMBLOCK_MAGIC){
             // There was a memory corruption or invalid allocation
-            printf("KERNEL PANIC: Invalid memory block magic number 0x%x\n", current->magic);
+            printk("KERNEL PANIC: Invalid memory block magic number 0x%x\n", current->magic);
             STOP
         }
         if(current->free && current->size > size + HEADER_SIZE + 1 /*Make sure the size is right and there's enough space for another memory block and at least one byte*/){
@@ -141,8 +141,8 @@ void hfree(void* ptr){
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
         // Invalid memory block
-        printf("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
-        printf("Invalid ptr: 0x%x, header address: 0x%x\n", ptr, block);
+        printk("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
+        printk("Invalid ptr: 0x%x, header address: 0x%x\n", ptr, block);
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP;
     }
@@ -161,7 +161,7 @@ void hfree(void* ptr){
         while(current != NULL) {
             // Validate current block before using it
             if(current->magic != MEMBLOCK_MAGIC) {
-                printf("KERNEL PANIC: Corrupted block during coalescing: 0x%x\n", current);
+                printk("KERNEL PANIC: Corrupted block during coalescing: 0x%x\n", current);
                 do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
                 STOP;
             }
@@ -197,7 +197,7 @@ void hfree(void* ptr){
 MALLOC void* rehalloc(void* ptr, size_t newSize){
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
-        printf("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
+        printk("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
         
         STOP
     }

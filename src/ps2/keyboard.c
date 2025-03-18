@@ -145,11 +145,11 @@ bool shiftPressed = false;
 void kb_handler(){
     uint8_t scanCode;
     // If there is anything to retrieve, retrieve it and inform the PIC that the interrupt has been handled.
-    //printf("Keyboard interrupt!\n");
+    //printk("Keyboard interrupt!\n");
     scanCode = inb(PS2_DATA_PORT);
     outb(PIC_EOI, PIC_EOI);
 
-    //printf("A key was pressed!\n");
+    //printk("A key was pressed!\n");
 
     KeyboardEvent_t event;
     event.scanCode = scanCode;
@@ -197,11 +197,11 @@ PS2Info ps2Info;
 void InitializeKeyboard(){
     if(acpiInfo.exists && !PS2ControllerExists()){
         // If PS/2 controller doesn't exist, return. These kinds of systems will not be supported until USB is implemented.
-        printf("PS/2 Controller not found. This computer can't be used.\n");
+        printk("PS/2 Controller not found. This computer can't be used.\n");
         STOP
     }else if(!acpiInfo.exists){
         // No ACPI table, so we can't determine if the PS/2 controller exists. Assume it does.
-        printf("Assuming PS/2 controller existence...\n");
+        printk("Assuming PS/2 controller existence...\n");
     }
 
     // USB translation will need to be disabled eventually. No USB drivers for now.
@@ -240,7 +240,7 @@ void InitializeKeyboard(){
     wait_for_output_buffer();
     if(inb(PS2_DATA_PORT) != 0x55){
         // Self-test failed, something should be done to inform the kernel.
-        printf("PS/2 Controller self-test failed.\n");
+        printk("PS/2 Controller self-test failed.\n");
         return;
     }
 
@@ -277,11 +277,11 @@ void InitializeKeyboard(){
     while ((inb(PS2_READ_PORT) & 0x01) == 0);
     wait_for_output_buffer();
     uint8_t result = inb(PS2_DATA_PORT);
-    //printf("0x%x\n", result);
+    //printk("0x%x\n", result);
 
     if(result != 0x55 && result != 0x00){
         // Self-test failed, something should be done to inform the kernel.
-        printf("PS/2 keyboard self-test failed.\n");
+        printk("PS/2 keyboard self-test failed.\n");
         return;
     }
 
@@ -293,7 +293,7 @@ void InitializeKeyboard(){
         uint8_t result = inb(PS2_DATA_PORT);
         if(result != 0x55){
             // Self-test failed, something should be done to inform the kernel.
-            printf("PS/2 mouse self-test failed. Result: 0x%x\n", result);
+            printk("PS/2 mouse self-test failed. Result: 0x%x\n", result);
             //STOP
             //return;
         }
@@ -325,7 +325,7 @@ void InitializeKeyboard(){
 
     if(result1 == 0xFC || result1 == 0){
         // Reset failed
-        printf("PS/2 keyboard reset failed.\n");
+        printk("PS/2 keyboard reset failed.\n");
         return;
     }else{
         // The reset was successful, the next bytes should be the device types
@@ -347,7 +347,7 @@ void InitializeKeyboard(){
         result2 = inb(PS2_DATA_PORT);
         if(result1 == 0xFC || result1 == 0){
             // Reset failed
-            printf("PS/2 keyboard reset failed.\n");
+            printk("PS/2 keyboard reset failed.\n");
             return;
         }else{
             // The reset was successful, the next bytes should be the device types
@@ -378,7 +378,7 @@ void InitializeKeyboard(){
     wait_for_output_buffer();
     uint8_t ack = inb(PS2_DATA_PORT);
     if (ack != 0xFA) {
-        printf("Failed to set scan code set.\n");
+        printk("Failed to set scan code set.\n");
         return;
     }
 

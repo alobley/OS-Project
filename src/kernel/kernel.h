@@ -1,11 +1,6 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-/* TODO: 
- * - Create unistd.h instead of kernel.h?
- * - Create wrapper functions for all system calls
-*/
-
 #include <common.h>
 #include <multitasking.h>
 
@@ -37,6 +32,7 @@ enum System_Calls {
     SYS_BRK,                                // Change the heap size
     SYS_MPROTECT,                           // Change the protection of memory pages
     SYS_REGDUMP,                            // Dump the registers to the console
+    SYS_SYSINFO,                            // Get system information
     SYS_OPEN_DEVICE,                        // Open a device
     SYS_CLOSE_DEVICE,                       // Close a device
     SYS_DEVICE_READ,                        // Read from a given device
@@ -60,14 +56,13 @@ enum System_Calls {
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
     SYS_ENTER_V86_MODE,                     // Set the CPU into virtual 8086 mode
+    SYS_SHUTDOWN,                           // Shutdown the system
+    SYS_REBOOT,                             // Reboot the system
 };
 
 static const char* kernelRelease = "Alpha";
 
-extern size_t memSize;
-extern size_t memSizeMiB;
 extern version_t kernelVersion;
-extern pcb_t* kernelPCB;
 
 #define SYSCALL_INT 0x30
 

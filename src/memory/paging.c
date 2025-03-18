@@ -106,11 +106,11 @@ physaddr_t FindValidFrame(){
 int palloc(virtaddr_t virt, uint32_t flags){
     physaddr_t frame = FindValidFrame();
     if(frame == INVALID_ADDRESS){
-        printf("KERNEL PANIC: Failed to find a valid frame for page allocation\n");
+        printk("KERNEL PANIC: Failed to find a valid frame for page allocation\n");
         return -1;
     }
 
-    //printf("Allocating page at 0x%x\n", frame);
+    //printk("Allocating page at 0x%x\n", frame);
 
     // Set the page table entry
     physaddr_t table = currentPageDir[PD_INDEX(virt)] & 0xFFFFF000;
@@ -125,8 +125,8 @@ int palloc(virtaddr_t virt, uint32_t flags){
 
         ClearBit(frame / PAGE_SIZE);
 
-        //printf("Allocated page at 0x%x\n", frame);
-        //printf("Page virtual address: 0x%x\n", virt);
+        //printk("Allocated page at 0x%x\n", frame);
+        //printk("Page virtual address: 0x%x\n", virt);
 
         return 1;
     }else{
@@ -227,7 +227,7 @@ void PageKernel(size_t memSize){
         int result = physpalloc(i, i, 0U | (PTE_FLAG_PRESENT | PTE_FLAG_RW));
 
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map kernel page at 0x%x\n", i);
+            printk("KERNEL PANIC: Failed to map kernel page at 0x%x\n", i);
             STOP
         }
     }
@@ -247,7 +247,7 @@ void PageKernel(size_t memSize){
         int result = physpalloc(i, firstVgaPage + offset, (PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_WRITE_THROUGH | PTE_FLAG_CACHE_DISABLED | PTE_FLAG_GLOBAL | PTE_FLAG_USER));
 
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map VGA page at 0x%x\n", i);
+            printk("KERNEL PANIC: Failed to map VGA page at 0x%x\n", i);
             STOP
         }
 
@@ -261,7 +261,7 @@ void PageKernel(size_t memSize){
         // Remap RSDP
         int result = physpalloc((physaddr_t)acpiInfo.rsdp.rsdpV1, heapStart, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map ACPI RSDP at 0x%x\n", (physaddr_t)acpiInfo.rsdp.rsdpV1);
+            printk("KERNEL PANIC: Failed to map ACPI RSDP at 0x%x\n", (physaddr_t)acpiInfo.rsdp.rsdpV1);
             STOP
         }
         acpiPages++;
@@ -272,7 +272,7 @@ void PageKernel(size_t memSize){
         heapStart += PAGE_SIZE;
         result = physpalloc((physaddr_t)acpiInfo.rsdt.rsdt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map ACPI RSDT at 0x%x\n", (physaddr_t)acpiInfo.rsdt.rsdt);
+            printk("KERNEL PANIC: Failed to map ACPI RSDT at 0x%x\n", (physaddr_t)acpiInfo.rsdt.rsdt);
             STOP
         }
 
@@ -283,7 +283,7 @@ void PageKernel(size_t memSize){
         heapStart += PAGE_SIZE;
         result = physpalloc((physaddr_t)acpiInfo.fadt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
         if(result == -1){
-            printf("KERNEL PANIC: Failed to map ACPI FADT at 0x%x\n", (physaddr_t)acpiInfo.fadt);
+            printk("KERNEL PANIC: Failed to map ACPI FADT at 0x%x\n", (physaddr_t)acpiInfo.fadt);
             STOP
         }
 
@@ -295,7 +295,7 @@ void PageKernel(size_t memSize){
 
     // Map the first page of the heap
     if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-        printf("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
+        printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
         STOP
     }
 
@@ -312,7 +312,7 @@ void PageKernel(size_t memSize){
 
     // Allocate one page at the end of all the other data for the beginning of the kernel's heap
     if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-        printf("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
+        printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
         STOP
 
     }

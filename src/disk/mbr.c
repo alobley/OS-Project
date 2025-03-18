@@ -43,7 +43,7 @@ DRIVERSTATUS GetPartitionsFromMBR(user_device_t* disk){
     for(int i = 0; i < 4; i++){
         if(mbr->partitions[i].systemID != 0){
             // Create a partition structure and add it to the disk's partition list
-            printf("Partition found!\n");
+            printk("Partition found!\n");
             partition_t* partition = (partition_t*)halloc(sizeof(partition_t));
             if(partition == NULL){
                 hfree(mbr);
@@ -83,7 +83,7 @@ DRIVERSTATUS GetPartitionsFromMBR(user_device_t* disk){
 
             numPartitions++;
         }else{
-            printf("No partition found!\n");
+            printk("No partition found!\n");
         }
     }
     return DRIVER_SUCCESS;
