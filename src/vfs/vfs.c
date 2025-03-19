@@ -173,6 +173,7 @@ int VfsAddChild(vfs_node_t* parent, vfs_node_t* child) {
     // Set up child's parent reference and increment size
     child->parent = parent;
     parent->size++;
+    child->mountPoint = parent->mountPoint; // Inherit mount point if any
     return STANDARD_SUCCESS;
 }
 
@@ -386,10 +387,27 @@ file_context_t* FindFile(file_list_t* list, int fd){
 int InitializeVfs(multiboot_info_t* mbootInfo) {
     // Initialize the virtual filesystem
     // Create the root directory
+    mountpoint_t* rootMount = NULL;
+    rootMount = (mountpoint_t*)halloc(sizeof(mountpoint_t));
+    if(rootMount == NULL){
+        return STANDARD_FAILURE;
+    }
+    memset(rootMount, 0, sizeof(mountpoint_t));
+    rootMount->filesystem = NULL;
+    rootMount->mountPath = (char*)halloc(2);
+    if(rootMount->mountPath == NULL){
+        return STANDARD_FAILURE;
+    }
+    strcpy(rootMount->mountPath, "/");
+    rootMount->next = NULL;
+    rootMount->mountPoint = NULL;
+
     root = VfsMakeNode("/", true, false, false, true, 2, 0755, ROOT_UID, NULL);
     if(root == NULL){
         return STANDARD_FAILURE;
     }
+
+    root->mountPoint = rootMount;
 
     int status = 0;
 

@@ -15,6 +15,9 @@
 // File descriptor for invalid file
 #define INVALID_FD -1
 
+typedef struct VFS_mount mountpoint_t;
+typedef struct Filesystem filesystem_t;
+
 typedef struct VFS_Node {
     char* name;                         // Name of the file or directory
     bool isDirectory;                   // Whether the node is a file or directory
@@ -34,15 +37,17 @@ typedef struct VFS_Node {
     datetime_t created;                 // Date and time the file or directory was created
     datetime_t modified;                // Date and time the file or directory was last modified
     datetime_t accessed;                // Date and time the file or directory was last accessed
+    mountpoint_t* mountPoint;           // Pointer to the mount point (if any)
     mutex_t lock;                       // Mutex for thread safety
 } vfs_node_t;
 
-typedef struct VFS_mount{
+typedef struct PACKED VFS_mount {
     filesystem_t* filesystem;           // Pointer to the filesystem struct
+    device_t* device;                   // Pointer to the device struct
     char* mountPath;                    // Path to the mount point of the filesystem (i.e. /, /home, /usr, /mnt, etc.)
     vfs_node_t* mountPoint;             // Pointer to the mount point in the VFS
     struct VFS_mount* next;             // Pointer to the next mount (if any)
-} mountpoint_t;
+} PACKED mountpoint_t;
 
 
 // File context for a file descriptor (each process gets its own list of file contexts)

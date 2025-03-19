@@ -52,7 +52,7 @@ static inline bool IsValidMBR(mbr_t* mbr){
 }
 
 // Looks for MBR partitions (if none, filesystem drivers will have to make their own partition)
-DRIVERSTATUS GetPartitionsFromMBR(user_device_t* disk);
+DRIVERSTATUS GetPartitionsFromMBR(device_t* disk);
 
 // Convert an MBR entry to a kernel partition struct
 partition_t* MakePartition(mbr_partition_entry_t* entry, device_t* parent);

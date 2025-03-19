@@ -112,14 +112,26 @@ int palloc(virtaddr_t virt, uint32_t flags){
 
     //printk("Allocating page at 0x%x\n", frame);
 
-    // Set the page table entry
-    physaddr_t table = currentPageDir[PD_INDEX(virt)] & 0xFFFFF000;
-    pde_t* pd_entry = (pde_t*)table;
-    if(*pd_entry & PDE_FLAG_PRESENT){
-        page_table_t* pt = (page_table_t*)((physaddr_t)pd_entry & 0xFFFFF000);
-        pt->pages[PT_INDEX(virt)] = (frame & 0xFFFFF000) | flags;
+    // Get the page directory index and page table index
+    uint32_t pd_idx = PD_INDEX(virt);
+    uint32_t pt_idx = PT_INDEX(virt);
 
-        asm volatile("invlpg (%0)" :: "r" (frame) : "memory");
+    //printk("Virtual address: 0x%x\n", virt);
+    //printk("PD Index: %d, PT Index: %d\n", pd_idx, pt_idx);
+
+    // Check if page directory entry is present
+    if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
+        // Get the page table physical address from the page directory entry
+        physaddr_t table_phys = currentPageDir[pd_idx] & 0xFFFFF000;
+        //printk("Table physical address: 0x%x\n", table_phys);
+        
+        // Access the page table
+        page_table_t* pt = (page_table_t*)table_phys;
+        
+        // Set the page table entry
+        pt->pages[pt_idx] = (frame & 0xFFFFF000) | flags;
+
+        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
 
         totalPages++;
 
@@ -128,10 +140,11 @@ int palloc(virtaddr_t virt, uint32_t flags){
         //printk("Allocated page at 0x%x\n", frame);
         //printk("Page virtual address: 0x%x\n", virt);
 
-        return 1;
+        return STANDARD_SUCCESS;
     }else{
         // Allocate a new page table...
-        return -1;
+        //printk("Page directory entry not present for virtual address 0x%x\n", virt);
+        return STANDARD_FAILURE;
     }
 }
 

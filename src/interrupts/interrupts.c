@@ -993,6 +993,10 @@ enum exception {
 
 static void ExceptionHandler(struct Registers *regs){
     cli
+    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
+    STOP
+
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
         // Exception was thrown by the kernel - cannot recover

@@ -217,12 +217,16 @@ void hfree(void* ptr){
 
 // Reallocate some memory to a new size
 MALLOC void* rehalloc(void* ptr, size_t newSize){
+    if(ptr == NULL){
+        return halloc(newSize);
+    }
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
         printk("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
         
         STOP
     }
+
     if(block->size >= newSize){
         // The new size is too small
         return ptr;

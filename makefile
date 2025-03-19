@@ -81,13 +81,14 @@ drive_image: create_dirs
 	cp $(BOOT_DIR)/grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o bin/main.iso isodir
 
-# Assemble Kernel Startup
+# Assemble Kernel Startup and a Test Program
 assemble: create_dirs
 	$(ASM) -fbin $(BOOT_DIR)/$(ASMFILE).asm -o $(BUILD_DIR)/$(ASMFILE).bin
 	$(ASM) -felf32 $(KERNEL_DIR)/kernel_start.asm -o $(BUILD_DIR)/kernel_start.o
 
 	$(ASM) -felf $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.o
-#$(ASM) -fbin $(PROG_DIR)/prgm.asm -o $(BUILD_DIR)/prgm.bin
+
+	$(ASM) -fbin $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.bin
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
@@ -102,7 +103,7 @@ qemu: create_dirs $(BIN_DIR)/$(BOOTDISK)
 addfiles: create_dirs
 	sync
 	sudo mount -o loop,rw bin/harddisk.vdi mnt
-#sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
+	sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
 	sync
 	sudo umount mnt
 

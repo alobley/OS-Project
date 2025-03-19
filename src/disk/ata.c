@@ -166,9 +166,15 @@ void WaitForIdle(uint16_t basePort){
 }
 
 void WaitForDrq(uint16_t basePort){
-    while(inb((StatusPort(basePort)) & FLG_DRQ));
+    while(!(inb((StatusPort(basePort))) & FLG_DRQ));
 }
 #pragma GCC pop_options
+
+void SoftwareReset(blkdev_t* blkdev){
+    // Software reset
+    outb(CmdPort(blkdev->basePort), CMD_SRST);
+    DiskDelay(blkdev->basePort);
+}
 
 void DetermineAddressing(disk_t* disk){
     // Default to CHS
@@ -177,7 +183,7 @@ void DetermineAddressing(disk_t* disk){
 
     if(disk->packet == false){
         // Disk is a hard drive or other NVRAM
-        disk->sectorSize = 512;                             // Unfortunately I have to assume this
+        disk->sectorSize = 512;                             // Unfortunately I have to assume this (better way?)
         if(disk->infoBuffer[83] & (1 << 10)){
             // LBA48 supported
             disk->addressing = LBA48;
@@ -438,10 +444,15 @@ DRIVERSTATUS FindDisk(uint8_t diskno, device_t* ataDevice, blkdev_t* ataBlkDev){
 // Next 16 bits are the sector count
 DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
     if(buffer == NULL || size == 0){
+        //printk("Invalid buffer or size\n");
         return DRIVER_FAILURE; // Invalid buffer or size
     }
-    lba offset = *((lba*)((uint8_t*)buffer));
-    uint16_t sectorCount = *((uint16_t*)((uint8_t*)buffer + 8));
+    uint64_t* buf = (uint64_t*)buffer;
+    lba offset = buf[0];
+    uint64_t sectorCount = buf[1];
+    //printk("%u\n", sectorCount);
+
+    //printk("Reading LBA: %lu, Sector Count: %u\n", offset, sectorCount);
 
     blkdev_t* blkdev = (blkdev_t*)this->deviceInfo;
     if(blkdev->slave){
@@ -455,6 +466,7 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
             outb(DriveSelect(blkdev->basePort), 0x50);
         }else{
             // Convert CHS to LBA...
+            //printk("CHS to LBA conversion not implemented yet\n");
             return DRIVER_FAILURE; // Not implemented yet
         }
     }else{
@@ -467,12 +479,14 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
             outb(DriveSelect(blkdev->basePort), 0x40);
         }else{
             // Convert CHS to LBA...
+            //printk("CHS to LBA conversion not implemented yet\n");
             return DRIVER_FAILURE; // Not implemented yet
         }
     }
     DiskDelay(blkdev->basePort);
 
     if(offset > blkdev->size){
+        //printk("Invalid offset\n");
         return DRIVER_FAILURE; // Invalid offset
     }
 
@@ -481,6 +495,8 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
     uint16_t* dataBuffer = (uint16_t*)buffer;
 
     if(size < blkdev->sectorSize * sectorCount){
+        //printk("%u\n", sectorCount);
+        //STOP
         return DRIVER_FAILURE; // Invalid size
     }
 
@@ -501,6 +517,11 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
             WaitForDrq(blkdev->basePort);
             for(size_t j = 0; j < 256; j++){
                 dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
+                if(inb(ErrorPort(blkdev->basePort)) != 0){
+                    //printk("Error reading from disk\n");
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE; // Error reading
+                }
             }
         }
 
@@ -516,9 +537,10 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
         outb(LbaHi(blkdev->basePort), (uint8_t)((offset >> 40) & 0xFF));
 
         // Send the low bytes
-        outb(SectorCount(blkdev->basePort), (uint8_t)((offset & 0xFF)));
-        outb(LbaLo(blkdev->basePort), (uint8_t)((offset >> 8) & 0xFF));
-        outb(LbaMid(blkdev->basePort), (uint8_t)((offset >> 16) & 0xFF));
+        outb(SectorCount(blkdev->basePort), (uint8_t)((sectorCount & 0xFF)));
+        outb(LbaLo(blkdev->basePort), (uint8_t)(offset & 0xFF));
+        outb(LbaMid(blkdev->basePort), (uint8_t)((offset >> 8) & 0xFF));
+        outb(LbaHi(blkdev->basePort), (uint8_t)((offset >> 16) & 0xFF));
 
         WaitForIdle(blkdev->basePort);
         outb(CmdPort(blkdev->basePort), COMMAND_READ_SECTORS_EXT);
@@ -534,6 +556,7 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
             }
 
             if(retries == 0){
+                SoftwareReset(blkdev);
                 return DRIVER_FAILURE; // Error reading
             }
         }
@@ -544,24 +567,26 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
             WaitForDrq(blkdev->basePort);
             for(size_t j = 0; j < 256; j++){
                 dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
+                if(inb(ErrorPort(blkdev->basePort)) != 0){
+                    //printk("Error reading from disk\n");
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE; // Error reading
+                }
             }
         }
     }else{
+        // CHS to LBA conversion not implemented yet
+        //printk("CHS to LBA conversion not implemented yet\n");
         return DRIVER_FAILURE; // Not implemented yet
     }
 
+    SoftwareReset(blkdev);
     return DRIVER_SUCCESS;
 }
 
 DRIVERSTATUS WriteSectors(device_t* this, void* buffer, size_t size){
     // Not implemented yet
     return DRIVER_FAILURE;
-}
-
-void SoftwareReset(blkdev_t* blkdev){
-    // Software reset
-    outb(CmdPort(blkdev->basePort), CMD_SRST);
-    DiskDelay(blkdev->basePort);
 }
 
 // Write sectors function...

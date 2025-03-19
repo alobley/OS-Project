@@ -5,6 +5,7 @@
 #include <keyboard.h>
 #include <stddef.h>
 #include <system.h>                             // Since this header is for drivers, this include can stay
+//#include <vfs.h>
 
 #define DEVICE_MAGIC 0xDEDEDEDE
 
@@ -132,6 +133,7 @@ typedef struct PACKED UUID {
 typedef struct Partition partition_t;
 typedef struct Filesystem filesystem_t;
 typedef struct Block_Device blkdev_t;
+typedef struct VFS_mount mountpoint_t;
 
 // Block device structure (will be defined as, for example, /dev/sda)
 typedef struct Block_Device {
@@ -160,13 +162,13 @@ typedef struct Partition {
     lba start;                                  // Starting LBA of the partition
     lba end;                                    // Ending LBA of the partition
     lba size;                                   // Size of the partition in sectors
-    const char* name;                           // Name of the partition
+    //const char* name;                         // Name of the partition
     const char* type;                           // Type of the partition in human-readable format
-    user_device_t* device;                      // Pointer to the block device
+    device_t* device;                           // Pointer to the block device
     blkdev_t* blkdev;                           // Pointer to the block device info
     uint8_t fsID;                               // MBR filesystem ID
     uuid_t uuid;                                // UUID of the partition (if GPT, otherwise 0)
-    //filesystem_t* filesystem;                   // Pointer to the filesystem (if any)
+    //filesystem_t* filesystem;                 // Pointer to the filesystem (if any)
     struct Partition* next;                     // Pointer to the next partition (if any)
     struct Partition* previous;                 // Pointer to the previous partition (if any)
 } partition_t;
@@ -175,22 +177,21 @@ typedef struct Partition {
 // This will have to be private and based on partitions and mountpoints
 typedef struct Filesystem {
     FS_TYPE fs;                                 // Filesystem type
-    lba start;                                  // Starting LBA of the filesystem
-    lba size;                                   // Size of the filesystem in sectors
     partition_t* partition;                     // Pointer to the partition this filesystem is on
     
     void* fsInfo;                               // Filesystem-specific information (i.e. superblock)
 
-    char* name;                                 // Name of the filesystem (i.e. ext4, ntfs, etc.)
-    char* mountPoint;                           // Mount point of the filesystem (i.e. /, /home, /usr, /mnt, etc.)
+    const char* name;                           // Name of the filesystem (i.e. ext4, ntfs, etc.)
+    char* volumeName;                           // Name of the volume
+    mountpoint_t* mountPoint;                   // Mount point of the filesystem (i.e. /, /home, /usr, /mnt, etc.)
 
     char* devName;                              // String that will be presented in /dev (i.e. sda1, sda2, etc.)
 
-    user_device_t* device;                      // Pointer to the userland device struct
+    device_t* device;                           // Pointer to the device struct
 
     // Mount/unmount should check the device for locks
-    DRIVERSTATUS (*mount)(filesystem_t* this, char* mountpoint);                           // Mount the filesystem
-    DRIVERSTATUS (*unmount)(filesystem_t* this);                                           // Unmount the filesystem
+    DRIVERSTATUS (*mount)(device_t* this, char* mountpoint);                           // Mount the filesystem
+    DRIVERSTATUS (*unmount)(device_t* this);                                           // Unmount the filesystem
 } filesystem_t;
 
 /*

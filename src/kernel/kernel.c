@@ -269,8 +269,9 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     memset(buffer, 0, 512);                                         // Clear the buffer
 
     // Get the sector to read from and the amount of sectors to read. These are stored in the buffer so that different commands can easily be sent to different devices.
-    *(uint64_t*)buffer = 0;
-    *(buffer + 8) = 1;
+    uint64_t* buf = (uint64_t*)buffer;
+    buf[0] = 0;                                                     // Set the LBA to read
+    buf[1] = 1;                                                     // Set the sector count to 1
 
     // Perform the read. Use a syscall instead of calling the driver directly to ensure this system call works
     do_syscall(SYS_DEVICE_READ, (uint32_t)ataDevice->id, (uint32_t)buffer, 512, 0, 0);
@@ -302,7 +303,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Note - MBR partitions are not present on all disks. If so, the filesystem driver will have to implement it itself
     while(ataDevice != NULL){
         // Get the partitions, if any, from this disk
-        result = GetPartitionsFromMBR(ataDevice->userDevice);
+        result = GetPartitionsFromMBR(ataDevice);
         if(result != DRIVER_SUCCESS){
             // If there were no partitions on the disk, print that and continue
             printk("Could not detect partitions.\n");
@@ -332,6 +333,13 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         // If the driver aquired the device, it is expected to have made a filesystem device
         if(fsDriver == NULL){
             printk("Driver not found for device %s\n", ataDevice->devName);
+        }else{
+            if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/mnt") == DRIVER_SUCCESS){
+                printk("Filesystem mounted successfully!\n");
+            }else{
+                printk("Failed to mount filesystem!\n");
+            }
+            //STOP
         }
 
         // Go to the next ATA device and repeat
@@ -351,6 +359,24 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Other final initialization steps...
 
     // Initialization complete - start the system
+
+    // Test reading a file
+    vfs_node_t* node = VfsFindNode("/mnt/PROGRAM.BIN")->parent;
+    if(node == NULL){
+        printk("Error reading file!\n");
+        STOP
+    }
+
+    //printk("Node address: 0x%x\n", node);
+
+    device_t* fs = node->mountPoint->device;
+    //printk("Mountpoint struct address: 0x%x\n", node->mountPoint);
+    if(fs == NULL){
+        printk("No device found!\n");
+        STOP
+    }
+
+    //fs->read(fs, "/mnt/PROGRAM.BIN", node->size);
 
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);

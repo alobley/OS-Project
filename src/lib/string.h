@@ -139,6 +139,18 @@ static inline char* strchr(const char* str, int value){
 }
 
 // Locate the last occurrence of a character in a string
+static inline char* strrchr(const char* str, int value){
+    const char* last = (char*)NULL;
+    while(*str){
+        if(*str == value){
+            last = str;
+        }
+        str++;
+    }
+    return (char*) last;
+}
+
+// Locate the last occurrence of a character in a string
 static inline size_t strcspn(const char* str1, const char* str2){
     size_t i = 0;
     while(str1[i]){
@@ -159,18 +171,6 @@ static inline char* strpbrk(const char* str1, const char* str2){
         str1++;
     }
     return (char*) NULL;
-}
-
-// Locate the last occurrence of a character in a string
-static inline char* strrchr(const char* str, int value){
-    const char* last = (char*)NULL;
-    while(*str){
-        if(*str == value){
-            last = str;
-        }
-        str++;
-    }
-    return (char*) last;
 }
 
 // Get the length of a string
@@ -244,6 +244,14 @@ static inline size_t strlen(const char* str){
         len++;
     }
     return len;
+}
+
+static inline char toupper(char chr){
+    if(chr >= 'a' && chr <= 'z'){
+        chr = chr - 32;
+    }
+
+    return chr;
 }
 
 char* strdup(const char* str);

@@ -7,7 +7,7 @@ lba ChsToLba(uint8_t head, uint8_t sector, uint16_t cylinder){
     return (cylinder * 255 * 63) + (head * 63) + (sector - 1);
 }
 
-DRIVERSTATUS GetPartitionsFromMBR(user_device_t* disk){
+DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
     if(disk == NULL){
         return DRIVER_FAILURE; // Invalid disk
     }
