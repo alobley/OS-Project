@@ -9,7 +9,15 @@
 #include <string.h>
 #include <multiboot.h>
 
+#define MAX_MEMORY_SIZE 0xFFFFFFFF
 #define PAGE_SIZE 4096
+
+typedef int PAGE_RESULT;
+#define NO_VALID_FRAME -1
+#define INVALID_FRAME -2
+#define PAGE_NOT_AQUIRED 1
+#define PAGE_AQUIRED 0
+#define PAGE_FREED 0
 
 typedef unsigned int virtaddr_t;
 typedef unsigned int physaddr_t;
@@ -45,13 +53,13 @@ typedef struct PACKED PageTable {
 
 void MapBitmap(uint32_t memSize, mmap_entry_t* mmap, size_t mmapLength /* In total entries */);
 
-int pfree(virtaddr_t virt);
-int user_pfree(virtaddr_t virt);                            // Specifically for drivers and/or user applications
+PAGE_RESULT pfree(virtaddr_t virt);
+PAGE_RESULT user_pfree(virtaddr_t virt);                            // Specifically for drivers and/or user applications
 
-int palloc(virtaddr_t virt, uint32_t flags);
+PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags);
 
 void ConstructPageDirectory(pde_t* pageDirectory, page_table_t* pageTables);
-int physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags);
+PAGE_RESULT physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags);
 
 void PageKernel(size_t memSize);
 

@@ -64,7 +64,7 @@ create_dirs:
 
 
 # Create boot disk image with custom bootloader
-boot_image: create_dirs
+boot_image: create_dirs assemble compile
 	dd if=/dev/zero of=$(BIN_DIR)/boot.img bs=512 count=2880
 	mkfs.fat -F 12 -R 11 $(BIN_DIR)/boot.img
 	sudo mount -o loop,rw $(BIN_DIR)/boot.img mnt
@@ -75,7 +75,7 @@ boot_image: create_dirs
 	dd if=$(BUILD_DIR)/stage1.bin of=$(BIN_DIR)/boot.img seek=1 conv=notrunc
 
 # Create Boot Disk Image with GRUB
-drive_image: create_dirs
+drive_image: create_dirs assemble compile
 	mkdir -p isodir/boot/grub
 	cp $(BUILD_DIR)/$(CFILE).bin isodir/boot/$(CFILE).bin
 	cp $(BOOT_DIR)/grub.cfg isodir/boot/grub/grub.cfg

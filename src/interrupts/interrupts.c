@@ -399,6 +399,7 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             // Page some low virtual address space and memcpy the program to it
+            // Pad an extra page at the end of the program just in case
             for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
                 if(palloc(0 + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
                     //printk("Error: failed to page memory for program\n");

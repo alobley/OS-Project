@@ -3,8 +3,12 @@
 #include <acpi.h>
 #include <system.h>
 
-#define TOTAL_PAGES (0xFFFFFFFF / PAGE_SIZE)    // 1048576 pages
-#define TOTAL_BITS (TOTAL_PAGES / 8)            // 131072 bytes
+
+// This isn't used yet, must learn how to implement higher-half kernel
+#define KERNEL_VIRTADDR 0xC0000000
+
+#define TOTAL_PAGES (MAX_MEMORY_SIZE / PAGE_SIZE)    // 1048576 pages
+#define TOTAL_BITS (TOTAL_PAGES / 8)                 // 131072 bytes
 
 size_t totalMemSize = 0;
 
@@ -103,11 +107,11 @@ physaddr_t FindValidFrame(){
 }
 
 // Allocate a page at the specified virtual address
-int palloc(virtaddr_t virt, uint32_t flags){
+PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags){
     physaddr_t frame = FindValidFrame();
     if(frame == INVALID_ADDRESS){
-        printk("KERNEL PANIC: Failed to find a valid frame for page allocation\n");
-        return -1;
+        printk("KERNEL ERROR: Failed to find a valid frame for page allocation\n");
+        return INVALID_FRAME; // No valid frame found
     }
 
     //printk("Allocating page at 0x%x\n", frame);
@@ -140,11 +144,11 @@ int palloc(virtaddr_t virt, uint32_t flags){
         //printk("Allocated page at 0x%x\n", frame);
         //printk("Page virtual address: 0x%x\n", virt);
 
-        return STANDARD_SUCCESS;
+        return PAGE_AQUIRED;
     }else{
         // Allocate a new page table...
         //printk("Page directory entry not present for virtual address 0x%x\n", virt);
-        return STANDARD_FAILURE;
+        return PAGE_NOT_AQUIRED;
     }
 }
 
@@ -152,9 +156,9 @@ extern uintptr_t heapEnd;
 
 // Free a page at the specified virtual address, avoiding kernel memory
 // Takes the virtual address so that the page can be freed regardless of the physical address (better for getting memory near the kernel)
-int user_pfree(virtaddr_t virt){
+PAGE_RESULT user_pfree(virtaddr_t virt){
     if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= heapEnd)){
-        return STANDARD_FAILURE; // Not page-aligned or requested address was inside the kernel
+        return INVALID_FRAME; // Not page-aligned or requested address was inside the kernel
     }
     uint32_t pd_idx = PD_INDEX(virt);
     uint32_t pt_idx = PT_INDEX(virt);
@@ -173,12 +177,12 @@ int user_pfree(virtaddr_t virt){
         asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
     }
 
-    return STANDARD_SUCCESS;
+    return PAGE_FREED;
 }
 
-int pfree(virtaddr_t virt){
+PAGE_RESULT pfree(virtaddr_t virt){
     if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= (uintptr_t)&__kernel_end)){
-        return STANDARD_FAILURE; // Not page-aligned or requested address was inside the kernel
+        return INVALID_FRAME; // Not page-aligned or requested address was inside the kernel
     }
     uint32_t pd_idx = PD_INDEX(virt);
     uint32_t pt_idx = PT_INDEX(virt);
@@ -197,11 +201,11 @@ int pfree(virtaddr_t virt){
         asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
     }
 
-    return STANDARD_SUCCESS;
+    return PAGE_FREED;
 }
 
 // Allocate a page at the specified physical and virtual address
-int physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags) {
+PAGE_RESULT physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags) {
     uint32_t pdi = PD_INDEX(virt);
     uint32_t pti = PT_INDEX(virt);
 

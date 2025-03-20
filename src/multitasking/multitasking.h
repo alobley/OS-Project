@@ -97,16 +97,6 @@ typedef struct {
 
 #define MUTEX_INIT (mutex_t){ false, NULL, { NULL, NULL } }
 
-// First come first serve semaphore (for very short wait times)
-// What should these be used for? I thought maybe files, but those have mutexes right now...
-// These are also not fully implemented (functions not defined)
-typedef struct {
-    volatile bool locked;                       // Spinlock lock state
-    pcb_t* owner;                               // Spinlock owner
-} spinlock_t;
-
-#define SPINLOCK_INIT (spinlock_t){ false, NULL }
-
 pcb_t* GetCurrentProcess(void);
 void SwitchProcess(bool kill, struct Registers* regs);
 void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs);
@@ -118,7 +108,5 @@ void SetCurrentProcess(pcb_t* process);
 MUTEXSTATUS PeekMutex(mutex_t* mutex);
 MUTEXSTATUS MutexLock(mutex_t* mutex);
 MUTEXSTATUS MutexUnlock(mutex_t* mutex);
-void SpinlockLock(spinlock_t* spinlock);
-void SpinlockUnlock(spinlock_t* spinlock);
 
 #endif // MULTITASKING_H

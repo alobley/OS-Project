@@ -92,8 +92,6 @@ void KernelOverrideUnlock(mutex_t* mutex){
     }
 }
 
-// Spinlock functions...
-
 extern pcb_t* kernelPCB; // Defined in kernel.c
 
 // Process control functions
