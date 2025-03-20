@@ -322,6 +322,25 @@ file_list_t* CreateFileList(){
     return list;
 }
 
+void VfsDetachMountpoint(vfs_node_t* mountNode) {
+    if (!mountNode || !mountNode->mountPoint) return;
+    
+    mountpoint_t* mp = mountNode->mountPoint;
+    
+    // Recursively detach mountpoint from all children
+    vfs_node_t* child = mountNode->firstChild;
+    while (child) {
+        child->mountPoint = NULL;
+        if (child->isDirectory) {
+            VfsDetachMountpoint(child);
+        }
+        child = child->next;
+    }
+    
+    // Don't free the mountpoint - let the filesystem driver do that
+    mountNode->mountPoint = NULL;
+}
+
 // Returns a file descriptor
 int AddFileToList(file_list_t* list, file_context_t* context){
     if(list == NULL || context == NULL){
@@ -437,6 +456,15 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
         return STANDARD_FAILURE;
     }
     status = VfsAddChild(root, mnt);
+    if(status != STANDARD_SUCCESS){
+        return STANDARD_FAILURE;
+    }
+
+    vfs_node_t* rootmnt = VfsMakeNode("root", true, false, false, true, 0, 0755, ROOT_UID, NULL);
+    if(rootmnt == NULL){
+        return STANDARD_FAILURE;
+    }
+    status = VfsAddChild(root, rootmnt);
     if(status != STANDARD_SUCCESS){
         return STANDARD_FAILURE;
     }

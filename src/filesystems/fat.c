@@ -347,110 +347,108 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
     return NULL; // Something went wrong
 }
 
-DRIVERSTATUS MountFS(device_t* this, char* mountPath){
+DRIVERSTATUS MountFS(device_t* this, char* mountPath) {
     filesystem_t* fs = (filesystem_t*)this->deviceInfo;
-    if(fs->fs != FS_FAT12 && fs->fs != FS_FAT16 && fs->fs != FS_FAT32){
+    if(fs->fs != FS_FAT12 && fs->fs != FS_FAT16 && fs->fs != FS_FAT32) {
         return DRIVER_INVALID_STATE; // Filesystem unsupported
     }
+    
     device_t* disk = fs->partition->device;
-    if(disk == NULL){
+    if(disk == NULL) {
         return DRIVER_INVALID_STATE; // No disk found
     }
+    
+    // Allocate mount point structure
     mountpoint_t* mountPoint = (mountpoint_t*)halloc(sizeof(mountpoint_t));
-    if(mountPoint == NULL){
+    if(mountPoint == NULL) {
         return DRIVER_OUT_OF_MEMORY; // Failed to allocate memory for mount point
     }
-
-    mountPoint->filesystem = fs;
+    memset(mountPoint, 0, sizeof(mountpoint_t));  // Zero-initialize the structure
+    
+    // Set up mount path
     mountPoint->mountPath = (char*)halloc(strlen(mountPath) + 1);
-    if(mountPoint->mountPath == NULL){
+    if(mountPoint->mountPath == NULL) {
         hfree(mountPoint);
         return DRIVER_OUT_OF_MEMORY; // Failed to allocate memory for mount path
     }
-    memset(mountPoint->mountPath, 0, strlen(mountPath) + 1);
     strcpy(mountPoint->mountPath, mountPath);
-
+    
+    // Find the VFS node for the mount path
     vfs_node_t* mountNode = VfsFindNode(mountPath);
-    if(mountNode == NULL){
+    if(mountNode == NULL) {
         hfree(mountPoint->mountPath);
         hfree(mountPoint);
         return DRIVER_INVALID_ARGUMENT; // Mount path does not exist
     }
-
-    // Read root directory of the disk
+    
+    // Verify needed structures
     blkdev_t* blkdev = (blkdev_t*)disk->deviceInfo;
-    if(blkdev == NULL){
+    if(blkdev == NULL) {
         hfree(mountPoint->mountPath);
         hfree(mountPoint);
         return DRIVER_INVALID_STATE; // No block device found
     }
-
+    
     bpb_t* bpb = (bpb_t*)fs->fsInfo;
-    if(bpb == NULL){
+    if(bpb == NULL) {
         hfree(mountPoint->mountPath);
         hfree(mountPoint);
         return DRIVER_INVALID_STATE; // Filesystem info not found
     }
-
-    size_t numEntries = 0;
-
+    
     // Implement just FAT32 for now
-    if(fs->fs == FS_FAT32){
-        // Test the cluster reading function
+    if(fs->fs == FS_FAT32) {
+        // Read the root directory
         uint64_t rootCluster = bpb->fat32.rootCluster;
         fat_entry_t* entries = FATReadCluster(this, rootCluster);
-        if(entries == NULL){
+        if(entries == NULL) {
             hfree(mountPoint->mountPath);
             hfree(mountPoint);
             return DRIVER_FAILURE;
         }
-        // Now we have the root directory in a single buffer, we can parse it and turn it into a VFS directory
-
-        // Get the VFS node representing the root directory and remove all its children
+        
+        // Clear existing children from the mount node
         vfs_node_t* rootVfsNode = mountNode->firstChild;
-        while(rootVfsNode != NULL){
+        while(rootVfsNode != NULL) {
             vfs_node_t* next = rootVfsNode->next;
             VfsRemoveNode(rootVfsNode);
             rootVfsNode = next;
         }
         mountNode->firstChild = NULL;
+        
+        // Count valid entries in the directory
+        size_t numEntries = 0;
         bool validEntry = true;
-
-        // Find the number of entries in the root directory
-        while(validEntry){
-            if(entries[numEntries].name[0] == FAT_ENTRY_FREE){
-                // No entry here
+        while(validEntry) {
+            if(entries[numEntries].name[0] == FAT_ENTRY_FREE) {
                 validEntry = false;
                 break;
-            }else if((uint8_t)entries[numEntries].name[0] == FAT_ENTRY_UNUSED){
-                // Deleted entry, we can ignore this
+            } else if((uint8_t)entries[numEntries].name[0] == FAT_ENTRY_UNUSED) {
                 numEntries++;
                 continue;
             }
+            
             numEntries++;
-            if(numEntries >= (bpb->sectorsPerCluster * bpb->bytesPerSector) / sizeof(fat_entry_t)){
-                // We've reached the end of the buffer
+            if(numEntries >= (bpb->sectorsPerCluster * bpb->bytesPerSector) / sizeof(fat_entry_t)) {
                 validEntry = false;
                 break;
             }
         }
-
+        
+        // Process each directory entry
         fat_entry_t* currentEntry = entries;
         size_t numRootEntries = 0;
-        for(size_t i = 0; i < numEntries; i++){
-            if(currentEntry->name[0] == FAT_ENTRY_FREE){
-                // No entry here
-                currentEntry++;
-                continue;
-            }else if((uint8_t)currentEntry->name[0] == FAT_ENTRY_UNUSED){
-                // Deleted entry, we can ignore this
+
+        mountNode->mountPoint = mountPoint;
+        
+        for(size_t j = 0; j < numEntries; j++) {
+            if(currentEntry->name[0] == FAT_ENTRY_FREE || 
+               (uint8_t)currentEntry->name[0] == FAT_ENTRY_UNUSED) {
                 currentEntry++;
                 continue;
             }
-
-            // We have a valid entry here
-            vfs_node_t* newNode = NULL;
-            // Convert the raw string to 8.3 format
+            
+            // Convert FAT name to readable format
             char fileName[13];
             memset(fileName, 0, 13);
             int i = 0;
@@ -473,61 +471,53 @@ DRIVERSTATUS MountFS(device_t* this, char* mountPath){
                 }
             }
             fileName[12] = '\0';
-
-            if(currentEntry->attributes & FAT_ATTR_DIRECTORY){
-                // This is a directory
-
-                // Will have to change or fix subdirectories somehow (I'd rather not read the entire filesystem into memory)
+            
+            // Create VFS node
+            vfs_node_t* newNode = NULL;
+            if(currentEntry->attributes & FAT_ATTR_DIRECTORY) {
                 newNode = VfsMakeNode(strdup(fileName), true, false, false, false, 0, 0755, ROOT_UID, NULL);
-                newNode->mountPoint = mountPoint;
-                //printk("Mountpoint struct address in driver: 0x%x\n", newNode->mountPoint);
-            }else{
-                // This is a file
+            } else {
                 newNode = VfsMakeNode(strdup(fileName), false, false, true, true, currentEntry->fileSize, 0644, ROOT_UID, NULL);
-                newNode->mountPoint = mountPoint;
-                //printk("Mountpoint struct address in driver: 0x%x\n", newNode->mountPoint);
             }
-            if(newNode == NULL){
+            
+            if(newNode == NULL) {
+                hfree(entries);
                 hfree(mountPoint->mountPath);
                 hfree(mountPoint);
-                return DRIVER_OUT_OF_MEMORY; // Failed to allocate memory for new VFS node
+                return DRIVER_OUT_OF_MEMORY;
             }
+            
+            // Set up the mountpoint relationship
             VfsAddChild(mountNode, newNode);
-
+            
             currentEntry++;
             numRootEntries++;
         }
-
+        
+        // Set up the mount node properties
         mountNode->size = numRootEntries;
         mountNode->isDirectory = true;
         mountNode->readOnly = false;
         mountNode->writeOnly = false;
         mountNode->isResizeable = false;
         mountNode->permissions = 0755;
+        //mountNode->mountPoint = mountPoint;
 
         mountPoint->filesystem = fs;
+        mountPoint->device = this;
+        
         fs->device = this;
         fs->mountPoint = mountPoint;
         fs->fsInfo = bpb;
-        fs->fs = FS_FAT32;
-        mountPoint->filesystem->device = this;
-        mountPoint->filesystem->mountPoint = mountPoint;
-        mountPoint->filesystem->fsInfo = bpb;
-        mountPoint->filesystem->fs = FS_FAT32;
-        mountPoint->filesystem->partition = fs->partition;
-        mountPoint->device = this;
-
-        mountNode->mountPoint = mountPoint;
-
-        //printk("Mountpoint address in driver: 0x%x\n", mountPoint);
-        //printk("Node address in driver: 0x%x\n", mountNode->mountPoint);
-        //printk("Successfully mounted filesystem at %s\n", mountPath);
+        
+        hfree(entries);  // Free the directory entries buffer we no longer need
+        
+        printk("Mountpoint address in driver: 0x%x\n", mountPoint);
         //STOP
-
-        // Now we have successfully mounted the filesystem!
         return DRIVER_SUCCESS;
-    }else{
-        //printk("Invalid filesystem!\n");
+    } else {
+        hfree(mountPoint->mountPath);
+        hfree(mountPoint);
         return DRIVER_NOT_SUPPORTED; // Not implemented yet
     }
 }

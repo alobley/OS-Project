@@ -2,8 +2,8 @@
 //#include <keyboard.h>
 #include <alloc.h>
 //#include <time.h>
-#include <multitasking.h>
-#include <paging.h>
+//#include <multitasking.h>
+//#include <paging.h>
 //#include <acpi.h>
 #include <string.h>
 #include <vfs.h>
@@ -200,87 +200,16 @@ void systeminfo(UNUSED char* cmd){
     }
 }
 
-void (*ProgramStart)(void) = NULL;
-
 void lex(char* cmd){
     char* path = cmd + 4;
     if(strlen(path) == 0 || strlen(cmd) < 4){
         printf("Usage: lex <path>\n");
         return;
     }
-    printf("Loading and executing file at %s\n", path);
 
-    pcb_t* currentProcess = GetCurrentProcess();
-    if(currentProcess == NULL){
-        printf("Error: failed to get current process\n");
-        return;
+    if(exec(path, NULL, NULL, 0) == STANDARD_FAILURE){
+        printf("Error: failed to execute file at %s\n", path);
     }
-
-    vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
-    if(current == NULL){
-        printf("Error: current directory does not exist\n");
-        return;
-    }
-
-    vfs_node_t* file = NULL;
-
-    char* fullPath = JoinPath(currentProcess->workingDirectory, path);
-    if(fullPath == NULL){
-        printf("Error: failed to join path\n");
-        return;
-    }
-
-    if(*path != '/'){
-        file = VfsFindNode(fullPath);
-        if(file == NULL){
-            printf("Error: file %s does not exist\n", path);
-            hfree(fullPath);
-            return;
-        }
-    }else{
-        file = VfsFindNode(path);
-        if(file == NULL){
-            printf("Error: file %s does not exist\n", path);
-            return;
-        }
-    }
-
-    // Force it to the correct spot for debugging purposes
-    file->mountPoint = (mountpoint_t*)0x687CCC;
-
-    if(file->mountPoint == NULL){
-        printf("Error: file %s doesn't seem to be mounted\n", path);
-        return;
-    }
-
-    //printf("File mountpoint address: 0x%x\n", file->mountPoint);
-
-    if(file->mountPoint->device == NULL){
-        printf("Error: file at %s seems to have an invalid filesystem device\n", path);
-        return;
-    }
-
-    if(file->mountPoint->device->read(file->mountPoint->device, fullPath, file->size) != DRIVER_SUCCESS){
-        printf("Error: failed to read file %s\n", path);
-        return;
-    }
-
-    // Page some low virtual address space and memcpy the program to it
-    for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
-        if(palloc(0 + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW) == STANDARD_FAILURE){
-            printf("Error: failed to page memory for program\n");
-            return;
-        }
-    }
-
-    hfree(fullPath);
-    memcpy(NULL, file->data, file->size);
-    hfree(file->data);                          // The file handler doesn't need the data anymore
-
-    //STOP
-
-    // Jump to the program
-    ProgramStart();
 }
 
 void ProcessCommand(char* cmd){
@@ -312,6 +241,8 @@ void ProcessCommand(char* cmd){
 }
 
 // Slowly but surely, this shell is leaning away from directly calling kernel functions and moving towards using system calls.
+// Most recent removal:
+// - Program loading and execution
 int shell(void){
     write(STDOUT_FILENO, ANSI_ESCAPE, strlen(ANSI_ESCAPE));
 

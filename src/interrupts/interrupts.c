@@ -8,6 +8,8 @@
 #include <tty.h>
 #include <acpi.h>
 
+void (*ProgramStart)(void) = NULL;
+
 #define NUM_ISRS 49
 
 extern void _isr0(struct Registers*);
@@ -317,7 +319,7 @@ HOT void syscall_handler(struct Registers *regs){
             // Return the PID of the new process to the parent
             // Return 0 to the child
             break;
-        case SYS_EXEC:
+        case SYS_EXEC:{
             // SYS_EXEC
             // EBX contains the pointer to the path of the executable
             // ECX contains the pointer to the arguments
@@ -326,7 +328,95 @@ HOT void syscall_handler(struct Registers *regs){
             // Execute a new process (replaces current process)
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
+
+            if(strlen((char*)regs->ebx) == 0){
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            char* path = (char*)regs->ebx;
+
+            pcb_t* currentProcess = GetCurrentProcess();
+            if(currentProcess == NULL){
+                //printk("Error: failed to get current process\n");
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
+            if(current == NULL){
+                //printk("Error: current directory does not exist\n");
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            vfs_node_t* file = NULL;
+
+            char* fullPath = JoinPath(currentProcess->workingDirectory, path);
+            if(fullPath == NULL){
+                //printk("Error: failed to join path\n");
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            //printf("Loading and executing file at %s\n", fullPath);
+
+            if(*path != '/'){
+                file = VfsFindNode(fullPath);
+                if(file == NULL){
+                    //printk("Error: file %s does not exist\n", path);
+                    hfree(fullPath);
+                    regs->eax = STANDARD_FAILURE;
+                    break;
+                }
+            }else{
+                file = VfsFindNode(path);
+                if(file == NULL){
+                    regs->eax = STANDARD_FAILURE;
+                    break;
+                }
+            }
+
+            if(file->mountPoint == NULL){
+                //printk("Error: file %s doesn't seem to be mounted\n", path);
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            //printk("File mountpoint address: 0x%x\n", file->mountPoint);
+
+            if(file->mountPoint->device == NULL){
+                //printk("Error: file at %s seems to have an invalid filesystem device\n", path);
+                //printk("Mountpoint address: 0x%x\n", file->mountPoint);
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            if(file->mountPoint->device->read(file->mountPoint->device, fullPath, file->size) != DRIVER_SUCCESS){
+                //printk("Error: failed to read file %s\n", path);
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            // Page some low virtual address space and memcpy the program to it
+            for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
+                if(palloc(0 + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
+                    //printk("Error: failed to page memory for program\n");
+                    regs->eax = STANDARD_FAILURE;
+                    break;
+                }
+            }
+
+            hfree(fullPath);
+            memcpy(NULL, file->data, file->size);
+            hfree(file->data);                          // The file handler doesn't need the data anymore
+
+            //STOP
+
+            // Jump to the program
+            ProgramStart();
             break;
+        }
         case SYS_WAIT_PID:
             // SYS_WAIT
             // EBX contains the PID to wait for
@@ -993,9 +1083,9 @@ enum exception {
 
 static void ExceptionHandler(struct Registers *regs){
     cli
-    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    regdump(regs);
-    STOP
+    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    //regdump(regs);
+    //STOP
 
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){

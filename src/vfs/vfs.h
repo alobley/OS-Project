@@ -41,13 +41,13 @@ typedef struct VFS_Node {
     mutex_t lock;                       // Mutex for thread safety
 } vfs_node_t;
 
-typedef struct PACKED VFS_mount {
+typedef struct VFS_mount {
     filesystem_t* filesystem;           // Pointer to the filesystem struct
     device_t* device;                   // Pointer to the device struct
     char* mountPath;                    // Path to the mount point of the filesystem (i.e. /, /home, /usr, /mnt, etc.)
     vfs_node_t* mountPoint;             // Pointer to the mount point in the VFS
     struct VFS_mount* next;             // Pointer to the next mount (if any)
-} PACKED mountpoint_t;
+} mountpoint_t;
 
 
 // File context for a file descriptor (each process gets its own list of file contexts)
@@ -96,5 +96,7 @@ file_list_node_t* CreateListNode(file_context_t* context);
 int AddFileToList(file_list_t* list, file_context_t* context);
 void DestroyFileList(file_list_t* list);
 file_context_t* FindFile(file_list_t* list, int fd);
+
+void VfsDetachMountpoint(vfs_node_t* mountNode);
 
 #endif

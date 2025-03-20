@@ -59,22 +59,10 @@ multiboot_info_t mbootCopy;
  * - Implement initrd (optional)
  * - Create a driver to be loaded as a module
  * - Improve the memory manager
- * - Complete the VFS and add full disk drivers  (in progress)
- * - Implement file then program loading
+ * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
+ * - Implement file then program loading (done)
  * - Implement a proper task scheduler
- * - Read up on UNIX philosophy and more closely follow it
-*/
-
-
-/* Driver design considerations:
- * - Each driver should be a loadable module
- * - Drivers are just regular executables. When they need to interact with their device, the kernel must context switch to them.
- * - Calling the function pointers from drivers directly is NOT RECOMMENDED because synchronization is done through the system calls (process switching to drivers messes with locks)
- * 
- * After drivers, when in userland:
- * - Create a standard system for interaction with the kernel (mostly done witch system call wrappers)
- * - Create a libc
- * - Create a shell
+ * - Read up on UNIX philosophy and more closely follow it (in progress)
 */
 
 // The kernel's process control block
@@ -324,6 +312,10 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Initialize the FAT driver
     InitializeFAT();
+
+    // Initialization - fourth stage
+
+
     // Assign the FAT driver by probing the disks
     ataDevice = GetDeviceFromVfs("/dev/pat0");
     
@@ -334,12 +326,12 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         if(fsDriver == NULL){
             printk("Driver not found for device %s\n", ataDevice->devName);
         }else{
-            if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/mnt") == DRIVER_SUCCESS){
+            // Just mount any found filesystem for now (this will always mount the LAST valid one)
+            if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/root") == DRIVER_SUCCESS){
                 printk("Filesystem mounted successfully!\n");
             }else{
                 printk("Failed to mount filesystem!\n");
             }
-            //STOP
         }
 
         // Go to the next ATA device and repeat
@@ -352,31 +344,11 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         }
     }
 
-    // Initialization - fourth stage
-
     // Load a users file and create the users...
 
     // Other final initialization steps...
 
     // Initialization complete - start the system
-
-    // Test reading a file
-    vfs_node_t* node = VfsFindNode("/mnt/PROGRAM.BIN")->parent;
-    if(node == NULL){
-        printk("Error reading file!\n");
-        STOP
-    }
-
-    //printk("Node address: 0x%x\n", node);
-
-    device_t* fs = node->mountPoint->device;
-    //printk("Mountpoint struct address: 0x%x\n", node->mountPoint);
-    if(fs == NULL){
-        printk("No device found!\n");
-        STOP
-    }
-
-    //fs->read(fs, "/mnt/PROGRAM.BIN", node->size);
 
     // Create a dummy PCB for the shell
     pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
