@@ -2,6 +2,8 @@ ORG 0
 BITS 32
 CPU 686
 
+; Simple hello world program to test my OS's ABI
+
 section .text
 global _start
 
