@@ -48,7 +48,7 @@ typedef struct Process_Control_Block {
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
     char* name;                                 // Process name
-    int (*EntryPoint)(void);                    // Entry point
+    void (*EntryPoint)(void);                   // Entry point
 
     // Environment/Args
     char* env;                                  // Environment variables
@@ -62,9 +62,11 @@ typedef struct Process_Control_Block {
     physaddr_t pageDirectory;                   // Page directory location
     uintptr_t stackBase;                        // Stack base
     uintptr_t esp;                              // Stack pointer (ESP)
+    uintptr_t ebp;                              // Base pointer (EBP)
     uintptr_t stackTop;                         // Stack top
     uintptr_t heapBase;                         // Heap base
     uintptr_t heapEnd;                          // Heap end
+    uintptr_t eip;                              // Instruction pointer (EIP)
 
     // Scheduler information
     uint64_t timeSlice;                         // Time slice (for the scheduler)
@@ -101,7 +103,7 @@ pcb_t* GetCurrentProcess(void);
 void SwitchProcess(bool kill, struct Registers* regs);
 void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs);
 void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent);
+pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent);
 void Scheduler(void);
 void SetCurrentProcess(pcb_t* process);
 

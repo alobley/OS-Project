@@ -592,6 +592,8 @@ DRIVERSTATUS ReadFile(device_t* this, void* buffer, size_t size){
             return DRIVER_FAILURE; // Failed to read cluster
         }
         // Read for the file in the root directory
+
+        //printk("Reading file %s...\n", (char*)buffer);
         
         // Convert the file name into uppercase and into 8.3 format
         char upperFileName[12];
@@ -619,6 +621,8 @@ DRIVERSTATUS ReadFile(device_t* this, void* buffer, size_t size){
         hfree(newName);
         upperFileName[11] = '\0';
         bool found = false;
+
+        //printk("Searching for file %s...\n", upperFileName);
 
         size_t currentEntry = 0;
         while(!found){

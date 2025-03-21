@@ -207,9 +207,8 @@ void lex(char* cmd){
         return;
     }
 
-    if(exec(path, NULL, NULL, 0) == STANDARD_FAILURE){
-        printf("Error: failed to execute file at %s\n", path);
-    }
+    int result = exec(path, NULL, NULL, 0);
+    printf("Program exited with code %d\n", result);
 }
 
 void ProcessCommand(char* cmd){

@@ -301,15 +301,77 @@ HOT void syscall_handler(struct Registers *regs){
             regs->eax = FILE_READ_SUCCESS;
             break;
         }
-        case SYS_EXIT:
+        case SYS_EXIT: {
             // SYS_EXIT
             // EBX contains the exit code
             // Exit a process
 
-            // Tell thhe parent process that the child has exited
+            // Tell the parent process that the child has exited
             // Perform a context switch and destroy the process
 
+            pcb_t* currentProcess = GetCurrentProcess();
+
+            pcb_t* parentProcess = currentProcess->parent;
+            
+            if(parentProcess == NULL){
+                // Just panic for now, add better handling later
+                printk("KERNEL PANIC: NO PARENT PROCESS!\n");
+                regdump(regs);
+                STOP
+            }
+
+            //printk("Process %s (PID: %d) exited with code %d\n", currentProcess->name, currentProcess->pid, regs->ebx);
+
+            //printk("ESP of the process we are switching to: 0x%x\n", parentProcess->esp);
+
+            SetCurrentProcess(parentProcess);
+
+            DestroyProcess(currentProcess);
+
+            struct Registers* parentRegs = (struct Registers*)parentProcess->esp;
+    
+            // Set the exit code as the return value in parent's EAX
+            parentRegs->eax = regs->ebx;
+            
+            // Copy the parent's saved context back to our register structure
+            // that will be used by IsrCommon for the iret
+            *regs = *parentRegs;
+
+
+            // Switch to the parent process (it will iret to it since a context switch is an interrupt and we switched to its stack)
+
+            asm volatile("mov %0, %%esp" : : "r"(parentProcess->esp) : "memory");
+            asm volatile("mov %0, %%ebp" : : "r"(parentProcess->ebp) : "memory");
+
+            //int ebx = regs->ebx;
+            //asm volatile("mov %0, %%eax" : : "r"(ebx));
+
+            //regs = (struct Registers*)parentProcess->esp;
+            //asm volatile("mov %%eax, %0" : "=r"(regs->eax));
+
+            //STOP
+
+            //printk("New EAX: 0x%x\n", regs->eax);
+            //printk("New EBX: 0x%x\n", regs->ebx);
+            //printk("New ECX: 0x%x\n", regs->ecx);
+            //printk("New EDX: 0x%x\n", regs->edx);
+            //printk("New ESI: 0x%x\n", regs->esi);
+            //printk("New EDI: 0x%x\n", regs->edi);
+            //printk("New EBP: 0x%x\n", regs->ebp);
+            //printk("New ESP: 0x%x\n", regs->esp);
+            //printk("Jumping to: 0x%x\n", GetCurrentProcess()->eip);
+            //STOP
+
+            //uintptr_t returnAddress = GetCurrentProcess()->eip;
+            
+            //asm volatile("jmp *%0" : : "r"(GetCurrentProcess()->eip));
+
+            //return;
+
+            //UNREACHABLE
+
             break;
+        }
         case SYS_FORK:
             // SYS_FORK
             // Fork a process
@@ -398,6 +460,7 @@ HOT void syscall_handler(struct Registers *regs){
                 break;
             }
 
+            virtaddr_t programEnd = 0;
             // Page some low virtual address space and memcpy the program to it
             // Pad an extra page at the end of the program just in case
             for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
@@ -406,7 +469,20 @@ HOT void syscall_handler(struct Registers *regs){
                     regs->eax = STANDARD_FAILURE;
                     break;
                 }
+                programEnd += PAGE_SIZE;
             }
+
+            memset((void*)0, 0, programEnd);
+
+            //printk("Old EAX: 0x%x\n", regs->eax);
+            //printk("Old EBX: 0x%x\n", regs->ebx);
+            //printk("Old ECX: 0x%x\n", regs->ecx);
+            //printk("Old EDX: 0x%x\n", regs->edx);
+            //printk("Old ESI: 0x%x\n", regs->esi);
+            //printk("Old EDI: 0x%x\n", regs->edi);
+            //printk("Old EBP: 0x%x\n", regs->ebp);
+            //printk("Old ESP: 0x%x\n", regs->esp);
+            //printk("Old EIP: 0x%x\n", regs->eip);
 
             hfree(fullPath);
             memcpy(NULL, file->data, file->size);
@@ -414,8 +490,44 @@ HOT void syscall_handler(struct Registers *regs){
 
             //STOP
 
-            // Jump to the program
-            ProgramStart();
+            // Create the PCB for the program
+
+            pcb_t* newProcess = CreateProcess(ProgramStart, file->name, GetFullPath(file), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
+            if(newProcess == NULL){
+                printk("Error: failed to create new process\n");
+                regs->eax = STANDARD_FAILURE;
+                break;
+            }
+
+            // Allocate 2 pages for the program's stack
+            for(size_t i = 0; i < 2; i++){
+                if(palloc(programEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
+                    printk("Error: failed to page memory for program stack\n");
+                    regs->eax = STANDARD_FAILURE;
+                    break;
+                }
+            }
+            memset((void*)(programEnd), 0, PAGE_SIZE);
+
+            // Set up the new process's stack
+            newProcess->stackBase = programEnd;
+            newProcess->stackTop = programEnd + (2 * PAGE_SIZE);
+
+            currentProcess->esp = (uintptr_t)regs;
+            currentProcess->eip = (uintptr_t)__builtin_return_address(0);
+            asm volatile("mov %%ebp, %0" : "=r"(currentProcess->ebp) : : "memory");
+
+            //printk("Return address of the current process: 0x%x\n", currentProcess->eip);
+
+            // Switch to the new process
+            asm volatile("mov %0, %%esp" : : "r"(newProcess->stackTop));
+            newProcess->esp = newProcess->stackTop;
+            //printk("Return address: 0x%x\n", GetCurrentProcess()->eip);
+            SetCurrentProcess(newProcess);
+
+            // Jump to the entry point
+            asm volatile("jmp *%0" : : "r"(newProcess->EntryPoint));
+            UNREACHABLE
             break;
         }
         case SYS_WAIT_PID:
@@ -1084,9 +1196,9 @@ enum exception {
 
 static void ExceptionHandler(struct Registers *regs){
     cli
-    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    //regdump(regs);
-    //STOP
+    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
+    STOP
 
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){

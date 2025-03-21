@@ -42,10 +42,13 @@ size_t memSize = 0;                     // Local variable for total memory size 
 size_t memSizeMiB = 0;                  // Local variable for total memory size in 1024-based megabytes (Do they have a special name?)
 
 // Reference the built-in shell
-extern int shell(void);
+extern void shell(void);
 
-// The current version of the kernel (major, minor, patch) - 0.5.0
-version_t kernelVersion = {0, 6, 0};
+// The current version of the kernel (major, minor, patch)
+//
+// This is my reminder to update the GRUB menu entry when I update this
+//
+version_t kernelVersion = {0, 8, 0};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;
@@ -55,12 +58,12 @@ multiboot_info_t mbootCopy;
 
 /* Short-Term TODO:
  * - Implement a proper command parser in KISh (done)
- * - Finish up the driver/module implementation (in progress)
+ * - Finish up the driver/module implementation (done)
+ * - Implement file then program loading (done)
+ * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
  * - Implement initrd (optional)
  * - Create a driver to be loaded as a module
  * - Improve the memory manager
- * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
- * - Implement file then program loading (done)
  * - Implement a proper task scheduler
  * - Read up on UNIX philosophy and more closely follow it (in progress)
 */
@@ -256,20 +259,30 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     }
     memset(buffer, 0, 512);                                         // Clear the buffer
 
+    // Search for non-removable devices
+    while(ataDevice != NULL){
+        if(ataDevice->type == DEVICE_TYPE_BLOCK && ((blkdev_t*)ataDevice->deviceInfo)->removable == false){
+            break;
+        }
+        ataDevice = ataDevice->next;
+    }
+
+    if(ataDevice == NULL){
+        printk("No ATA device found!\n");
+        STOP
+    }
+    if(((blkdev_t*)ataDevice->deviceInfo)->removable){
+        printk("ATA device is removable!\n");
+        STOP
+    }
+    printk("ATA device found: %s\n", ataDevice->devName);
+
     // Get the sector to read from and the amount of sectors to read. These are stored in the buffer so that different commands can easily be sent to different devices.
     uint64_t* buf = (uint64_t*)buffer;
     buf[0] = 0;                                                     // Set the LBA to read
     buf[1] = 1;                                                     // Set the sector count to 1
-
-    // Perform the read. Use a syscall instead of calling the driver directly to ensure this system call works
-    do_syscall(SYS_DEVICE_READ, (uint32_t)ataDevice->id, (uint32_t)buffer, 512, 0, 0);
-
-    // Get the result of the system call
-    asm volatile("mov %%eax, %0" : "=r" (result));
-
-    // Check if the read was successful
-    if(result != DRIVER_SUCCESS){
-        printk("Failed to read from disk! Error code: %d\n", result);
+    if(device_read(ataDevice->id, (void*)buffer, ((blkdev_t*)ataDevice->deviceInfo)->sectorSize) != DRIVER_SUCCESS){
+        printk("Failed to read from disk!\n");
         STOP
     }
 
@@ -284,6 +297,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         printk("This disk may not be MBR!\n");
     }
 
+    //STOP
+
     // Free the buffer after use
     hfree(buffer);
 
@@ -295,6 +310,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         if(result != DRIVER_SUCCESS){
             // If there were no partitions on the disk, print that and continue
             printk("Could not detect partitions.\n");
+            //STOP
         }else{
             // If the partitions were successfully retrieved, they were added to the devices in the device tree
             printk("Partitions successfully retrieved from MBR!\n");
@@ -310,8 +326,13 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         }
     }
 
+    printk("Initializing FAT driver...\n");
+    //STOP
+
     // Initialize the FAT driver
     InitializeFAT();
+
+    printk("FAT driver initialized successfully!\n");
 
     // Initialization - fourth stage
 
@@ -319,14 +340,15 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Assign the FAT driver by probing the disks
     ataDevice = GetDeviceFromVfs("/dev/pat0");
     
+    printk("Mounting filesystems...\n");
     // Probe the drivers to find filesystem support for the disks
     while(ataDevice != NULL){
         driver_t* fsDriver = FindDriver(ataDevice, DEVICE_TYPE_FILESYSTEM);
         // If the driver aquired the device, it is expected to have made a filesystem device
         if(fsDriver == NULL){
             printk("Driver not found for device %s\n", ataDevice->devName);
-        }else{
-            // Just mount any found filesystem for now (this will always mount the LAST valid one)
+        }else if(((blkdev_t*)ataDevice->deviceInfo)->removable == false){
+            // Just mount any found non-removable filesystem for now (this will always mount the LAST valid one)
             if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/root") == DRIVER_SUCCESS){
                 printk("Filesystem mounted successfully!\n");
             }else{
@@ -356,12 +378,14 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     kernelPCB->firstChild = shellPCB;
 
     SetCurrentProcess(shellPCB);
+
+    //STOP
     
     // Jump to the built-in debug shell
     // TODO:
     // - Load the shell from the filesystem
     // - Make the shell a userland application
-    result = shellPCB->EntryPoint();
+    shellPCB->EntryPoint();
 
     DestroyProcess(shellPCB);
     SetCurrentProcess(kernelPCB);

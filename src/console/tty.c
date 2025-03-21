@@ -226,6 +226,8 @@ void InitializeTTY(void){
     vfs_node_t* stderr = VfsFindNode("/dev/stderr");
     stderr->size = activeTTY->size;
     stderr->data = activeTTY;
+
+    printk("TTY subsystem initialized successfully!\n");
 }
 
 tty_t* GetActiveTTY(void){

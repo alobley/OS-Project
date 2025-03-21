@@ -96,7 +96,7 @@ extern pcb_t* kernelPCB; // Defined in kernel.c
 
 // Process control functions
 // TODO: implement process paging, stack, and heap allocation. For now, we'll just create a process with a NULL stack and heap.
-pcb_t* CreateProcess(int (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent){
+pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent){
     pcb_t* process = (pcb_t*)halloc(sizeof(pcb_t));
     if(process == NULL){
         return NULL; // Failed to allocate memory for process

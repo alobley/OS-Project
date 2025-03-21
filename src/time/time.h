@@ -31,5 +31,6 @@ void SetTimer(int hz);
 void busysleep(uint64_t ms);
 uint64_t GetTicks();
 void SetTime();
+uint64_t GetTicks();
 
 #endif

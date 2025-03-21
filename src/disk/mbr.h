@@ -37,8 +37,8 @@ typedef struct PACKED {
     uint8_t endHead;              // Ending head
     uint16_t endSector : 6;       // Ending sector (bits 0-5)
     uint16_t endCylinder : 10;    // Ending cylinder (bits 6-15)
-    uint32_t startLBA;            // Starting LBA (Logical Block Addressing)
-    uint32_t sizeLBA;             // Size of the partition in LBA (Logical Block Addressing)
+    uint32_t startLBA;            // Start of the partition
+    uint32_t sizeLBA;             // Size of the partition
 } PACKED mbr_partition_entry_t;
 
 typedef struct PACKED {
