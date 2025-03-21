@@ -305,14 +305,13 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_EXIT
             // EBX contains the exit code
             // Exit a process
-
             // Tell the parent process that the child has exited
             // Perform a context switch and destroy the process
 
             pcb_t* currentProcess = GetCurrentProcess();
 
+            // Get the parent process
             pcb_t* parentProcess = currentProcess->parent;
-            
             if(parentProcess == NULL){
                 // Just panic for now, add better handling later
                 printk("KERNEL PANIC: NO PARENT PROCESS!\n");
@@ -320,14 +319,13 @@ HOT void syscall_handler(struct Registers *regs){
                 STOP
             }
 
-            //printk("Process %s (PID: %d) exited with code %d\n", currentProcess->name, currentProcess->pid, regs->ebx);
-
-            //printk("ESP of the process we are switching to: 0x%x\n", parentProcess->esp);
-
+            // Switch to the parent process
             SetCurrentProcess(parentProcess);
 
+            // Destroy the calling process
             DestroyProcess(currentProcess);
 
+            // Get the registers of the parent process (should be located at the parent's ESP)
             struct Registers* parentRegs = (struct Registers*)parentProcess->esp;
     
             // Set the exit code as the return value in parent's EAX
@@ -338,37 +336,9 @@ HOT void syscall_handler(struct Registers *regs){
             *regs = *parentRegs;
 
 
-            // Switch to the parent process (it will iret to it since a context switch is an interrupt and we switched to its stack)
-
+            // Set ESP and EBP to those of the parent process
             asm volatile("mov %0, %%esp" : : "r"(parentProcess->esp) : "memory");
             asm volatile("mov %0, %%ebp" : : "r"(parentProcess->ebp) : "memory");
-
-            //int ebx = regs->ebx;
-            //asm volatile("mov %0, %%eax" : : "r"(ebx));
-
-            //regs = (struct Registers*)parentProcess->esp;
-            //asm volatile("mov %%eax, %0" : "=r"(regs->eax));
-
-            //STOP
-
-            //printk("New EAX: 0x%x\n", regs->eax);
-            //printk("New EBX: 0x%x\n", regs->ebx);
-            //printk("New ECX: 0x%x\n", regs->ecx);
-            //printk("New EDX: 0x%x\n", regs->edx);
-            //printk("New ESI: 0x%x\n", regs->esi);
-            //printk("New EDI: 0x%x\n", regs->edi);
-            //printk("New EBP: 0x%x\n", regs->ebp);
-            //printk("New ESP: 0x%x\n", regs->esp);
-            //printk("Jumping to: 0x%x\n", GetCurrentProcess()->eip);
-            //STOP
-
-            //uintptr_t returnAddress = GetCurrentProcess()->eip;
-            
-            //asm volatile("jmp *%0" : : "r"(GetCurrentProcess()->eip));
-
-            //return;
-
-            //UNREACHABLE
 
             break;
         }
@@ -392,7 +362,7 @@ HOT void syscall_handler(struct Registers *regs){
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
 
             if(strlen((char*)regs->ebx) == 0){
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
 
@@ -401,14 +371,14 @@ HOT void syscall_handler(struct Registers *regs){
             pcb_t* currentProcess = GetCurrentProcess();
             if(currentProcess == NULL){
                 //printk("Error: failed to get current process\n");
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
 
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
                 //printk("Error: current directory does not exist\n");
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
 
@@ -417,7 +387,7 @@ HOT void syscall_handler(struct Registers *regs){
             char* fullPath = JoinPath(currentProcess->workingDirectory, path);
             if(fullPath == NULL){
                 //printk("Error: failed to join path\n");
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
 
@@ -428,37 +398,40 @@ HOT void syscall_handler(struct Registers *regs){
                 if(file == NULL){
                     //printk("Error: file %s does not exist\n", path);
                     hfree(fullPath);
-                    regs->eax = STANDARD_FAILURE;
+                    regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
                 }
             }else{
                 file = VfsFindNode(path);
                 if(file == NULL){
-                    regs->eax = STANDARD_FAILURE;
+                    regs->eax = SYSCALL_TASKING_FAILURE;
+                    hfree(fullPath);
                     break;
                 }
             }
 
             if(file->mountPoint == NULL){
                 //printk("Error: file %s doesn't seem to be mounted\n", path);
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(fullPath);
                 break;
             }
-
-            //printk("File mountpoint address: 0x%x\n", file->mountPoint);
 
             if(file->mountPoint->device == NULL){
                 //printk("Error: file at %s seems to have an invalid filesystem device\n", path);
                 //printk("Mountpoint address: 0x%x\n", file->mountPoint);
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(fullPath);
                 break;
             }
 
             if(file->mountPoint->device->read(file->mountPoint->device, fullPath, file->size) != DRIVER_SUCCESS){
                 //printk("Error: failed to read file %s\n", path);
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(fullPath);
                 break;
             }
+            hfree(fullPath);
 
             virtaddr_t programEnd = 0;
             // Page some low virtual address space and memcpy the program to it
@@ -466,25 +439,15 @@ HOT void syscall_handler(struct Registers *regs){
             for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
                 if(palloc(0 + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
                     //printk("Error: failed to page memory for program\n");
-                    regs->eax = STANDARD_FAILURE;
+                    regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
                 }
                 programEnd += PAGE_SIZE;
             }
 
+            // Clear the program's memory
             memset((void*)0, 0, programEnd);
 
-            //printk("Old EAX: 0x%x\n", regs->eax);
-            //printk("Old EBX: 0x%x\n", regs->ebx);
-            //printk("Old ECX: 0x%x\n", regs->ecx);
-            //printk("Old EDX: 0x%x\n", regs->edx);
-            //printk("Old ESI: 0x%x\n", regs->esi);
-            //printk("Old EDI: 0x%x\n", regs->edi);
-            //printk("Old EBP: 0x%x\n", regs->ebp);
-            //printk("Old ESP: 0x%x\n", regs->esp);
-            //printk("Old EIP: 0x%x\n", regs->eip);
-
-            hfree(fullPath);
             memcpy(NULL, file->data, file->size);
             hfree(file->data);                          // The file handler doesn't need the data anymore
 
@@ -492,18 +455,19 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Create the PCB for the program
 
-            pcb_t* newProcess = CreateProcess(ProgramStart, file->name, GetFullPath(file), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
+
+            pcb_t* newProcess = CreateProcess(ProgramStart, file->name, strdup(GetCurrentProcess()->workingDirectory), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
             if(newProcess == NULL){
                 printk("Error: failed to create new process\n");
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
 
-            // Allocate 2 pages for the program's stack
+            // Allocate 2 pages (8KB) for the program's stack
             for(size_t i = 0; i < 2; i++){
                 if(palloc(programEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
                     printk("Error: failed to page memory for program stack\n");
-                    regs->eax = STANDARD_FAILURE;
+                    regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
                 }
             }
@@ -528,7 +492,6 @@ HOT void syscall_handler(struct Registers *regs){
             // Jump to the entry point
             asm volatile("jmp *%0" : : "r"(newProcess->EntryPoint));
             UNREACHABLE
-            break;
         }
         case SYS_WAIT_PID:
             // SYS_WAIT
@@ -1196,9 +1159,10 @@ enum exception {
 
 static void ExceptionHandler(struct Registers *regs){
     cli
-    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    regdump(regs);
-    STOP
+    // Uncomment this when debugging system calls
+    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    //regdump(regs);
+    //STOP
 
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
@@ -1210,16 +1174,12 @@ static void ExceptionHandler(struct Registers *regs){
     switch(regs->int_no){
         case PAGE_FAULT:{
             // Gracefully handle a page fault
-            printk("Segmentation fault\n", current->pid);
-            regdump(regs);
-            SwitchProcess(true, regs);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_STACK_FAULT:{
             // Gracefully handle a stack fault (likely a stack overflow)
-            printk("Stack fault\n");
-            regdump(regs);
-            SwitchProcess(true, regs);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         // Other exceptions thrown by user applications...

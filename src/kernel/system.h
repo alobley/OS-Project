@@ -23,6 +23,8 @@
 #define SYSCALL_INVALID_ARGUMENT -3
 #define SYSCALL_NOT_FOUND -4
 #define SYSCALL_OUT_OF_MEMORY -5
+#define SYSCALL_TASKING_FAILURE -999              // Specifically for syscalls like exec
+#define SYSCALL_FAULT_DETECTED -1000
 
 typedef struct Date_Time {
     unsigned char second;

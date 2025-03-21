@@ -48,7 +48,7 @@ extern void shell(void);
 //
 // This is my reminder to update the GRUB menu entry when I update this
 //
-version_t kernelVersion = {0, 8, 0};
+version_t kernelVersion = {0, 8, 1};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;

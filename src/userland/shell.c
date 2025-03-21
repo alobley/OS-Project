@@ -62,7 +62,6 @@ void help(UNUSED char* cmd){
     printf("pwd: prints the current working directory\n");
     printf("ls: lists the files in the current directory\n");
     printf("cd: changes the current directory\n");
-    printf("lex: loads and executes a file\n");
     printf("shutdown: shuts down the system\n");
     printf("sysinfo: prints system information\n");
 }
@@ -200,17 +199,6 @@ void systeminfo(UNUSED char* cmd){
     }
 }
 
-void lex(char* cmd){
-    char* path = cmd + 4;
-    if(strlen(path) == 0 || strlen(cmd) < 4){
-        printf("Usage: lex <path>\n");
-        return;
-    }
-
-    int result = exec(path, NULL, NULL, 0);
-    printf("Program exited with code %d\n", result);
-}
-
 void ProcessCommand(char* cmd){
     if(strlen(cmd) == 0){
         printPrompt();
@@ -232,7 +220,21 @@ void ProcessCommand(char* cmd){
         }
         entry->func(cmd);
     }else{
-        printf("Command not found: %s\n", cmd);
+        // Search for a program to execute
+        if(*cmd == 0){
+            printPrompt();
+            return;
+        }
+
+        int result = exec(cmd, NULL, NULL, 0);
+
+        if(result == SYSCALL_TASKING_FAILURE){
+            printf("Error: failed to load and execute file %s\n", cmd);
+        }else if(result == SYSCALL_FAULT_DETECTED){
+            printf("Segmentation Fault\n");
+        }else{
+            printf("Program exited with code %d\n", result);
+        }
     }
     if(!done){
         printPrompt();
@@ -261,7 +263,6 @@ int shell(void){
     HashInsert(cmdTable, "cd", cd);
     HashInsert(cmdTable, "shutdown", shutdown_system);
     HashInsert(cmdTable, "sysinfo", systeminfo);
-    HashInsert(cmdTable, "lex", lex);
 
     // Test the write system call by using it to printf the welcome message
     printf("Kernel-Integrated Shell (KISh)\n");
@@ -292,7 +293,6 @@ int shell(void){
         size_t bufferLen = strlen(cmdBuffer);
         cmdBuffer[bufferLen - 1] = '\0';
         ProcessCommand(cmdBuffer);
-        //memset(cmdBuffer, 0, bufferLen);
     }
     
     hfree(cmdBuffer);
