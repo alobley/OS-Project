@@ -25,6 +25,20 @@ int remove_keyboard_handler(KeyboardCallback callback){
     return result;
 }
 
+int install_timer_handler(timer_callback_t callback, unsigned int interval){
+    int result = 0;
+    do_syscall(SYS_INSTALL_TIMER_HANDLE, (_ADDRESS)callback, (unsigned int)interval, 0, 0, 0);
+    getresult(result);
+    return result;
+}
+
+int remove_timer_handler(timer_callback_t callback){
+    int result = 0;
+    do_syscall(SYS_REMOVE_TIMER_HANDLE, (_ADDRESS)callback, 0, 0, 0, 0);
+    getresult(result);
+    return result;
+}
+
 FILESTATUS write(int fd, const void* buf, unsigned int count){
     int result = 0;
     do_syscall(SYS_WRITE, fd, (_ADDRESS)buf, count, 0, 0);

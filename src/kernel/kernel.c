@@ -61,11 +61,16 @@ multiboot_info_t mbootCopy;
  * - Finish up the driver/module implementation (done)
  * - Implement file then program loading (done)
  * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
- * - Implement initrd (optional)
  * - Create a driver to be loaded as a module
- * - Improve the memory manager
+ * - Improve the memory manager (Needed? The heap allocator can take a lot of abuse)
  * - Implement a proper task scheduler
  * - Read up on UNIX philosophy and more closely follow it (in progress)
+*/
+
+
+/* Most recent accomplishments:
+ * - Program loading and execution
+ * - Proper implementation of SYS_EXEC and SYS_EXIT, allowing for proper singletasking and context switching
 */
 
 // The kernel's process control block
@@ -390,8 +395,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     DestroyProcess(shellPCB);
     SetCurrentProcess(kernelPCB);
 
-    // Schedule the first process
-    Scheduler();
+    // Schedule the first process (doesn't do anything yet)
+    //Scheduler();
 
     for(;;){
         // Infinite halt

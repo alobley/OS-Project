@@ -8,6 +8,8 @@ enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
     SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback
     SYS_REMOVE_KBD_HANDLE,                  // Remove a keyboard callback
+    SYS_INSTALL_TIMER_HANDLE,               // Install a timer callback
+    SYS_REMOVE_TIMER_HANDLE,                // Remove a timer callback
     SYS_WRITE,                              // Write to a file
     SYS_READ,                               // Read from a file
     SYS_EXIT,                               // Exit the current process

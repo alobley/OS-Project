@@ -48,7 +48,7 @@ void AddTimerCallback(timer_callback_t callback, uint64_t interval){
     numTimers++;
 }
 
-void RemoveTimerCallback(timer_callback_t* callback){
+void RemoveTimerCallback(timer_callback_t callback){
     TimerCallbackEntry* entry = timerCallbacks;
     TimerCallbackEntry* prev = NULL;
 
@@ -97,7 +97,7 @@ void SetTimer(int hz){
 
 static void TimerHandler(UNUSED struct Registers* regs){
     state.ticks++;
-    TimerCallbackEntry* entry = timerCallbacks;
+    volatile TimerCallbackEntry* entry = timerCallbacks;
     while(entry != NULL){
         entry->elapsed++;
         if(entry->elapsed >= entry->interval){
@@ -106,7 +106,6 @@ static void TimerHandler(UNUSED struct Registers* regs){
         }
         entry = entry->next;
     }
-
     outb(PIC1, PIC_EOI);
 }
 

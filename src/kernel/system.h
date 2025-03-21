@@ -48,6 +48,8 @@ typedef struct Version {
     unsigned char patch;
 } version_t;
 
+typedef void (*timer_callback_t)(void);
+
 typedef int device_id_t;
 typedef unsigned short vendor_id_t;
 
@@ -137,6 +139,10 @@ int install_keyboard_handler(KeyboardCallback callback);
 
 // Remove a keyboard handler from /dev/kb0
 int remove_keyboard_handler(KeyboardCallback callback);
+
+int install_timer_handler(timer_callback_t callback, unsigned int interval);
+
+int remove_timer_handler(timer_callback_t callback);
 
 // Write to a file descriptor
 FILESTATUS write(int fd, const void* buf, unsigned int count);

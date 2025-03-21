@@ -22,10 +22,8 @@
 
 extern datetime_t currentTime;
 
-typedef void (*timer_callback_t)(void);
-
 void AddTimerCallback(timer_callback_t callback, uint64_t interval);
-void RemoveTimerCallback(timer_callback_t* callback);
+void RemoveTimerCallback(timer_callback_t callback);
 void InitTimer();
 void SetTimer(int hz);
 void busysleep(uint64_t ms);

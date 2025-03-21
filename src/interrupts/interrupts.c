@@ -206,6 +206,23 @@ HOT void syscall_handler(struct Registers *regs){
             }
             break;
         }
+        case SYS_INSTALL_TIMER_HANDLE:{
+            // SYS_INSTALL_TIMER_HANDLE
+            // EBX contains the pointer to the callback function
+            // ECX contains the interval in milliseconds
+            // Installs a timer callback on the system timer
+            AddTimerCallback((timer_callback_t)regs->ebx, (uint64_t)regs->ecx);
+            regs->eax = SYSCALL_SUCCESS;
+            regs->ebx = 0; // Just in case
+            break;
+        }
+        case SYS_REMOVE_TIMER_HANDLE:{
+            // SYS_REMOVE_TIMER_HANDLE
+            // EBX contains the pointer to the callback function
+            // Removes a timer callback on the system timer
+            RemoveTimerCallback((timer_callback_t)regs->ebx);
+            break;
+        }
         case SYS_WRITE:{
             // SYS_WRITE
             // EBX contains the file descriptor

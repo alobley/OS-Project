@@ -3,11 +3,12 @@ ORG 0
 BITS 32
 CPU 686
 
-%define SYS_WRITE 4             ; Syscall number for sys_write
-%define STDOUT_FILENO 1         ; File descriptor 1 is stdout
-%define SYS_GETCWD 12           ; Syscall number for sys_getcwd
-%define SYS_EXIT 6              ; Syscall number for sys_exit
-%define NEWL 0x0A               ; Newline character (\n)
+%define SYS_WRITE 6                     ; Syscall number for sys_write
+%define STDOUT_FILENO 1                 ; File descriptor 1 is stdout
+%define SYS_GETCWD 14                   ; Syscall number for sys_getcwd
+%define SYS_EXIT 8                      ; Syscall number for sys_exit
+%define SYS_SLEEP 19                    ; Syscall number for sys_sleep
+%define NEWL 0x0A                       ; Newline character (\n)
 
 section .text
 global _start
