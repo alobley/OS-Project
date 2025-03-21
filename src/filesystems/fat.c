@@ -459,18 +459,27 @@ DRIVERSTATUS MountFS(device_t* this, char* mountPath) {
 
             // Get the extension
             int nameOffset = i;
-            while(currentEntry->name[i] == ' '){
-                i++;
+            i = 8; // Start at position 8 (beginning of extension in FAT entry)
+            
+            // Check if there's a non-space character in the extension
+            bool hasExtension = false;
+            for(int j = 8; j < 11; j++) {
+                if(currentEntry->name[j] != ' ') {
+                    hasExtension = true;
+                    break;
+                }
             }
-
-            if(currentEntry->name[i] != ' ' && i < 11){
+            
+            if(hasExtension) {
                 fileName[nameOffset++] = '.';
-                while(currentEntry->name[i] != ' ' && i < 11){
-                    fileName[i] = currentEntry->name[i];
+                while(i < 11) {
+                    if(currentEntry->name[i] != ' ') {
+                        fileName[nameOffset++] = currentEntry->name[i];
+                    }
                     i++;
                 }
             }
-            fileName[12] = '\0';
+            fileName[nameOffset] = '\0';
             
             // Create VFS node
             vfs_node_t* newNode = NULL;
@@ -597,29 +606,50 @@ DRIVERSTATUS ReadFile(device_t* this, void* buffer, size_t size){
         
         // Convert the file name into uppercase and into 8.3 format
         char upperFileName[12];
-        memset(upperFileName, ' ', 12);
+        memset(upperFileName, ' ', 12); // Fill with spaces for proper FAT 8.3 format
         char* newName = strdup(fileName);
-        char* dot = strchr(newName, '.');
-        if(dot != NULL){
-            *dot = ' ';
+        if (newName == NULL) {
+            hfree(entries);
+            return DRIVER_OUT_OF_MEMORY;
         }
-        for(int i = 0; i < 8; i++){
-            if(newName[i] == ' '){
-                upperFileName[i] = ' ';
-            }else{
-                upperFileName[i] = toupper(newName[i]);
+
+        // Handle name and extension separately
+        char* extension = strchr(newName, '.');
+        char name[9] = {0};
+        char ext[4] = {0};
+
+        // Split filename into name and extension parts
+        if (extension != NULL) {
+            *extension = '\0';  // Split the string at the '.'
+            extension++;        // Move past the dot to the actual extension
+            
+            // Copy up to 3 chars from extension
+            size_t extLen = strlen(extension);
+            size_t i;
+            for (i = 0; i < 3 && i < extLen; i++) {
+                ext[i] = toupper(extension[i]);
             }
+        } 
+
+        // Copy up to 8 chars from name part
+        size_t nameLen = strlen(newName);
+        size_t i;
+        for (i = 0; i < 8 && i < nameLen; i++) {
+            name[i] = toupper(newName[i]);
         }
-        for(int i = 8; i < 11; i++){
-            if(newName[i] == ' '){
-                upperFileName[i] = ' ';
-            }else{
-                upperFileName[i] = newName[i];
-            }
+
+        // Copy name part (first 8 chars)
+        for (i = 0; i < 8; i++) {
+            upperFileName[i] = (i < strlen(name)) ? name[i] : ' ';
+        }
+
+        // Copy extension part (last 3 chars)
+        for (i = 0; i < 3; i++) {
+            upperFileName[i+8] = (i < strlen(ext)) ? ext[i] : ' ';
         }
 
         hfree(newName);
-        upperFileName[11] = '\0';
+        upperFileName[11] = '\0'; // Terminate the string
         bool found = false;
 
         //printk("Searching for file %s...\n", upperFileName);

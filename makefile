@@ -47,7 +47,7 @@ CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(KERNEL_DIR)/system.c $(KERNEL_DIR)/drivers.c
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c 
-LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(SRC_DIR)/libc/stdio.c
+LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(SRC_DIR)/libc/stdio.c $(LIB_DIR)/elf.c
 
 # Assembly and Kernel Files
 ASMFILE=boot
@@ -89,6 +89,7 @@ assemble: create_dirs
 	$(ASM) -felf $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.o
 
 	$(ASM) -fbin $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.bin
+	$(ASM) -fbin $(USER_DIR)/hello.asm -o $(BUILD_DIR)/HELLO.BIN
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
@@ -104,6 +105,7 @@ addfiles: create_dirs
 	sync
 	sudo mount -o loop,rw bin/harddisk.vdi mnt
 	sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
+	sudo cp $(BUILD_DIR)/HELLO.BIN mnt/HELLO.BIN
 	sync
 	sudo umount mnt
 

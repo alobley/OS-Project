@@ -7,6 +7,7 @@
 #include <devices.h>
 #include <tty.h>
 #include <acpi.h>
+#include <elf.h>
 
 void (*ProgramStart)(void) = NULL;
 
@@ -1177,9 +1178,9 @@ enum exception {
 static void ExceptionHandler(struct Registers *regs){
     cli
     // Uncomment this when debugging system calls
-    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    //regdump(regs);
-    //STOP
+    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
+    STOP
 
     pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){

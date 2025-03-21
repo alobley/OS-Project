@@ -1,10 +1,4 @@
-//#include <kernel.h>
-//#include <keyboard.h>
 #include <alloc.h>
-//#include <time.h>
-//#include <multitasking.h>
-//#include <paging.h>
-//#include <acpi.h>
 #include <string.h>
 #include <vfs.h>
 #include <hash.h>
