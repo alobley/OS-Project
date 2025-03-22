@@ -8,10 +8,10 @@
 
 // Parameters are pushed in reverse order onto the stack
 struct Registers {
-    uint32_t __ignored, fs, es, ds;
-    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
-    uint32_t int_no, err_code;
-    uint32_t eip, cs, eflags, user_esp, ss;
+    volatile uint32_t __ignored, fs, es, ds;
+    volatile uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
+    volatile uint32_t int_no, err_code;
+    volatile uint32_t eip, cs, eflags, user_esp, ss;
 };
 
 #define PIC1 0x20

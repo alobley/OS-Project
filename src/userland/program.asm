@@ -1,7 +1,8 @@
-; My first userland program for my custom operating system!
 ORG 0
 BITS 32
 CPU 686
+
+; Just a simple example program in assembly
 
 %define SYS_WRITE 6                     ; Syscall number for sys_write
 %define STDOUT_FILENO 1                 ; File descriptor 1 is stdout
@@ -70,14 +71,18 @@ strlen:
 .done:
     ret                         ; Return to the caller
 
+
 section .data
+; Message to print to confirm the program was loaded
 msg: db "I am a user program loaded from the disk!", NEWL
 msg_len: equ $ - msg
 
+; Message to print the current working directory
 dirmsg: db "The current working directory of this program: "
 dirlen: equ $ - dirmsg
 
 end: db NEWL
 
 section .bss
+; Buffer for the current working directory
 workingdir: resb 256

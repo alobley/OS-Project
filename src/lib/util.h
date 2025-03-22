@@ -33,6 +33,28 @@
 
 #define lidt(x) asm("lidt %0" : : "m"(x));
 
+#define setes(x) asm("movl %0, %%eax" ::"g"(x)); asm("movl %eax, %es")
+#define setfs(x) asm("movl %0, %%eax" ::"g"(x)); asm("movl %eax, %fs")
+#define setgs(x) asm("movl %0, %%eax" ::"g"(x)); asm("movl %eax, %gs")
+#define setds(x) asm("movl %0, %%eax" ::"g"(x)); asm("movl %eax, %ds")
+#define setss(x) asm("movl %0, %%eax" ::"g"(x)); asm("movl %eax, %ss")
+
+#define seteax(x) asm volatile("mov %0, %%eax" ::"r"(x))
+#define setebx(x) asm volatile("mov %0, %%ebx" ::"r"(x))
+#define setecx(x) asm volatile("mov %0, %%ecx" ::"r"(x))
+#define setedx(x) asm volatile("mov %0, %%edx" ::"r"(x))
+#define setedi(x) asm volatile("mov %0, %%edi" ::"r"(x))
+#define setesi(x) asm volatile("mov %0, %%esi" ::"r"(x))
+#define setesp(x) asm volatile("mov %0, %%ebp" : : "r"(x) : "memory")
+#define setebp(x) asm volatile("mov %0, %%ebp" : : "r"(x) : "memory")
+#define getesp(x) asm volatile("mov %%esp, %0" : "=r"(x) : : "memory")
+#define getebp(x) asm volatile("mov %%ebp, %0" : "=r"(x) : : "memory")
+
+#define wrmsr asm volatile("wrmsr");
+#define sysexit asm volatile("sysexit");
+
+#define IA32_SYSENTER_CS 0x174
+
 FORCE_INLINE static inline unsigned char inb(unsigned short port){
     unsigned char value;
     asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));

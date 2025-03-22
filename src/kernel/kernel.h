@@ -4,6 +4,69 @@
 #include <common.h>
 #include <multitasking.h>
 
+struct PACKED gdt_entry_bits {
+    uint32_t limit_low : 16;            // Lower 16 bits of the limit
+    uint32_t base_low : 24;             // Lower 24 bits of the base
+    uint32_t accessed : 1;              // Set if the segment has been accessed
+    uint32_t read_write : 1;            // Set if the segment is writable
+    uint32_t conforming : 1;            // Set if the segment is conforming
+    uint32_t code : 1;                  // Set if the segment is code (1) or data (0)
+    uint32_t code_data_segment : 1;     // Should always be 1 for code/data segments
+    uint32_t privelige : 2;             // Privilege level (0 = kernel, 3 = user)
+    uint32_t present : 1;               // Set if the segment is present
+    uint32_t limit_high : 4;            // Upper 4 bits of the limit
+    uint32_t available : 1;             // Set if the segment is available for use by the OS
+    uint32_t long_mode : 1;             // Set if the segment is in long mode (64-bit)
+    uint32_t big : 1;                   // Set if the segment is 32-bit (1) or 16-bit (0)
+    uint32_t granularity : 1;           // Set if the segment is granulated (1) or not (0) (1 = 4 KiB page addressing, 0 = byte addressing)
+    uint32_t base_high : 8;             // Upper 8 bits of the base
+} PACKED;
+
+struct ALIGNED(16) PACKED gdt_ptr {
+    uint16_t limit;                      // Size of the GDT - 1
+    uintptr_t base;                      // Address of the GDT
+} PACKED;
+
+typedef struct PACKED tss_entry {
+    uint32_t prevTSS;                    // Previous TSS (if any)
+    uintptr_t esp0;                      // Stack pointer for ring 0
+    uintptr_t ss0;                       // Stack segment for ring 0
+    uintptr_t esp1;                      // Stack pointer for ring 1
+    uintptr_t ss1;                       // Stack segment for ring 1
+    uintptr_t esp2;                      // Stack pointer for ring 2
+    uintptr_t ss2;                       // Stack segment for ring 2
+    uintptr_t cr3;                       // Page directory base register
+    uintptr_t eip;                       // Instruction pointer
+    uint32_t eflags;                     // Flags register
+    uintptr_t eax;                       // General-purpose register
+    uintptr_t ecx;                       // General-purpose register
+    uintptr_t edx;                       // General-purpose register
+    uintptr_t ebx;                       // General-purpose register
+    uintptr_t esp;                       // Stack pointer
+    uintptr_t ebp;                       // Base pointer
+    uintptr_t esi;                       // Source index
+    uintptr_t edi;                       // Destination index
+    uint32_t es;                         // Extra segment
+    uint32_t cs;                         // Code segment
+    uint32_t ss;                         // Stack segment
+    uint32_t ds;                         // Data segment
+    uint32_t fs;                         // Additional segment
+    uint32_t gs;                         // Additional segment
+    uint32_t ldt;                        // Local descriptor table
+    uint16_t trap;                       // Trap flag
+    uint16_t iomap_base;                // I/O map base address
+} PACKED tss_entry_t;
+
+static ALIGNED(16) struct gdt_entry_bits gdt[6];           // One null segment, two ring 0 segments, two ring 3 segments, and one TSS segment
+static struct gdt_ptr gdtp;
+static struct gdt_entry_bits* ring0Code = &gdt[1];
+static struct gdt_entry_bits* ring0Data = &gdt[2];
+static struct gdt_entry_bits* ring3Code = &gdt[3];
+static struct gdt_entry_bits* ring3Data = &gdt[4];
+static struct gdt_entry_bits* tss = &gdt[5];
+
+static tss_entry_t tssEntry;
+
 enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
     SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback

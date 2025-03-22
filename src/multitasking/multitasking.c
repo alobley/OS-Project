@@ -2,15 +2,15 @@
 #include <kernel.h>
 #include <vfs.h>
 
-pcb_t* currentProcess = NULL;
-pcb_t* processList = NULL;
+volatile pcb_t* currentProcess = NULL;
+volatile pcb_t* processList = NULL;
 volatile uint16_t numProcesses = 0;                 // 0 is the kernel process
 
-pcb_t* GetCurrentProcess(void){
+volatile pcb_t* GetCurrentProcess(void){
     return currentProcess;
 }
 
-void EnqueueProcess(mutex_t* mutex, pcb_t* process){
+void EnqueueProcess(mutex_t* mutex, volatile pcb_t* process){
     qnode* node = (struct QueueNode*)halloc(sizeof(qnode));
     node->process = process;
     node->next = NULL;
@@ -25,7 +25,7 @@ void EnqueueProcess(mutex_t* mutex, pcb_t* process){
     mutex->waitQueue.last = node;
 }
 
-pcb_t* DequeueProcess(mutex_t* mutex){
+volatile pcb_t* DequeueProcess(mutex_t* mutex){
     if(mutex->waitQueue.first == NULL){
         // Failed to dequeue process
         return NULL;
@@ -96,12 +96,13 @@ extern pcb_t* kernelPCB; // Defined in kernel.c
 
 // Process control functions
 // TODO: implement process paging, stack, and heap allocation. For now, we'll just create a process with a NULL stack and heap.
-pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent){
+volatile pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, volatile pcb_t* parent){
     pcb_t* process = (pcb_t*)halloc(sizeof(pcb_t));
     if(process == NULL){
         return NULL; // Failed to allocate memory for process
     }
     memset(process, 0, sizeof(pcb_t));
+
     process->pid = numProcesses++;
     process->flags.priveliged = priveliged;
     process->flags.kernel = kernel;
@@ -117,13 +118,12 @@ pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid 
     if(parent == NULL && kernelPCB == NULL){
         // This is the kernel process
         parent = NULL;
-    }else{
+    }else if (parent == NULL){
         // Add the process as a child of the kernel and append it to the process list
-        process->parent = parent;
         if(kernelPCB->firstChild == NULL){
             kernelPCB->firstChild = process;
         }else{
-            pcb_t* current = kernelPCB->firstChild;
+            volatile pcb_t* current = kernelPCB->firstChild;
             while(current->next != NULL){
                 current = current->next;
             }
@@ -131,6 +131,8 @@ pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid 
             process->previous = current;
         }
         process->next = NULL;
+    }else{
+        process->parent = parent;
     }
 
     if(kernel){
@@ -147,6 +149,12 @@ pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid 
         process->heapEnd = 0;
     }
 
+    process->regs = halloc(sizeof(struct Registers));
+    if(process->regs == NULL){
+        hfree(process);
+        return NULL; // Failed to allocate memory for registers
+    }
+
     // Add process to process list
     process->next = processList;
     processList = process;
@@ -158,7 +166,7 @@ pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid 
     return process;
 }
 
-void DestroyProcess(pcb_t* process){
+void DestroyProcess(volatile pcb_t* process){
     if(process == NULL){
         return;
     }
@@ -173,9 +181,9 @@ void DestroyProcess(pcb_t* process){
     
     // Recursively kill all children
     // Should I reparent instead?
-    pcb_t* child = process->firstChild;
+    volatile pcb_t* child = process->firstChild;
     while(child != NULL){
-        pcb_t* nextChild = child->next;
+        volatile pcb_t* nextChild = child->next;
         DestroyProcess(child);
         child = nextChild;
     }
@@ -193,7 +201,7 @@ void DestroyProcess(pcb_t* process){
 
     // Search the device tree for any devices owned by the process and destroy them... (needed?)
 
-    hfree(process);
+    hfree((void*)process);
     numProcesses--;
 }
 
@@ -204,12 +212,12 @@ void Scheduler(void){
     return;
 }
 
-void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs){
+void SwitchToSpecificProcess(volatile pcb_t* process, struct Registers* regs){
     currentProcess = process;
     //memcpy(currentProcess->registers, regs, sizeof(struct Registers));
 }
 
-void SetCurrentProcess(pcb_t* process){
+void SetCurrentProcess(volatile pcb_t* process){
     currentProcess = process;
 }
 

@@ -7,6 +7,7 @@
  * It is responsible for initializing the system and starting the built-in shell.
  ***********************************************************************************************************************************************************************/
 #include <common.h>                     // Common utilities needed for most files
+#include <kernel.h>                     // Kernel structures and definitions
 
 // These commented out includes are now in common.h
 //#include <util.h>
@@ -48,7 +49,7 @@ extern void shell(void);
 //
 // This is my reminder to update the GRUB menu entry when I update this
 //
-version_t kernelVersion = {0, 8, 1};
+version_t kernelVersion = {0, 9, 0};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;
@@ -71,14 +72,101 @@ multiboot_info_t mbootCopy;
 /* Most recent accomplishments:
  * - Program loading and execution
  * - Proper implementation of SYS_EXEC and SYS_EXIT, allowing for proper singletasking and context switching
+ * - Finally added the user mode GDT and proper iret-based context switching (after much difficulty)
 */
 
 // The kernel's process control block
-pcb_t* kernelPCB = NULL;
+volatile pcb_t* kernelPCB = NULL;
 
 // Get the pointers for the stack from the assembly bootstrapping code
 extern uint8_t stack_begin;
 extern uint8_t stack;
+
+extern void FlushTSS(void);
+extern void LoadNewGDT(struct gdt_ptr* gdtp);
+
+void WriteTSS(struct gdt_entry_bits* tss){
+    uint32_t base = (uint32_t)&tssEntry;
+    uint32_t limit = sizeof(tss_entry_t);
+
+    tss->limit_low = limit & 0xFFFF;
+    tss->base_low = base & 0xFFFF;
+    tss->accessed = 1;
+    tss->read_write = 0;               // 0 for TSS
+    tss->conforming = 0;
+    tss->code = 0;                     // 0 for TSS
+    tss->privelige = 0;                // 0 for TSS
+    tss->present = 1;
+    tss->limit_high = (limit & (0x1F << 16)) >> 16;
+    tss->available = 0;                // 0 for TSS
+    tss->long_mode = 0;                // 0 for TSS
+    tss->big = 0;                      // 0 for TSS
+    tss->granularity = 0;              // 0 for TSS
+    tss->base_high = (base & (0xFF << 24)) >> 24;
+
+    memset(&tssEntry, 0, sizeof(tss_entry_t));       // Clear the TSS
+    tssEntry.ss0 = (uintptr_t)ring0Data;             // Set the stack segment for ring 0
+    tssEntry.esp0 = (uintptr_t)&stack;               // Set the stack pointer for ring 0
+}
+
+void LoadUserGDT(){
+    memset(&gdt[0], 0, sizeof(gdt));        // Clear the GDT
+
+    ring0Code = &gdt[1];
+    ring0Data = &gdt[2];
+    ring3Code = &gdt[3];
+    ring3Data = &gdt[4];
+    tss = &gdt[5];                   // Don't worry about this for now
+
+    ring0Code->limit_low = 0xFFFF;
+    ring0Code->base_low = 0;
+    ring0Code->accessed = 0;
+    ring0Code->read_write = 1;
+    ring0Code->conforming = 0;
+    ring0Code->code = 1;
+    ring0Code->code_data_segment = 1;
+    ring0Code->privelige = 0;
+    ring0Code->present = 1;
+    ring0Code->limit_high = 0x0F;
+    ring0Code->available = 1;
+    ring0Code->long_mode = 0;
+    ring0Code->big = 1;
+    ring0Code->granularity = 1;
+    ring0Code->base_high = 0;
+
+    *ring0Data = *ring0Code;         // Copy the code segment to the data segment
+    ring0Data->code = 0;             // Set the data segment's code bit to 0
+    
+    ring3Code->limit_low = 0xFFFF;
+    ring3Code->base_low = 0;
+    ring3Code->accessed = 0;
+    ring3Code->read_write = 1;
+    ring3Code->conforming = 0;
+    ring3Code->code = 1;
+    ring3Code->code_data_segment = 1;
+    ring3Code->privelige = 3;
+    ring3Code->present = 1;
+    ring3Code->limit_high = 0x0F;
+    ring3Code->available = 1;
+    ring3Code->long_mode = 0;
+    ring3Code->big = 1;
+    ring3Code->granularity = 1;
+    ring3Code->base_high = 0;
+
+    // Nice and easy way to make the user data segment
+    *ring3Data = *ring3Code;
+    ring3Data->code = 0;
+
+    gdtp.limit = sizeof(gdt) - 1;               // Set the size of the GDT
+    gdtp.base = (uintptr_t)&gdt[0];             // Set the address of the GDT
+
+    // Segment pointers are [entry number] * 8
+    WriteTSS(tss);                              // Write the TSS to the GDT
+
+    LoadNewGDT(&gdtp);                          // Load the user GDT
+
+    FlushTSS();                                 // Flush the TSS
+}
 
 /// @brief The main entry point for the kernel
 /// @param magic The magic number provided by the bootloader (must be multiboot-compliant)
@@ -90,6 +178,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         printk("KERNEL PANIC: Invalid multiboot magic number: 0x%x\n", magic);
         STOP
     }
+
+    //LoadUserGDT();               // Load the user GDT
 
     // The result variable that initialization functions will return with
     int result = 0;
@@ -378,7 +468,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialization complete - start the system
 
     // Create a dummy PCB for the shell
-    pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
+    volatile pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
     // The kernel is the steward of all processes
     kernelPCB->firstChild = shellPCB;
 

@@ -68,21 +68,24 @@ typedef struct Process_Control_Block {
     uintptr_t heapEnd;                          // Heap end
     uintptr_t eip;                              // Instruction pointer (EIP)
 
+    size_t memSize;                             // Memory size (in bytes)
+    struct Registers* regs;                     // CPU registers
+
     // Scheduler information
     uint64_t timeSlice;                         // Time slice (for the scheduler)
     priority_t priority;                        // Process priority
 
     // Other process information
-    struct Process_Control_Block* next;         // Next process in the list
-    struct Process_Control_Block* previous;     // Previous process in the list
-    struct Process_Control_Block* firstChild;   // First child process
-    struct Process_Control_Block* parent;       // Parent process
+    volatile struct Process_Control_Block* next;         // Next process in the list
+    volatile struct Process_Control_Block* previous;     // Previous process in the list
+    volatile struct Process_Control_Block* firstChild;   // First child process
+    volatile struct Process_Control_Block* parent;       // Parent process
 
     file_list_t* fileList;                      // File list (for file descriptors)
 } pcb_t;
 
 typedef struct QueueNode {
-    pcb_t* process;                             // Process in the queue
+    volatile pcb_t* process;                    // Process in the queue
     struct QueueNode* next;                     // Next process in the queue
 } qnode;
 
@@ -93,19 +96,19 @@ typedef struct {
 
 typedef struct {
     volatile bool locked;                       // Mutex lock state
-    pcb_t* owner;                               // Mutex owner
+    volatile pcb_t* owner;                      // Mutex owner
     process_queue_t waitQueue;                  // Mutex wait queue
 } mutex_t;
 
 #define MUTEX_INIT (mutex_t){ false, NULL, { NULL, NULL } }
 
-pcb_t* GetCurrentProcess(void);
+volatile pcb_t* GetCurrentProcess(void);
 void SwitchProcess(bool kill, struct Registers* regs);
-void SwitchToSpecificProcess(pcb_t* process, struct Registers* regs);
-void DestroyProcess(pcb_t* process);
-pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, pcb_t* parent);
+void SwitchToSpecificProcess(volatile pcb_t* process, struct Registers* regs);
+void DestroyProcess(volatile pcb_t* process);
+volatile pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* directory, uid owner, bool priveliged, bool kernel, bool foreground, priority_t priority, uint64_t timeSlice, volatile pcb_t* parent);
 void Scheduler(void);
-void SetCurrentProcess(pcb_t* process);
+void SetCurrentProcess(volatile pcb_t* process);
 
 MUTEXSTATUS PeekMutex(mutex_t* mutex);
 MUTEXSTATUS MutexLock(mutex_t* mutex);

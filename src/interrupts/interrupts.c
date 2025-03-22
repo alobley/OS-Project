@@ -163,6 +163,7 @@ bool CheckPrivelige(){
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
 // NOTE: The keyboard handler needs to be updated for multitasking in the future
 HOT void syscall_handler(struct Registers *regs){
+    sti
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
         // Better to check once at the beginning rather than checking every time
@@ -322,42 +323,61 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_EXIT: {
             // SYS_EXIT
             // EBX contains the exit code
-            // Exit a process
-            // Tell the parent process that the child has exited
-            // Perform a context switch and destroy the process
-
-            pcb_t* currentProcess = GetCurrentProcess();
-
+            // Exit a process and return to parent
+            
+            //printk("Returning to parent process...\n");
+            volatile pcb_t* currentProcess = GetCurrentProcess();
+            
             // Get the parent process
-            pcb_t* parentProcess = currentProcess->parent;
-            if(parentProcess == NULL){
-                // Just panic for now, add better handling later
+            volatile pcb_t* parentProcess = currentProcess->parent;
+            if (parentProcess == NULL) {
                 printk("KERNEL PANIC: NO PARENT PROCESS!\n");
                 regdump(regs);
                 STOP
             }
 
+            //printk("Parent process found: %s\n", parentProcess->name);
+            
+            // Save exit code to return to the parent
+            volatile uint32_t exitCode = regs->ebx;
+            
+            // Save the parent's registers structure address before switching
+            struct Registers* parentRegs = parentProcess->regs;
+            
+            // Store exit code in parent's EAX register
+            parentRegs->eax = exitCode;
+
+            //printk("Destroying current process...\n");
+            
+            // Destroy the current process BEFORE switching to prevent memory leaks
+            DestroyProcess(currentProcess);
+
+            //printk("Current process destroyed\n");
+
+            // Restore parent's stack pointer and base pointer
+            // These should be the values saved when the parent made the exec call
+            setesp(parentProcess->esp);
+            setebp(parentProcess->ebp);
+
+            *regs = *parentRegs;
+
+            //printk("Stack set up\n");
+            
             // Switch to the parent process
             SetCurrentProcess(parentProcess);
 
-            // Destroy the calling process
-            DestroyProcess(currentProcess);
-
-            // Get the registers of the parent process (should be located at the parent's ESP)
-            struct Registers* parentRegs = (struct Registers*)parentProcess->esp;
-    
-            // Set the exit code as the return value in parent's EAX
-            parentRegs->eax = regs->ebx;
+            //printk("Process switched\n");
             
-            // Copy the parent's saved context back to our register structure
+            // Copy parent's saved context to our register structure
             // that will be used by IsrCommon for the iret
-            *regs = *parentRegs;
+            memcpy(regs, parentRegs, sizeof(struct Registers));
+            
 
-
-            // Set ESP and EBP to those of the parent process
-            asm volatile("mov %0, %%esp" : : "r"(parentProcess->esp) : "memory");
-            asm volatile("mov %0, %%ebp" : : "r"(parentProcess->ebp) : "memory");
-
+            // Unpage the old process's memory and stack
+            for(size_t i = 0; i < (currentProcess->memSize / PAGE_SIZE) + 3; i++){
+                pfree(currentProcess->pageDirectory + (i * PAGE_SIZE));
+            }
+            
             break;
         }
         case SYS_FORK:
@@ -379,6 +399,8 @@ HOT void syscall_handler(struct Registers *regs){
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
 
+            //sys_dumpregs();
+
             if(strlen((char*)regs->ebx) == 0){
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
@@ -386,12 +408,14 @@ HOT void syscall_handler(struct Registers *regs){
 
             char* path = (char*)regs->ebx;
 
-            pcb_t* currentProcess = GetCurrentProcess();
+            volatile pcb_t* currentProcess = GetCurrentProcess();
             if(currentProcess == NULL){
                 //printk("Error: failed to get current process\n");
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
+
+            *currentProcess->regs = *regs;
 
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
@@ -402,14 +426,14 @@ HOT void syscall_handler(struct Registers *regs){
 
             vfs_node_t* file = NULL;
 
+            //regdump(regs);
+
             char* fullPath = JoinPath(currentProcess->workingDirectory, path);
             if(fullPath == NULL){
                 //printk("Error: failed to join path\n");
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
-
-            //printf("Loading and executing file at %s\n", fullPath);
 
             if(*path != '/'){
                 file = VfsFindNode(fullPath);
@@ -464,7 +488,7 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             // Clear the program's memory
-            memset((void*)0, 0, programEnd);
+            memset((void*)0, 0, file->size);
 
             memcpy(NULL, file->data, file->size);
             hfree(file->data);                          // The file handler doesn't need the data anymore
@@ -473,12 +497,16 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Create the PCB for the program
 
-
-            pcb_t* newProcess = CreateProcess(ProgramStart, file->name, strdup(GetCurrentProcess()->workingDirectory), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
+            volatile pcb_t* newProcess = CreateProcess(ProgramStart, strdup(file->name), strdup(GetCurrentProcess()->workingDirectory), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
             if(newProcess == NULL){
                 printk("Error: failed to create new process\n");
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
+            }
+            newProcess->memSize = file->size;
+
+            if(strcmp((char*)regs->ebx, "/root/PROGRAM.BIN") == 0){
+                printk("Executing program: %s\n", (char*)regs->ebx);
             }
 
             // Allocate 2 pages (8KB) for the program's stack
@@ -489,27 +517,47 @@ HOT void syscall_handler(struct Registers *regs){
                     break;
                 }
             }
-            memset((void*)(programEnd), 0, PAGE_SIZE);
+            memset((void*)(programEnd), 0, PAGE_SIZE * 2);
+
 
             // Set up the new process's stack
             newProcess->stackBase = programEnd;
             newProcess->stackTop = programEnd + (2 * PAGE_SIZE);
 
-            currentProcess->esp = (uintptr_t)regs;
-            currentProcess->eip = (uintptr_t)__builtin_return_address(0);
-            asm volatile("mov %%ebp, %0" : "=r"(currentProcess->ebp) : : "memory");
+            newProcess->esp = newProcess->stackTop;
+            newProcess->ebp = newProcess->stackBase;
+            newProcess->eip = (uintptr_t)__builtin_return_address(0);
+            getebp(currentProcess->ebp);
 
             //printk("Return address of the current process: 0x%x\n", currentProcess->eip);
 
             // Switch to the new process
-            asm volatile("mov %0, %%esp" : : "r"(newProcess->stackTop));
-            newProcess->esp = newProcess->stackTop;
+            getesp(newProcess->stackTop);
             //printk("Return address: 0x%x\n", GetCurrentProcess()->eip);
             SetCurrentProcess(newProcess);
 
-            // Jump to the entry point
-            asm volatile("jmp *%0" : : "r"(newProcess->EntryPoint));
-            UNREACHABLE
+            // Be very nice and (definitely not conspicuously) clear the registers for the new process :)
+            regs->eax = 0;
+            regs->ebx = 0;
+            regs->ecx = 0;
+            regs->edx = 0;
+            regs->esi = 0;
+            regs->edi = 0;
+
+            // Enter ring 3 and execute the program (iret method)
+            // How does one have better security???
+            //regs->cs = (4 * 8) | 0x3; // Set the code segment to ring 3
+            //regs->ds = (5 * 8) | 0x3; // Set the data segment to ring 3
+            //regs->es = (5 * 8) | 0x3; // Set the extra segment to ring 3
+            //regs->fs = (5 * 8) | 0x3; // Set the FS segment to ring 3
+
+            regs->eip = (uintptr_t)newProcess->EntryPoint;
+            regs->user_esp = newProcess->esp;
+            regs->ebp = newProcess->ebp;
+
+            *newProcess->regs = *regs;
+
+            break;
         }
         case SYS_WAIT_PID:
             // SYS_WAIT
@@ -553,7 +601,7 @@ HOT void syscall_handler(struct Registers *regs){
             // EBX contains the pointer to the new directory
             // Change the current working directory of the process
 
-            pcb_t* currentProcess = GetCurrentProcess();
+            volatile pcb_t* currentProcess = GetCurrentProcess();
             char* dir = (char*)regs->ebx;
             if(dir == NULL || strlen(dir) == 0){
                 // No directory specified
@@ -799,7 +847,7 @@ HOT void syscall_handler(struct Registers *regs){
                 break;
             }
             MutexLock(&device->lock);                                                                       // Lock the device
-            pcb_t* current = GetCurrentProcess();                                                           // Save the calling process
+            volatile pcb_t* current = GetCurrentProcess();                                                  // Save the calling process
             SetCurrentProcess(device->driver->driverProcess);                                               // Switch to the driver
             regs->eax = device->read(device, (char*)regs->ecx, regs->edx);                                  // Call the device's read function
             SetCurrentProcess(current);                                                                     // Switch back to the caller
@@ -817,7 +865,7 @@ HOT void syscall_handler(struct Registers *regs){
                 break;
             }
             MutexLock(&device->lock);                                                                       // Lock the device
-            pcb_t* current = GetCurrentProcess();                                                           // Save the calling process
+            volatile pcb_t* current = GetCurrentProcess();                                                  // Save the calling process
             SetCurrentProcess(device->driver->driverProcess);                                               // Switch to the driver
             regs->eax = device->write(device, (char*)regs->ecx, regs->edx);                                 // Call the device's write function
             SetCurrentProcess(current);                                                                     // Switch back to the caller
@@ -848,7 +896,7 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             // Get the driver's PCB and set the proper flags
-            pcb_t* driverPCB = GetCurrentProcess();
+            volatile pcb_t* driverPCB = GetCurrentProcess();
             if(driverPCB != kernelPCB){
                 driverPCB->state = DRIVER;
                 driverPCB->timeSlice = 0; // No time slice for drivers
@@ -1147,7 +1195,7 @@ void InstallISR(size_t i, void (*handler)(struct Registers*)){
 }
 
 void ISRHandler(struct Registers *regs){
-    sti
+    //sti
     if (handlers[regs->int_no]) {
         handlers[regs->int_no](regs);
     }
@@ -1182,7 +1230,7 @@ static void ExceptionHandler(struct Registers *regs){
     regdump(regs);
     STOP
 
-    pcb_t* current = GetCurrentProcess();
+    volatile pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
         // Exception was thrown by the kernel - cannot recover
         printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);

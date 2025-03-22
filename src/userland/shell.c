@@ -221,6 +221,7 @@ void ProcessCommand(char* cmd){
         }
 
         int result = exec(cmd, NULL, NULL, 0);
+        //STOP
 
         if(result == SYSCALL_TASKING_FAILURE){
             printf("Error: failed to load and execute file %s\n", cmd);
