@@ -8,7 +8,7 @@
 
 // Parameters are pushed in reverse order onto the stack
 struct Registers {
-    volatile uint32_t __ignored, fs, es, ds;
+    volatile uint32_t gs, fs, es, ds;
     volatile uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
     volatile uint32_t int_no, err_code;
     volatile uint32_t eip, cs, eflags, user_esp, ss;
