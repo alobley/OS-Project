@@ -8,6 +8,9 @@
 #include <tty.h>
 #include <acpi.h>
 #include <elf.h>
+#include <gdt.h>
+
+// There appears to be an INTO instruction specifically meant for calling an overflow exception handler. That's pretty cool.
 
 void (*ProgramStart)(void) = NULL;
 
@@ -115,6 +118,7 @@ static void regdump(struct Registers* regs){
     printk("EDI: 0x%x\n", regs->edi);
     printk("EBP: 0x%x\n", regs->ebp);
     printk("ESP: 0x%x\n", regs->esp);
+    printk("User ESP: 0x%x\n", regs->user_esp);
     printk("EIP: 0x%x\n", regs->eip);
     printk("CS: 0x%x\n", regs->cs);
     printk("DS: 0x%x\n", regs->ds);
@@ -122,6 +126,7 @@ static void regdump(struct Registers* regs){
     printk("FS: 0x%x\n", regs->fs);
     printk("SS: 0x%x\n", regs->ss);
     printk("EFLAGS: 0x%x\n", regs->eflags);
+    printk("Error code: 0b%b\n", regs->err_code);
 
     uint32_t cr0, cr2, cr3, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -350,33 +355,30 @@ HOT void syscall_handler(struct Registers *regs){
             //printk("Destroying current process...\n");
             
             // Destroy the current process BEFORE switching to prevent memory leaks
-            DestroyProcess(currentProcess);
-
-            //printk("Current process destroyed\n");
-
-            // Restore parent's stack pointer and base pointer
-            // These should be the values saved when the parent made the exec call
-            setesp(parentProcess->esp);
-            setebp(parentProcess->ebp);
-
-            *regs = *parentRegs;
-
-            //printk("Stack set up\n");
-            
-            // Switch to the parent process
-            SetCurrentProcess(parentProcess);
-
-            //printk("Process switched\n");
-            
-            // Copy parent's saved context to our register structure
-            // that will be used by IsrCommon for the iret
-            memcpy(regs, parentRegs, sizeof(struct Registers));
-            
-
             // Unpage the old process's memory and stack
             for(size_t i = 0; i < (currentProcess->memSize / PAGE_SIZE) + 3; i++){
                 pfree(currentProcess->pageDirectory + (i * PAGE_SIZE));
             }
+            DestroyProcess(currentProcess);
+
+            *regs = *parentRegs;
+
+            //regs->user_esp = parentProcess->esp;
+            
+            // Switch to the parent process
+            SetCurrentProcess(parentProcess);
+
+            if (parentProcess->priority == KERNEL) {                
+                // Make sure the EFLAGS has the correct IOPL for kernel mode
+                regs->ss = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
+            }
+
+            //printk("ESP in SYS_EXIT: 0x%x\n", regs->user_esp);
+
+            //regs->user_esp = 0x220070;
+
+            //regdump(regs);
+            //STOP
             
             break;
         }
@@ -416,6 +418,12 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             *currentProcess->regs = *regs;
+
+            currentProcess->esp = regs->user_esp;
+            currentProcess->ebp = regs->ebp;
+
+            //printk("ESP in the syscall handler: 0x%x\n", regs->user_esp);
+            //STOP
 
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
@@ -479,7 +487,7 @@ HOT void syscall_handler(struct Registers *regs){
             // Page some low virtual address space and memcpy the program to it
             // Pad an extra page at the end of the program just in case
             for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
-                if(palloc(0 + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
+                if(palloc(0 + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER) == STANDARD_FAILURE){
                     //printk("Error: failed to page memory for program\n");
                     regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
@@ -511,13 +519,15 @@ HOT void syscall_handler(struct Registers *regs){
 
             // Allocate 2 pages (8KB) for the program's stack
             for(size_t i = 0; i < 2; i++){
-                if(palloc(programEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER) == STANDARD_FAILURE){
+                if(palloc(programEnd + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER) == STANDARD_FAILURE){
                     printk("Error: failed to page memory for program stack\n");
                     regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
                 }
             }
             memset((void*)(programEnd), 0, PAGE_SIZE * 2);
+
+            //asm volatile("mov %cr3, %eax; mov %eax, %cr3");
 
 
             // Set up the new process's stack
@@ -527,12 +537,12 @@ HOT void syscall_handler(struct Registers *regs){
             newProcess->esp = newProcess->stackTop;
             newProcess->ebp = newProcess->stackBase;
             newProcess->eip = (uintptr_t)__builtin_return_address(0);
-            getebp(currentProcess->ebp);
+            //getebp(currentProcess->ebp);
 
             //printk("Return address of the current process: 0x%x\n", currentProcess->eip);
 
             // Switch to the new process
-            getesp(newProcess->stackTop);
+            //getesp(newProcess->stackTop);
             //printk("Return address: 0x%x\n", GetCurrentProcess()->eip);
             SetCurrentProcess(newProcess);
 
@@ -545,17 +555,32 @@ HOT void syscall_handler(struct Registers *regs){
             regs->edi = 0;
 
             // Enter ring 3 and execute the program (iret method)
-            // How does one have better security???
-            //regs->cs = (4 * 8) | 0x3; // Set the code segment to ring 3
-            //regs->ds = (5 * 8) | 0x3; // Set the data segment to ring 3
-            //regs->es = (5 * 8) | 0x3; // Set the extra segment to ring 3
-            //regs->fs = (5 * 8) | 0x3; // Set the FS segment to ring 3
+            regs->eflags.iopl = 0;
+            regs->eflags.interruptEnable = 1;
+            regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
+            regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
 
             regs->eip = (uintptr_t)newProcess->EntryPoint;
             regs->user_esp = newProcess->esp;
             regs->ebp = newProcess->ebp;
 
             *newProcess->regs = *regs;
+
+            // Set up the stack for the new process (If doing the iret method, the user stack has to have this data too)
+            uint32_t* ustack = (uint32_t*)newProcess->stackTop;
+            *--ustack = regs->eip;
+            *--ustack = regs->cs;
+            *--ustack = regs->eflags_raw;
+            *--ustack = regs->user_esp;
+            *--ustack = regs->ss;
+            newProcess->esp = (uintptr_t)ustack;
+
+            //regdump(regs);
+            //STOP
 
             break;
         }
@@ -1075,7 +1100,7 @@ HOT void syscall_handler(struct Registers *regs){
         case SYS_ENTER_V86_MODE:
             // SYS_ENTER_V86_MODE
             // Needed?
-            regs->eflags |= 0x00020000;
+            regs->eflags.virtual8086 = true;
             break;
         case SYS_SHUTDOWN:{
             // SYS_SHUTDOWN
@@ -1195,10 +1220,10 @@ void InstallISR(size_t i, void (*handler)(struct Registers*)){
 }
 
 void ISRHandler(struct Registers *regs){
-    //sti
     if (handlers[regs->int_no]) {
         handlers[regs->int_no](regs);
     }
+    tss.esp0 = regs->esp + 8;
 }
 
 enum exception {
@@ -1226,9 +1251,9 @@ enum exception {
 static void ExceptionHandler(struct Registers *regs){
     cli
     // Uncomment this when debugging system calls
-    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    regdump(regs);
-    STOP
+    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    //regdump(regs);
+    //STOP
 
     volatile pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
@@ -1269,5 +1294,8 @@ void InitISR(){
         InstallISR(i, ExceptionHandler);
     }
 
+    //SetIDT(SYSCALL_INT, syscall_handler, 0x08, 0x8E);
     InstallISR(SYSCALL_INT, syscall_handler);
+    idt.entries[SYSCALL_INT].selector = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE);
+    idt.entries[SYSCALL_INT].type = 0xEE;
 }

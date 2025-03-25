@@ -128,6 +128,10 @@ PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags){
         // Get the page table physical address from the page directory entry
         physaddr_t table_phys = currentPageDir[pd_idx] & 0xFFFFF000;
         //printk("Table physical address: 0x%x\n", table_phys);
+
+        if(flags & PTE_FLAG_USER){
+            currentPageDir[pd_idx] |= PDE_FLAG_USER;
+        }
         
         // Access the page table
         page_table_t* pt = (page_table_t*)table_phys;

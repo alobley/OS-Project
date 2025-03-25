@@ -8,14 +8,7 @@
  ***********************************************************************************************************************************************************************/
 #include <common.h>                     // Common utilities needed for most files
 #include <kernel.h>                     // Kernel structures and definitions
-
-// These commented out includes are now in common.h
-//#include <util.h>
-//#include <stdint.h>
-//#include <string.h>
-//#include <stddef.h>
-//#include <alloc.h>
-//#include <kernel.h>
+#include <gdt.h>                        // GDT structures and definitions
 
 // Kernel subsystems
 #include <console.h>                    // VGA console functions
@@ -82,6 +75,37 @@ volatile pcb_t* kernelPCB = NULL;
 extern uint8_t stack_begin;
 extern uint8_t stack;
 
+static ALIGNED(16) struct GDTPointer gdtp;
+static ALIGNED(16) struct GDT gdt;
+
+extern void LoadNewGDT(uint32_t gdtp);
+void FlushTSS(uint16_t tss_segment) {
+    asm volatile("ltr %0" : : "r" (tss_segment));
+}
+
+// Create a new, better GDT than the one defined in assembly
+void CreateGDT(){
+    cli
+    memset(&tss, 0, sizeof(struct TSS_Entry));                 // Clear the TSS
+    gdt.null = GDT_NULL_SEGMENT;
+    gdt.kernelCode = CreateDescriptor(0, 0xFFFFFFFF, GDT_CODE_PL0);
+    gdt.kernelData = CreateDescriptor(0, 0xFFFFFFFF, GDT_DATA_PL0);
+    gdt.userCode = CreateDescriptor(0, 0xFFFFFFFF, GDT_CODE_PL3);
+    gdt.userData = CreateDescriptor(0, 0xFFFFFFFF, GDT_DATA_PL3);
+    gdt.tss = CreateDescriptor((uint32_t)&tss, sizeof(struct TSS_Entry), GDT_TSS_SEGMENT);
+
+    gdtp.limit = sizeof(struct GDT) - 1;
+    gdtp.base = (uint32_t)&gdt;
+
+    tss.ss0 = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
+    tss.esp0 = (uint32_t)&stack;                                // Should this be replaced at any point? I'd assume so.
+
+    LoadNewGDT((uint32_t)&gdtp);
+
+    FlushTSS(GDT_RING0_SEGMENT_POINTER(GDT_TSS));
+    sti
+}
+
 /// @brief The main entry point for the kernel
 /// @param magic The magic number provided by the bootloader (must be multiboot-compliant)
 /// @param mbootInfo A pointer to the multiboot info structure provided by the bootloader
@@ -93,12 +117,12 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         STOP
     }
 
-    //LoadUserGDT();               // Load the user GDT
-
     // The result variable that initialization functions will return with
     int result = 0;
 
     // Initialization - first stage
+
+    CreateGDT();            // Create the GDT
 
     // Get the memory size in bytes and MiB and save those values
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;
@@ -382,7 +406,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     // Initialization complete - start the system
 
     // Create a dummy PCB for the shell
-    volatile pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
+    volatile pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, KERNEL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
     // The kernel is the steward of all processes
     kernelPCB->firstChild = shellPCB;
 

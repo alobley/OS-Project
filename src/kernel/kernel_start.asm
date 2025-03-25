@@ -45,9 +45,10 @@ _start:
 
     push ebx
     push eax
-    push .end      ; I'll make my own call instruction!
+    push .end
 
     ; For some reason using the call instruction will always, without fail, cause the first argument to be 0x10.
+    ; Note: I have learned that the reason is because it's a far call, so the 0x10 was actually ss. lol.
     jmp 0x8:kernel_main
 .end:
     cli
@@ -57,6 +58,16 @@ _start:
 
 section .text.interrupts
 ALIGN 4
+
+global LoadNewGDT:function (LoadNewGDT.end - LoadNewGDT)
+LoadNewGDT:
+    mov eax, 4[esp]
+
+    lgdt [eax]
+
+    ret
+.end:
+
 
 global LoadIDT
 
@@ -150,7 +161,7 @@ IsrCommon:
 
     push esp
     call ISRHandler
-    pop eax
+    add esp, 4
 
     pop gs
     pop fs
