@@ -9,6 +9,8 @@
 #define HOT __attribute__((hot))                        // Function is hot (frequently called) - tells the compiler to optimize for speed
 #define COLD __attribute__((cold))                      // Function is cold (infrequently called) - tells the compiler to optimize for size
 #define FORCE_INLINE __attribute__((always_inline))     // Forces the compiler to inline the function
+#define NAKED __attribute__((naked))                    // Function has no prologue or epilogue (push ebp, mov ebp, esp, etc.)
+#define WEAK __attribute__((weak))                      // Weak symbol - can be overridden by a stronger symbol (like function overrides in C#?)
 
 #define MALLOC __attribute__((malloc))
 #define UNREACHABLE __builtin_unreachable();

@@ -89,26 +89,6 @@ NORET void reboot_system(){
 
 extern pcb_t* kernelPCB;
 
-struct IDTEntry{
-    uint16_t offset_low;
-    uint16_t selector;
-    uint8_t __ignored;
-    uint8_t type;
-    uint16_t offset_high;
-} PACKED;
-
-struct IDTPointer {
-    uint16_t limit;
-    uintptr_t base;
-} PACKED;
-
-static struct {
-    struct IDTEntry entries[256];
-    struct IDTPointer pointer;
-} idt;
-
-extern void LoadIDT();
-
 static void regdump(struct Registers* regs){
     printk("EAX: 0x%x\n", regs->eax);
     printk("EBX: 0x%x\n", regs->ebx);
@@ -139,23 +119,6 @@ static void regdump(struct Registers* regs){
     printk("CR4: 0x%x\n", cr4);
 }
 
-void SetIDT(uint8_t index, void(*base)(struct Registers*), uint16_t selector, uint8_t flags){
-    idt.entries[index] = (struct IDTEntry){
-        .offset_low = ((uintptr_t) base) & 0xFFFF,
-        .offset_high = (((uintptr_t) base) >> 16) & 0xFFFF,
-        .selector = selector,
-        .type = flags,
-        .__ignored = 0
-    };
-}
-
-void InitIDT(){
-    idt.pointer.limit = sizeof(idt.entries) - 1;
-    idt.pointer.base = (uintptr_t) &idt.entries[0];
-    memset(&idt.entries[0], 0, sizeof(idt.entries));
-    LoadIDT((uintptr_t) &idt.pointer);
-}
-
 bool CheckPrivelige(){
     if(GetCurrentProcess() == NULL){
         // Is part of the kernel
@@ -166,7 +129,11 @@ bool CheckPrivelige(){
 
 // System call handler
 // This is what is processed when you perform an ABI call (int 0x30). Work in progress.
-// NOTE: The keyboard handler needs to be updated for multitasking in the future
+// NOTES: 
+// - The keyboard handler needs to be updated for multitasking in the future
+// - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
+// - Need a scheduler (just single-tasking as things stand)
+// - For better multitasking, fork() needs to be implemented and exec() needs to be updated
 HOT void syscall_handler(struct Registers *regs){
     sti
     int result;
@@ -329,8 +296,7 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_EXIT
             // EBX contains the exit code
             // Exit a process and return to parent
-            
-            //printk("Returning to parent process...\n");
+
             volatile pcb_t* currentProcess = GetCurrentProcess();
             
             // Get the parent process
@@ -340,8 +306,6 @@ HOT void syscall_handler(struct Registers *regs){
                 regdump(regs);
                 STOP
             }
-
-            //printk("Parent process found: %s\n", parentProcess->name);
             
             // Save exit code to return to the parent
             volatile uint32_t exitCode = regs->ebx;
@@ -351,8 +315,6 @@ HOT void syscall_handler(struct Registers *regs){
             
             // Store exit code in parent's EAX register
             parentRegs->eax = exitCode;
-
-            //printk("Destroying current process...\n");
             
             // Destroy the current process BEFORE switching to prevent memory leaks
             // Unpage the old process's memory and stack
@@ -362,8 +324,6 @@ HOT void syscall_handler(struct Registers *regs){
             DestroyProcess(currentProcess);
 
             *regs = *parentRegs;
-
-            //regs->user_esp = parentProcess->esp;
             
             // Switch to the parent process
             SetCurrentProcess(parentProcess);
@@ -372,13 +332,6 @@ HOT void syscall_handler(struct Registers *regs){
                 // Make sure the EFLAGS has the correct IOPL for kernel mode
                 regs->ss = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
             }
-
-            //printk("ESP in SYS_EXIT: 0x%x\n", regs->user_esp);
-
-            //regs->user_esp = 0x220070;
-
-            //regdump(regs);
-            //STOP
             
             break;
         }
@@ -401,8 +354,6 @@ HOT void syscall_handler(struct Registers *regs){
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
 
-            //sys_dumpregs();
-
             if(strlen((char*)regs->ebx) == 0){
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
@@ -419,12 +370,6 @@ HOT void syscall_handler(struct Registers *regs){
 
             *currentProcess->regs = *regs;
 
-            currentProcess->esp = regs->user_esp;
-            currentProcess->ebp = regs->ebp;
-
-            //printk("ESP in the syscall handler: 0x%x\n", regs->user_esp);
-            //STOP
-
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
                 //printk("Error: current directory does not exist\n");
@@ -433,8 +378,6 @@ HOT void syscall_handler(struct Registers *regs){
             }
 
             vfs_node_t* file = NULL;
-
-            //regdump(regs);
 
             char* fullPath = JoinPath(currentProcess->workingDirectory, path);
             if(fullPath == NULL){
@@ -498,10 +441,9 @@ HOT void syscall_handler(struct Registers *regs){
             // Clear the program's memory
             memset((void*)0, 0, file->size);
 
+            // Copy the program to the new memory (TODO: change to ELF parsing)
             memcpy(NULL, file->data, file->size);
             hfree(file->data);                          // The file handler doesn't need the data anymore
-
-            //STOP
 
             // Create the PCB for the program
 
@@ -513,10 +455,6 @@ HOT void syscall_handler(struct Registers *regs){
             }
             newProcess->memSize = file->size;
 
-            if(strcmp((char*)regs->ebx, "/root/PROGRAM.BIN") == 0){
-                printk("Executing program: %s\n", (char*)regs->ebx);
-            }
-
             // Allocate 2 pages (8KB) for the program's stack
             for(size_t i = 0; i < 2; i++){
                 if(palloc(programEnd + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER) == STANDARD_FAILURE){
@@ -527,23 +465,11 @@ HOT void syscall_handler(struct Registers *regs){
             }
             memset((void*)(programEnd), 0, PAGE_SIZE * 2);
 
-            //asm volatile("mov %cr3, %eax; mov %eax, %cr3");
-
 
             // Set up the new process's stack
             newProcess->stackBase = programEnd;
             newProcess->stackTop = programEnd + (2 * PAGE_SIZE);
 
-            newProcess->esp = newProcess->stackTop;
-            newProcess->ebp = newProcess->stackBase;
-            newProcess->eip = (uintptr_t)__builtin_return_address(0);
-            //getebp(currentProcess->ebp);
-
-            //printk("Return address of the current process: 0x%x\n", currentProcess->eip);
-
-            // Switch to the new process
-            //getesp(newProcess->stackTop);
-            //printk("Return address: 0x%x\n", GetCurrentProcess()->eip);
             SetCurrentProcess(newProcess);
 
             // Be very nice and (definitely not conspicuously) clear the registers for the new process :)
@@ -565,22 +491,10 @@ HOT void syscall_handler(struct Registers *regs){
             regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
 
             regs->eip = (uintptr_t)newProcess->EntryPoint;
-            regs->user_esp = newProcess->esp;
-            regs->ebp = newProcess->ebp;
+            regs->user_esp = newProcess->stackTop;
+            regs->ebp = newProcess->stackBase;
 
             *newProcess->regs = *regs;
-
-            // Set up the stack for the new process (If doing the iret method, the user stack has to have this data too)
-            uint32_t* ustack = (uint32_t*)newProcess->stackTop;
-            *--ustack = regs->eip;
-            *--ustack = regs->cs;
-            *--ustack = regs->eflags_raw;
-            *--ustack = regs->user_esp;
-            *--ustack = regs->ss;
-            newProcess->esp = (uintptr_t)ustack;
-
-            //regdump(regs);
-            //STOP
 
             break;
         }
@@ -1175,6 +1089,28 @@ static void (*stubs[NUM_ISRS])(struct Registers*) = {
     _isr48
 };
 
+enum exception {
+    EXCEPTION_DIVIDE_BY_ZERO,
+    EXCEPTION_DEBUG,
+    EXCEPTION_NMI,
+    EXCEPTION_BREAKPOINT,
+    EXCEPTION_OVERFLOW,
+    EXCEPTION_OOB,
+    EXCEPTION_INVALID_OPCODE,
+    EXCEPTION_NO_COPROCESSOR,
+    EXCEPTION_DOUBLE_FAULT,
+    EXCEPTION_COPROCESSOR_SEGMENT_OVERRUN,
+    EXCEPTION_BAD_TSS,
+    EXCEPTION_SEGMENT_NOT_PRESENT,
+    EXCEPTION_STACK_FAULT,
+    EXCEPTION_GENERAL_PROTECTION_FAULT,
+    EXCEPTION_PAGE_FAULT,
+    EXCEPTION_UNRECOGNIZED_INTERRUPT,
+    EXCEPTION_COPROCESSOR_FAULT,
+    EXCEPTION_ALIGNMENT_CHECK,
+    EXCEPTION_MACHINE_CHECK
+};
+
 static const char *exceptions[32] = {
     "Divide by zero",
     "Debug",
@@ -1226,27 +1162,42 @@ void ISRHandler(struct Registers *regs){
     tss.esp0 = regs->esp + 8;
 }
 
-enum exception {
-    EXCEPTION_DIVIDE_BY_ZERO,
-    EXCEPTION_DEBUG,
-    EXCEPTION_NMI,
-    EXCEPTION_BREAKPOINT,
-    EXCEPTION_OVERFLOW,
-    EXCEPTION_OOB,
-    EXCEPTION_INVALID_OPCODE,
-    EXCEPTION_NO_COPROCESSOR,
-    EXCEPTION_DOUBLE_FAULT,
-    EXCEPTION_COPROCESSOR_SEGMENT_OVERRUN,
-    EXCEPTION_BAD_TSS,
-    EXCEPTION_SEGMENT_NOT_PRESENT,
-    EXCEPTION_STACK_FAULT,
-    EXCEPTION_GENERAL_PROTECTION_FAULT,
-    EXCEPTION_PAGE_FAULT,
-    EXCEPTION_UNRECOGNIZED_INTERRUPT,
-    EXCEPTION_COPROCESSOR_FAULT,
-    EXCEPTION_ALIGNMENT_CHECK,
-    EXCEPTION_MACHINE_CHECK
-};
+struct IDTEntry{
+    uint16_t offset_low;
+    uint16_t selector;
+    uint8_t __ignored;
+    uint8_t type;
+    uint16_t offset_high;
+} PACKED;
+
+struct IDTPointer {
+    uint16_t limit;
+    uintptr_t base;
+} PACKED;
+
+static struct {
+    struct IDTEntry entries[256];
+    struct IDTPointer pointer;
+} idt;
+
+extern void LoadIDT();
+
+void SetIDT(uint8_t index, void(*base)(struct Registers*), uint16_t selector, uint8_t flags){
+    idt.entries[index] = (struct IDTEntry){
+        .offset_low = ((uintptr_t) base) & 0xFFFF,
+        .offset_high = (((uintptr_t) base) >> 16) & 0xFFFF,
+        .selector = selector,
+        .type = flags,
+        .__ignored = 0
+    };
+}
+
+void InitIDT(){
+    idt.pointer.limit = sizeof(idt.entries) - 1;
+    idt.pointer.base = (uintptr_t) &idt.entries[0];
+    memset(&idt.entries[0], 0, sizeof(idt.entries));
+    LoadIDT((uintptr_t) &idt.pointer);
+}
 
 static void ExceptionHandler(struct Registers *regs){
     cli
@@ -1259,25 +1210,35 @@ static void ExceptionHandler(struct Registers *regs){
     if(current == kernelPCB){
         // Exception was thrown by the kernel - cannot recover
         printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+        //printk("Current PCB address: 0x%x\n", current);
+        //printk("Kernel PCB address: 0x%x\n", kernelPCB);
         regdump(regs);
         STOP
     }
     switch(regs->int_no){
         case PAGE_FAULT:{
             // Gracefully handle a page fault
+            sti
             exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_STACK_FAULT:{
             // Gracefully handle a stack fault (likely a stack overflow)
+            sti
+            exit(SYSCALL_FAULT_DETECTED);
+            break;
+        }
+        case EXCEPTION_GENERAL_PROTECTION_FAULT:{
+            // Gracefully handle a general protection fault
+            sti
             exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         // Other exceptions thrown by user applications...
         default:{
-            printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-            regdump(regs);
-            STOP
+            sti
+            exit(SYSCALL_FAULT_DETECTED);
+            break;
         }
     }
     return;

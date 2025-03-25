@@ -62,7 +62,7 @@ MUTEXSTATUS MutexLock(mutex_t* mutex){
         // We will return here when the mutex is unlocked
         return MUTEX_AQUIRED;
     }else{
-        asm volatile("lock bts $0, %0" : "+m" (mutex->locked) : : "memory");
+        asm volatile("lock incb %0" : "+m" (mutex->locked) : : "memory");
         mutex->owner = currentProcess;
         return MUTEX_AQUIRED;
     }
@@ -71,7 +71,7 @@ MUTEXSTATUS MutexLock(mutex_t* mutex){
 // Unlock a mutex
 MUTEXSTATUS MutexUnlock(mutex_t* mutex){
     asm volatile("" ::: "memory");
-    asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
+    asm volatile("lock decb %0" : "+m" (mutex->locked) : : "memory");
     if(mutex->waitQueue.first != NULL){
         // Dequeue process
         if(DequeueProcess(mutex)){
@@ -84,7 +84,7 @@ MUTEXSTATUS MutexUnlock(mutex_t* mutex){
 
 // Force unlock a mutex (for kernel use only)
 void KernelOverrideUnlock(mutex_t* mutex){
-    asm volatile("lock btr $0, %0" : "+m" (mutex->locked) : : "memory");
+    asm volatile("lock decb %0" : "+m" (mutex->locked) : : "memory");
     if(mutex->waitQueue.first != NULL){
         // Dequeue process
         DequeueProcess(mutex);
@@ -142,7 +142,7 @@ volatile pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* direct
         // TODO: implement stack allocation
         process->stackBase = 0;
         process->stackTop = 0;
-        process->esp = process->stackTop; // Set ESP to the top of the stack
+        //process->esp = process->stackTop; // Set ESP to the top of the stack
 
         // TODO: implement heap allocation
         process->heapBase = 0;

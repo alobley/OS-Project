@@ -61,12 +61,12 @@ typedef struct Process_Control_Block {
     // Memory information
     physaddr_t pageDirectory;                   // Page directory location
     uintptr_t stackBase;                        // Stack base
-    uintptr_t esp;                              // Stack pointer (ESP)
-    uintptr_t ebp;                              // Base pointer (EBP)
+    //uintptr_t esp;                              // Stack pointer (ESP)
+    //uintptr_t ebp;                              // Base pointer (EBP)
     uintptr_t stackTop;                         // Stack top
     uintptr_t heapBase;                         // Heap base
     uintptr_t heapEnd;                          // Heap end
-    uintptr_t eip;                              // Instruction pointer (EIP)
+    //uintptr_t eip;                              // Instruction pointer (EIP)
 
     size_t memSize;                             // Memory size (in bytes)
     struct Registers* regs;                     // CPU registers
@@ -95,7 +95,7 @@ typedef struct {
 } process_queue_t;
 
 typedef struct {
-    volatile bool locked;                       // Mutex lock state
+    volatile uint8_t locked;                    // Mutex lock state (byte so that atomic instructions are more likely to function properly)
     volatile pcb_t* owner;                      // Mutex owner
     process_queue_t waitQueue;                  // Mutex wait queue
 } mutex_t;

@@ -24,5 +24,5 @@ _start:
     int 0x30                            ; Call the kernel to exit the program
 
 section .data
-msg: db 'I am running in ring 3!', 0x0A ; Message to print
+msg: db 'Hello, World!', 0x0A           ; Message to print
 msg_len: equ $ - msg                    ; Length of the message
