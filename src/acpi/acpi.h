@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <util.h>
 
-typedef struct RSDP_V1{
+typedef struct PACKED RSDP_V1{
     char signature[8];
     uint8_t checksum;
     char OEMID[6];
@@ -13,7 +13,7 @@ typedef struct RSDP_V1{
     uint32_t rsdtAddress;
 } PACKED RSDP_V1_t;
 
-typedef struct RSDP_V2{
+typedef struct PACKED RSDP_V2{
     char signature[8];
     uint8_t checksum;
     char OEMID[6];
@@ -25,7 +25,7 @@ typedef struct RSDP_V2{
     uint8_t reserved[3];
 } PACKED RSDP_V2_t;
 
-typedef struct SDTHeader {
+typedef struct PACKED SDTHeader {
     char signature[4];
     uint32_t length;
     uint8_t revision;
@@ -38,18 +38,18 @@ typedef struct SDTHeader {
 } PACKED SDTHeader_t;
 
 // Root System Description Table
-typedef struct RSDT {
+typedef struct PACKED RSDT {
     struct SDTHeader header;
     uint32_t tablePointers[];
 } PACKED RSDT_t;
 
 // Extended Root System Description Table
-typedef struct XSDT {
+typedef struct PACKED XSDT {
     SDTHeader_t header;
     uint64_t tablePointers[];
 } PACKED XSDT_t;
 
-typedef struct GenericAddressStructure {
+typedef struct PACKED GenericAddressStructure {
     uint8_t addressSpace;
     uint8_t bitWidth;
     uint8_t bitOffset;

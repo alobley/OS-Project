@@ -44,8 +44,9 @@ void GetRSDP(){
         if(strncmp(i, toFind, 8) == 0){
             if(DoChecksum(i, sizeof(RSDP_V1_t))){
                 // Found it
-                if(acpiInfo.rsdp.rsdpV1->revision == 0){
-                    acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)i;
+                RSDP_V1_t* rsdp = (RSDP_V1_t*)i;
+                if(rsdp->revision == 0){
+                    acpiInfo.rsdp.rsdpV1 = rsdp;
                     acpiInfo.version = acpiInfo.rsdp.rsdpV1->revision;
                 }else{
                     acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)i;
@@ -64,7 +65,7 @@ void* FindFadtVer1(RSDT_t* rsdt){
 
     for(uint32_t i = 0; i < entries; i++){
         SDTHeader_t* header = (SDTHeader_t*)rsdt->tablePointers[i];
-        if(strncmp(header->signature, "FACP", 4)){
+        if(strncmp(header->signature, "FACP", 4) == 0){
             return (void*)header;
         }
     }
@@ -77,7 +78,7 @@ void* FindFadtVer2(XSDT_t* xsdt){
 
     for(uint32_t i = 0; i < entries; i++){
         SDTHeader_t* header = (SDTHeader_t*)((uintptr_t)xsdt->tablePointers[i]);
-        if(strncmp(header->signature, "FACP", 4)){
+        if(strncmp(header->signature, "FACP", 4) == 0){
             return (void*)header;
         }
     }
@@ -88,6 +89,7 @@ void* FindFadtVer2(XSDT_t* xsdt){
 
 // Print out the RSDP information. Call before any other stuff is done.
 void InitializeACPI(){
+    printk("Searching for ACPI tables...\n");
     GetRSDP();
     if(acpiInfo.rsdp.rsdpV1 != NULL && acpiInfo.version == 0){
         acpiInfo.rsdt.rsdt = (RSDT_t*)acpiInfo.rsdp.rsdpV1->rsdtAddress;
@@ -115,11 +117,13 @@ void InitializeACPI(){
 bool PS2ControllerExists(){
     // Check the 8042 controller flag
     if(acpiInfo.fadt == NULL){
+        printk("FADT is NULL. Can't check for PS/2 controller.\n");
         return false;
     }
     if(acpiInfo.fadt->header.revision > 1){
         // Check the boot architecture flags
-        return acpiInfo.fadt->bootArchFlags & 0x02;
+        printk("FADT revision: %u\n", acpiInfo.fadt->header.revision);
+        return (acpiInfo.fadt->bootArchFlags & 2) == 2;
     }
     // On version 1, it is always enabled
     return true;

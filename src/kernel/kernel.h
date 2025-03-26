@@ -6,33 +6,68 @@
 
 enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
+
+    // Keyboard management
     SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback
     SYS_REMOVE_KBD_HANDLE,                  // Remove a keyboard callback
-    SYS_INSTALL_TIMER_HANDLE,               // Install a timer callback
-    SYS_REMOVE_TIMER_HANDLE,                // Remove a timer callback
+
+    // Filesystem I/O
     SYS_WRITE,                              // Write to a file
     SYS_READ,                               // Read from a file
+    SYS_OPEN,                               // Open a file
+    SYS_CLOSE,                              // Close a file
+    SYS_SEEK,                               // Seek to a position in a file
+    SYS_STAT,                               // Get file information
+    SYS_CHMOD,                              // Change file permissions
+    SYS_CHOWN,                              // Change file ownership
+    SYS_UNLINK,                             // Unlink a file
+    SYS_MKDIR,                              // Make a directory
+    SYS_RMDIR,                              // Remove a directory
+    SYS_RENAME,                             // Rename a file
+    SYS_GETCWD,                             // Get the current working directory
+    SYS_CHDIR,                              // Change the current working directory
+    SYS_REPDUP,                             // Replace and Duplicate a file descriptor - replaces the original file descriptor pointer with a new one (like dup2 on Linux)
+
+    // Process management
     SYS_EXIT,                               // Exit the current process
     SYS_FORK,                               // Fork the current process
     SYS_EXEC,                               // Execute a new process which replaces the current one
     SYS_WAIT_PID,                           // Wait for a process to exit
     SYS_GET_PID,                            // Get the PID of the current process
     SYS_GET_PPID,                           // Get the PID of the parent process
-    SYS_GETCWD,                             // Get the current working directory
-    SYS_CHDIR,                              // Change the current working directory
-    SYS_OPEN,                               // Open a file
-    SYS_CLOSE,                              // Close a file
-    SYS_SEEK,                               // Seek to a position in a file
-    SYS_SLEEP,                              // Sleep for a certain amount of time
-    SYS_GET_TIME,                           // Get the current time
     SYS_KILL,                               // Kill a process
     SYS_YIELD,                              // Voluntarily yield the CPU
-    SYS_PIPE,                               // Create a pipe (returns a file descriptor, to remove the pipe, simple use close)
-    SYS_REPDUP,                             // Replace and Duplicate a file descriptor - replaces the original file descriptor pointer with a new one (like dup2 on Linux)
-    SYS_MMAP,                               // Map memory pages
-    SYS_MUNMAP,                             // Unmap memory pages
+    SYS_PIPE,                               // Create a pipe (returns a file descriptor, to remove the pipe, simply use close)
+    SYS_SHMGET,                             // Get a shared memory segment
+    SYS_SHMAT,                              // Attach to a shared memory segment
+    SYS_SHMDT,                              // Detach from a shared memory segment
+    SYS_MSGGET,                             // Get a message queue
+    SYS_MSGSND,                             // Send a message
+
+    // Time management
+    SYS_SLEEP,                              // Sleep for a certain amount of time
+    SYS_GET_TIME,                           // Get the current time of day
+    SYS_SET_TIME,                           // Set the current time of day
+    SYS_INSTALL_TIMER_HANDLE,               // Install a timer callback
+    SYS_REMOVE_TIMER_HANDLE,                // Remove a timer callback
+
+    // Networking
+    SYS_SOCKET,                             // Create a socket
+    SYS_BIND,                               // Bind a socket
+    SYS_LISTEN,                             // Listen on a socket
+    SYS_ACCEPT,                             // Accept a connection on a socket
+    SYS_CONNECT,                            // Connect to a socket
+    SYS_SEND,                               // Send data on a socket
+    SYS_RECV,                               // Receive data on a socket
+    SYS_CLOSE_SOCKET,                       // Close a socket
+
+    // Memory management
+    SYS_MMAP,                               // Map files or devices into memory
+    SYS_MUNMAP,                             // Unmap a region of memory
     SYS_BRK,                                // Change the heap size
     SYS_MPROTECT,                           // Change the protection of memory pages
+
+    // System/Device I/O
     SYS_REGDUMP,                            // Dump the registers to the console
     SYS_SYSINFO,                            // Get system information
     SYS_OPEN_DEVICE,                        // Open a device

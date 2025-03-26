@@ -166,17 +166,19 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Stress test the memory allocator
     printk("Stress testing the heap allocator...\n");
-    for(int i = 1; i < 1000; i++){
-        // Perform 1,000 allocations and deallocations of 6 pages (24 KiB) each - this should be stable enough to not cause any issues
-        uint8_t* test = halloc(PAGE_SIZE * 6);
+    for(int i = 1; i < 10; i++){
+        // Allocate an increasingly large amount of memory
+        uint8_t* test = halloc(PAGE_SIZE * i);
         if(test == NULL){
             // Memory allocation failed
             printk("KERNEL PANIC: Heap allocation error!\n");
             STOP
         }
-
-        memset(test, 1, PAGE_SIZE * 6);                         // Write to the memory to ensure it is allocated (if not it may corrupt memory or cause a page fault)
-
+    
+        //printk("Allocating %u bytes\n", PAGE_SIZE * i);
+    
+        memset(test, 1, (PAGE_SIZE * i));
+    
         hfree(test);
     }
 
@@ -259,6 +261,8 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
         STOP
     }
     printk("STDIN, STDOUT, and STDERR created successfully!\n");
+
+    //STOP
 
     // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     // Create the kernel's PCB
@@ -376,6 +380,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
     printk("Mounting filesystems...\n");
     // Probe the drivers to find filesystem support for the disks
     while(ataDevice != NULL){
+        printk("Looking for driver for device %s\n", ataDevice->devName);
         driver_t* fsDriver = FindDriver(ataDevice, DEVICE_TYPE_FILESYSTEM);
         // If the driver aquired the device, it is expected to have made a filesystem device
         if(fsDriver == NULL){

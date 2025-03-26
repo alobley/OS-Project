@@ -223,6 +223,8 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
         fat_cluster_t* current = rootDir;
         uint32_t currentCluster = rootCluster;
 
+        //STOP
+
         while(validCluster){
             uint32_t fatOffset = currentCluster * 4;
             uint32_t fatSector = firstFatSector + (fatOffset / bpb->bytesPerSector);

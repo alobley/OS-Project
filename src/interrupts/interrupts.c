@@ -10,6 +10,10 @@
 #include <elf.h>
 #include <gdt.h>
 
+void teststub(){
+    return;
+}
+
 // There appears to be an INTO instruction specifically meant for calling an overflow exception handler. That's pretty cool.
 
 void (*ProgramStart)(void) = NULL;
@@ -134,7 +138,9 @@ bool CheckPrivelige(){
 // - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
 // - Need a scheduler (just single-tasking as things stand)
 // - For better multitasking, fork() needs to be implemented and exec() needs to be updated
-HOT void syscall_handler(struct Registers *regs){
+#pragma GCC push_options
+#pragma GCC optimize ("O0")
+static HOT void syscall_handler(struct Registers *regs){
     sti
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
@@ -296,7 +302,7 @@ HOT void syscall_handler(struct Registers *regs){
             // SYS_EXIT
             // EBX contains the exit code
             // Exit a process and return to parent
-
+        
             volatile pcb_t* currentProcess = GetCurrentProcess();
             
             // Get the parent process
@@ -308,30 +314,27 @@ HOT void syscall_handler(struct Registers *regs){
             }
             
             // Save exit code to return to the parent
-            volatile uint32_t exitCode = regs->ebx;
+            uint32_t exitCode = regs->ebx;
             
-            // Save the parent's registers structure address before switching
-            struct Registers* parentRegs = parentProcess->regs;
+            // Save the parent's registers before any modifications
+            struct Registers parentRegisters = *parentProcess->regs;
             
             // Store exit code in parent's EAX register
-            parentRegs->eax = exitCode;
+            parentRegisters.eax = exitCode;
+
+            // Switch to the parent process first (important to do this before changing registers)
+            SetCurrentProcess(parentProcess);
             
             // Destroy the current process BEFORE switching to prevent memory leaks
             // Unpage the old process's memory and stack
             for(size_t i = 0; i < (currentProcess->memSize / PAGE_SIZE) + 3; i++){
                 pfree(currentProcess->pageDirectory + (i * PAGE_SIZE));
             }
-            DestroyProcess(currentProcess);
-
-            *regs = *parentRegs;
             
-            // Switch to the parent process
-            SetCurrentProcess(parentProcess);
+            // Now copy the saved parent registers to regs
+            *regs = parentRegisters;
 
-            if (parentProcess->priority == KERNEL) {                
-                // Make sure the EFLAGS has the correct IOPL for kernel mode
-                regs->ss = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
-            }
+            //regs->ebx = regs->user_esp;
             
             break;
         }
@@ -353,6 +356,10 @@ HOT void syscall_handler(struct Registers *regs){
             // Execute a new process (replaces current process)
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
+
+            //printk("User ESP: 0x%x\n", regs->user_esp);
+            //printk("Kernel ESP: 0x%x\n", regs->esp);
+            //STOP
 
             if(strlen((char*)regs->ebx) == 0){
                 regs->eax = SYSCALL_TASKING_FAILURE;
@@ -481,14 +488,14 @@ HOT void syscall_handler(struct Registers *regs){
             regs->edi = 0;
 
             // Enter ring 3 and execute the program (iret method)
-            regs->eflags.iopl = 0;
-            regs->eflags.interruptEnable = 1;
-            regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
-            regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            //regs->eflags.iopl = 0;
+            //regs->eflags.interruptEnable = 1;
+            //regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
+            //regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            //regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            //regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            //regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            //regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
 
             regs->eip = (uintptr_t)newProcess->EntryPoint;
             regs->user_esp = newProcess->stackTop;
@@ -1036,6 +1043,7 @@ HOT void syscall_handler(struct Registers *regs){
         }
     }
 }
+#pragma GCC pop_options
 
 static void (*stubs[NUM_ISRS])(struct Registers*) = {
     _isr0,

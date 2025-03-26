@@ -64,19 +64,24 @@ int fork(void){
     return result;
 }
 
-// For some reason, this makes exec work. Looks like 3 dwords pushed onto the stack? Must be from the interrupt.
-// This makes sense according to the intel manual. We're in ring 0 right now with this function, but in ring 3 more values are pushed onto the stack upin an interrupt.
-// But if that's the case, why doesn't this happen to other interrupts? Stress testing showed that this holds up upon use.
-void stub(uint32_t a, uint32_t b){
-    return;
-}
+extern void teststub(void);
 
 int exec(const char* path, const char* argv[], const char* envp[], int argc){
-    stub(0, 0);
+    teststub();
+
+    //return 0;
+
+    //STOP
 
     int result = 0;
     do_syscall(SYS_EXEC, (_ADDRESS)path, (_ADDRESS)argv, (_ADDRESS)envp, argc, 0);
     getresult(result);
+
+    //asm volatile("mov %ebx, %esp");
+
+    //STOP
+
+    teststub();
 
     return result;
 }

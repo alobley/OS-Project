@@ -350,6 +350,8 @@ int AddFileToList(file_list_t* list, file_context_t* context){
     int lastFd = INVALID_FD;
     // Before creating a node, try to find an unused node
     file_list_node_t* current = list->root;
+    file_list_node_t* last = NULL; // Keep track of the last node
+    
     while(current != NULL){
         lastFd = current->context->fd;
         if(current->context == NULL){
@@ -358,6 +360,7 @@ int AddFileToList(file_list_t* list, file_context_t* context){
             current->context->refCount = 1;
             return current->context->fd;
         }
+        last = current; // Update the last node
         current = current->next;
     }
 
@@ -366,10 +369,17 @@ int AddFileToList(file_list_t* list, file_context_t* context){
     if(newNode == NULL){
         return INVALID_FD;
     }
-    newNode->context->fd = lastFd + 1; // Increment last file descriptor
+    newNode->context->fd = lastFd + 1;
     newNode->context->used = true;
     newNode->context->refCount = 1;
-    current->next = newNode;
+    
+    // Handle case where list is empty
+    if(last == NULL) {
+        list->root = newNode;
+    } else {
+        last->next = newNode;
+    }
+    
     list->size++;
     return newNode->context->fd;
 }

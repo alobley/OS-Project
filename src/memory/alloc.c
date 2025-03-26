@@ -35,13 +35,11 @@ void InitializeAllocator(void){
 }
 
 // More complex memory allocation algorithm that takes blocks and makes them exactly the correct size
-MALLOC void* halloc(size_t size){ 
-    // Get the kernel's first heap memory block
+MALLOC void* halloc(size_t size){
     if(size == 0){
         return NULL;
     }
 
-    // MutexLock uses this function so to prevent deadlocks or infinite recursion we should do this
     while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
     MutexLock(&heapMutex);
 
@@ -49,12 +47,10 @@ MALLOC void* halloc(size_t size){
     block_header_t* previous = NULL;
     while(current != NULL){
         if(current->magic != MEMBLOCK_MAGIC){
-            // There was a memory corruption or invalid allocation
             printk("KERNEL PANIC: Invalid memory block magic number 0x%x\n", current->magic);
             STOP
         }
-        if(current->free && current->size > size + HEADER_SIZE + 1 /*Make sure the size is right and there's enough space for another memory block and at least one byte*/){
-            // The block is free and large enough
+        if(current->free && current->size > size + HEADER_SIZE + 1){
             block_header_t* newBlock = (block_header_t*)((uint8_t*)current + HEADER_SIZE + size);
             newBlock->size = (current->size - size) - HEADER_SIZE;
             newBlock->free = true;
@@ -64,96 +60,156 @@ MALLOC void* halloc(size_t size){
             current->size = size;
             current->free = false;
             current->next = newBlock;
-            //WriteString("Found block, split it\n");
+            
+            // Update the next block's prev pointer if it exists
+            if (newBlock->next != NULL) {
+                newBlock->next->prev = newBlock;
+            }
+            
             MutexUnlock(&heapMutex);
+            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }else if(current->free && current->size >= size){
-            // The block is free and the right size
-            // If there is not enough space for another block but it's too big, just allocate the whole block
             current->free = false;
-            //WriteString("Found block, allocating whole block\n");
             MutexUnlock(&heapMutex);
+            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         if(current->next == NULL && current->free && current->size < size + HEADER_SIZE){
-            // The current block is free and the last block, but it's not large enough
-            //WriteString("Last block is too small, allocating new block\n");
-            current->size = size + HEADER_SIZE;
-            size_t pagesToAdd = current->size / PAGE_SIZE;
-            if(current->size % PAGE_SIZE != 0){
-                pagesToAdd++;
+            // Calculate total needed size including potential split header
+            size_t totalNeeded = size + HEADER_SIZE;
+            if(totalNeeded + HEADER_SIZE + 1 <= PAGE_SIZE) {
+                totalNeeded += HEADER_SIZE + 1; // Account for potential split
             }
+            
+            // Calculate pages needed with proper rounding
+            size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
+            
+            // Check if we would exceed memory limits
+            if(heapEnd + (pagesToAdd * PAGE_SIZE) > totalMemSize || 
+               heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
+                MutexUnlock(&heapMutex);
+                return NULL;
+            }
+            
+            // Allocate pages
             for(size_t i = 0; i < pagesToAdd; i++){
-                palloc((uintptr_t)current + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW);
+                if(palloc(heapEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW) == PAGE_NOT_AQUIRED){
+                    // Deallocate any pages we've already allocated
+                    for(size_t j = 0; j < i; j++) {
+                        pfree(heapEnd + (j * PAGE_SIZE));
+                    }
+                    MutexUnlock(&heapMutex);
+                    printk("PAGING ERROR\n");
+                    STOP
+                }
             }
-            if(pagesToAdd * PAGE_SIZE > current->size + HEADER_SIZE + 1){
-                // The block is too large
-                //WriteString("Block is too large, splitting\n");
+
+            size_t totalSpace = pagesToAdd * PAGE_SIZE;
+            
+            if(totalSpace >= size + (2 * HEADER_SIZE) + 1){
                 block_header_t* newBlock = (block_header_t*)((uint8_t*)current + HEADER_SIZE + size);
-                newBlock->size = (pagesToAdd * PAGE_SIZE) - size - HEADER_SIZE;
+                newBlock->size = totalSpace - size - (2 * HEADER_SIZE);
                 newBlock->free = true;
                 newBlock->next = NULL;
                 newBlock->magic = MEMBLOCK_MAGIC;
                 newBlock->prev = current;
-                current->size = size + HEADER_SIZE;
+                current->size = size;
                 current->next = newBlock;
-            }else if(pagesToAdd * PAGE_SIZE > current->size){
-                // Too big, but not enough for another block
-                //WriteString("Block is too big, allocating whole block\n");
-                current->size += (pagesToAdd * PAGE_SIZE) - current->size;
             }else{
-                // Just right
-                //WriteString("Block is just right\n");
-                current->size = pagesToAdd * PAGE_SIZE;
+                current->size = totalSpace - HEADER_SIZE;
                 current->next = NULL;
             }
+            
             totalPages += pagesToAdd;
             current->free = false;
             current->magic = MEMBLOCK_MAGIC;
             heapEnd += pagesToAdd * PAGE_SIZE;
             MutexUnlock(&heapMutex);
+            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         previous = current;
         current = current->next;
     }
 
-    current = previous;
-
-    if(heapEnd >= totalMemSize || heapEnd + size + HEADER_SIZE >= heapEnd){
-        // Out of memory
-        //WriteString("Out of memory\n");
+    // We've reached the end of the list and didn't find a suitable block
+    if(heapEnd >= totalMemSize || heapEnd + size + HEADER_SIZE <= heapEnd){
         MutexUnlock(&heapMutex);
         return NULL;
     }
 
-    // No free memory block found, allocate a new one
-    //WriteString("No free memory block found, allocating new block\n");
-    size_t pagesToAdd = (size + HEADER_SIZE) / PAGE_SIZE;
-    if((size + HEADER_SIZE) % PAGE_SIZE != 0){
-        pagesToAdd++;
+    size_t totalNeeded = size + HEADER_SIZE;
+    if(totalNeeded + HEADER_SIZE + 1 <= PAGE_SIZE) {
+        totalNeeded += HEADER_SIZE + 1;
     }
+    
+    size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
+    
+    // Check if we would exceed memory limits
+    if(heapEnd + (pagesToAdd * PAGE_SIZE) > totalMemSize || 
+       heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
+        MutexUnlock(&heapMutex);
+        return NULL;
+    }
+    
     for(size_t i = 0; i < pagesToAdd; i++){
-        palloc(heapEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW);
+        if(palloc(heapEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW) == PAGE_NOT_AQUIRED){
+            // Deallocate any pages we've already allocated
+            for(size_t j = 0; j < i; j++) {
+                pfree(heapEnd + (j * PAGE_SIZE));
+            }
+            MutexUnlock(&heapMutex);
+            printk("PAGING ERROR\n");
+            STOP
+        }
     }
+    
     totalPages += pagesToAdd;
     block_header_t* newBlock = (block_header_t*) heapEnd;
     newBlock->size = size;
     newBlock->free = false;
     newBlock->next = NULL;
     newBlock->magic = MEMBLOCK_MAGIC;
-    newBlock->prev = current;
-    current->next = newBlock;
+    
+    // Fix: properly link the new block to the existing list
+    if (previous != NULL) {
+        previous->next = newBlock;
+        newBlock->prev = previous;
+    } else if (firstBlock == NULL) {
+        // This would be the first block in the heap
+        firstBlock = newBlock;
+        newBlock->prev = NULL;
+    } else {
+        // Shouldn't reach here, but just in case
+        newBlock->prev = NULL;
+    }
+    
+    size_t totalSize = pagesToAdd * PAGE_SIZE;
+    
+    // If we have enough space to split, create another block
+    if (totalSize > size + HEADER_SIZE + HEADER_SIZE + 1) {
+        block_header_t* splitBlock = (block_header_t*)((uint8_t*)newBlock + HEADER_SIZE + size);
+        splitBlock->size = totalSize - size - (2 * HEADER_SIZE);
+        splitBlock->free = true;
+        splitBlock->next = NULL;
+        splitBlock->prev = newBlock;
+        splitBlock->magic = MEMBLOCK_MAGIC;
+        newBlock->next = splitBlock;
+    }
+    
     heapEnd += pagesToAdd * PAGE_SIZE;
     MutexUnlock(&heapMutex);
+    //printk("Memory allocated at 0x%x ", newBlock + HEADER_SIZE);
     return (void*)((uint8_t*)newBlock + HEADER_SIZE);
 }
-
 
 void hfree(void* ptr){
     if(ptr == NULL){
         return;
     }
+
+    //printk("Freeing memory at 0x%x ", ptr);
 
     while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
     MutexLock(&heapMutex);
@@ -170,47 +226,77 @@ void hfree(void* ptr){
     // Mark the block as free
     block->free = true;
 
-    // Coalesce adjacent free blocks - improved algorithm
+    // Coalesce free blocks
     block_header_t* current = firstBlock;
-    bool modified;
+    while(current != NULL){
+        if(current->magic != MEMBLOCK_MAGIC){
+            // Invalid memory block
+            printk("KERNEL PANIC: Invalid memory block magic number during coalescing: 0x%x\n", current->magic);
+            STOP;
+        }
+        if(current->free && current->next != NULL && current->next->free){
+            // Merge the two blocks
+            current->size += current->next->size + HEADER_SIZE;
+            current->next = current->next->next;
+            if(current->next != NULL){
+                current->next->prev = current;
+            }
+        }
+        current = current->next;
+    }
 
-    do {
-        modified = false;
+    // Handle special case - if there's only one block and it's free
+    if (firstBlock->free && firstBlock->next == NULL) {
+        // Check if heap is larger than one page
+        if (heapEnd > heapStart + PAGE_SIZE) {
+            // Calculate pages to free
+            size_t heapSizeInPages = (heapEnd - heapStart) / PAGE_SIZE;
+            
+            // Keep first page, free the rest
+            for (size_t i = 1; i < heapSizeInPages; i++) {
+                pfree(heapStart + (i * PAGE_SIZE));
+                totalPages--;
+            }
+            
+            // Reset heap to initial state
+            heapEnd = heapStart + PAGE_SIZE;
+            firstBlock->size = PAGE_SIZE - HEADER_SIZE;
+        }
+    } 
+    // Try to shrink the heap if the last block is free
+    else {
         current = firstBlock;
-        
-        while(current != NULL) {
-            // Validate current block before using it
-            if(current->magic != MEMBLOCK_MAGIC) {
-                printk("KERNEL PANIC: Corrupted block during coalescing: 0x%x\n", current);
-                do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-                STOP;
-            }
-            
-            // Check if we can coalesce with next block
-            if(current->free && current->next != NULL && current->next->magic == MEMBLOCK_MAGIC && current->next->free) {
-                // Coalesce the blocks
-                current->size += current->next->size + HEADER_SIZE;
-                block_header_t* toRemove = current->next;
-                current->next = toRemove->next;
-                
-                // Update the next block's prev pointer if it exists
-                if(current->next != NULL) {
-                    current->next->prev = current;
-                }
-                
-                // Invalidate the removed block
-                toRemove->magic = 0;
-                
-                // Mark that we modified the list
-                modified = true;
-                
-                // Don't advance the pointer since we've modified the list
-                continue;
-            }
-            
+        // Find the last block
+        while (current->next != NULL) {
             current = current->next;
         }
-    } while(modified); // Continue until no more blocks can be coalesced
+        
+        if (current->free) {
+            // Calculate the address of the end of the used portion
+            uintptr_t usedEnd = (uintptr_t)current;
+            
+            // Align to page boundary (round up)
+            uintptr_t usedEndAligned = ((usedEnd + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
+            
+            // Free pages from usedEndAligned to heapEnd
+            if (usedEndAligned < heapEnd) {
+                size_t pagesToFree = (heapEnd - usedEndAligned) / PAGE_SIZE;
+                
+                for (size_t i = 0; i < pagesToFree; i++) {
+                    pfree(usedEndAligned + (i * PAGE_SIZE));
+                    totalPages--;
+                }
+                
+                // Update heap end
+                heapEnd = usedEndAligned;
+                
+                // Adjust the size of the last block if needed
+                if ((uintptr_t)current + current->size + HEADER_SIZE > heapEnd) {
+                    current->size = heapEnd - ((uintptr_t)current + HEADER_SIZE);
+                }
+            }
+        }
+    }
 
     MutexUnlock(&heapMutex);
 }

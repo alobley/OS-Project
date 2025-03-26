@@ -81,7 +81,7 @@ physaddr_t FindValidFrame(){
         // Skip to the next free bit if this one is unavailable
         lastFreeBit++;
     }
-    if(lastFreeBit >= TOTAL_PAGES){
+    if(lastFreeBit >= totalMemSize / PAGE_SIZE){
         // Search the whole memory bitmap in a dword-by-dword manner (32 times faster than checking individual bits)
         uint32_t* bitmap = (uint32_t*)memoryBitmap;
         for(size_t i = 0; i < TOTAL_BITS / 32; i++){
@@ -89,7 +89,8 @@ physaddr_t FindValidFrame(){
                 // Find the first zero bit in the dword
                 for(size_t j = 0; j < 32; j++){
                     if(!(bitmap[i] & (1 << j))){
-                        lastFreeBit = i * 32 + j;
+                        lastFreeBit = i * 32 + j + 1;
+                        ClearBit(lastFreeBit);
                         return lastFreeBit * PAGE_SIZE;
                     }
                 }
@@ -135,6 +136,12 @@ PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags){
         
         // Access the page table
         page_table_t* pt = (page_table_t*)table_phys;
+
+        if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
+            // Page already allocated!
+            printk("Page present at virtual address 0x%x\n", virt);
+            return PAGE_NOT_AQUIRED;
+        }
         
         // Set the page table entry
         pt->pages[pt_idx] = (frame & 0xFFFFF000) | flags;
@@ -245,7 +252,7 @@ void PageKernel(size_t memSize){
     ConstructPageDirectory(currentPageDir, currentPageTables);
     // Identity map the kernel to its physical address (The kernel's start address should already be aligned)
     for(size_t i = (uint32_t)&__kernel_start; i < ((uint32_t)&__kernel_end) + PAGE_SIZE; i += PAGE_SIZE){
-        int result = physpalloc(i, i, 0U | (PTE_FLAG_PRESENT | PTE_FLAG_RW));
+        int result = physpalloc(i, i, PTE_FLAG_PRESENT | PTE_FLAG_RW);
 
         if(result == -1){
             printk("KERNEL PANIC: Failed to map kernel page at 0x%x\n", i);
@@ -259,7 +266,7 @@ void PageKernel(size_t memSize){
         vgaPages++;
     }
 
-    // Get the first free page of memory after the kernel
+    // Get the first free page of memory after the kernel (Add a page of padding)
     uintptr_t firstVgaPage = (((uintptr_t)&__kernel_end) + PAGE_SIZE) & 0xFFFFF000;
     uint32_t offset = 0;
 
@@ -277,42 +284,68 @@ void PageKernel(size_t memSize){
 
     // Remap ACPI tables
     heapStart = firstVgaPage + offset + PAGE_SIZE;
+    virtaddr_t acpiStart = heapStart;
     size_t acpiPages = 0;
     if(acpiInfo.exists){
         // Remap RSDP
-        int result = physpalloc((physaddr_t)acpiInfo.rsdp.rsdpV1, heapStart, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
-        if(result == -1){
-            printk("KERNEL PANIC: Failed to map ACPI RSDP at 0x%x\n", (physaddr_t)acpiInfo.rsdp.rsdpV1);
-            STOP
+        physaddr_t rsdpAddr = (physaddr_t)acpiInfo.rsdp.rsdpV1;
+        // Align the rsdp address to page boundaries and get the offset from alignment
+        physaddr_t rsdpAligned = (rsdpAddr & 0xFFFFF000);
+        uint32_t rsdpOffset = rsdpAddr - rsdpAligned;
+        
+        virtaddr_t rsdpVirt = acpiStart + acpiPages * PAGE_SIZE;
+        for(size_t i = 0; i < sizeof(RSDP_V2_t); i += PAGE_SIZE){
+            int result = physpalloc(rsdpAligned + i, rsdpVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+            if(result == -1){
+                printk("KERNEL PANIC: Failed to map RSDP page at 0x%x\n", rsdpAligned + i);
+                STOP
+            }
+            acpiPages++;
         }
-        acpiPages++;
+        // Update the RSDP pointer with the virtual address + offset
+        acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)(rsdpVirt + rsdpOffset);
 
-        acpiInfo.rsdp.rsdpV1 = (RSDP_V1_t*)heapStart;
-
-        // Remap RSDT
-        heapStart += PAGE_SIZE;
-        result = physpalloc((physaddr_t)acpiInfo.rsdt.rsdt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
-        if(result == -1){
-            printk("KERNEL PANIC: Failed to map ACPI RSDT at 0x%x\n", (physaddr_t)acpiInfo.rsdt.rsdt);
-            STOP
+        // Remap the RSDT
+        physaddr_t rsdtAddr = (physaddr_t)acpiInfo.rsdt.rsdt;
+        physaddr_t rsdtAligned = (rsdtAddr & 0xFFFFF000);
+        uint32_t rsdtOffset = rsdtAddr - rsdtAligned;
+        
+        virtaddr_t rsdtVirt = acpiStart + acpiPages * PAGE_SIZE;
+        for(size_t i = 0; i < acpiInfo.rsdt.rsdt->header.length; i += PAGE_SIZE){
+            int result = physpalloc(rsdtAligned + i, rsdtVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+            if(result == -1){
+                printk("KERNEL PANIC: Failed to map RSDT page at 0x%x\n", rsdtAligned + i);
+                STOP
+            }
+            acpiPages++;
         }
+        // Update the RSDT pointer with the virtual address + offset
+        acpiInfo.rsdt.rsdt = (RSDT_t*)(rsdtVirt + rsdtOffset);
 
-        acpiPages++;
-        acpiInfo.rsdt.rsdt = (RSDT_t*)(heapStart + PAGE_SIZE);
-
-        // Remap FADT
-        heapStart += PAGE_SIZE;
-        result = physpalloc((physaddr_t)acpiInfo.fadt, heapStart + PAGE_SIZE, (PTE_FLAG_PRESENT | PTE_FLAG_RW));
-        if(result == -1){
-            printk("KERNEL PANIC: Failed to map ACPI FADT at 0x%x\n", (physaddr_t)acpiInfo.fadt);
-            STOP
+        // Remap the FADT
+        physaddr_t fadtAddr = (physaddr_t)acpiInfo.fadt;
+        physaddr_t fadtAligned = (fadtAddr & 0xFFFFF000);
+        uint32_t fadtOffset = fadtAddr - fadtAligned;
+        
+        virtaddr_t fadtVirt = acpiStart + acpiPages * PAGE_SIZE;
+        for(size_t i = 0; i < acpiInfo.fadt->header.length; i += PAGE_SIZE){
+            int result = physpalloc(fadtAligned + i, fadtVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+            if(result == -1){
+                printk("KERNEL PANIC: Failed to map FADT page at 0x%x\n", fadtAligned + i);
+                STOP
+            }
+            acpiPages++;
         }
-
-        acpiPages++;
-        acpiInfo.fadt = (FADT_t*)(heapStart + PAGE_SIZE);
+        // Update the FADT pointer with the virtual address + offset
+        acpiInfo.fadt = (FADT_t*)(fadtVirt + fadtOffset);
     }
 
+    heapStart += acpiPages * PAGE_SIZE;
+
+    // Add a page of padding to prevent underflows into the framebuffer
     heapStart += PAGE_SIZE;
+
+    printk("Allocating heap pages...\n");
 
     // Map the first page of the heap
     if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
@@ -330,11 +363,4 @@ void PageKernel(size_t memSize){
     asm volatile("mov %0, %%cr0" :: "r" (cr0));
 
     RemapVGA(firstVgaPage);                                                 // Move the VGA framebuffer pointer to the new location
-
-    // Allocate one page at the end of all the other data for the beginning of the kernel's heap
-    if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-        printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
-        STOP
-
-    }
 }

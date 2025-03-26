@@ -154,6 +154,7 @@ volatile pcb_t* CreateProcess(void (*entryPoint)(void), char* name, char* direct
         hfree(process);
         return NULL; // Failed to allocate memory for registers
     }
+    memset(process->regs, 0, sizeof(struct Registers));
 
     // Add process to process list
     process->next = processList;
@@ -192,8 +193,6 @@ void DestroyProcess(volatile pcb_t* process){
         // Free the working directory of the process
         hfree(process->workingDirectory);
     }
-
-    // Deallocate the file descriptor tree...
 
     // Deallocate other things...
 

@@ -238,6 +238,9 @@ driver_t* FindDriver(device_t* device, DEVICE_TYPE type){
     }
     driver_t* current = registry->firstDriver;
     while(current != NULL){
+        if(current == NULL){
+            break;
+        }
         if(current->probe == NULL){
             current = current->next;
             continue;
