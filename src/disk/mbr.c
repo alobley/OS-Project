@@ -13,13 +13,13 @@ lba ChsToLba(uint16_t head, uint16_t sector, uint16_t cylinder, blkdev_t* disk){
 DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
     if(disk == NULL){
         printk("No disk!\n");
-        STOP
+        //STOP
         return DRIVER_FAILURE; // Invalid disk
     }
     mbr_t* mbr = (mbr_t*)halloc(sizeof(mbr_t));
     if(mbr == NULL){
         printk("Out of memory!\n");
-        STOP
+        //STOP
         return DRIVER_OUT_OF_MEMORY; // Failed to allocate memory for MBR
     }
     memset(mbr, 0, sizeof(mbr_t));
@@ -31,7 +31,7 @@ DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
     if(device_read(disk->id, (void*)mbr, sizeof(mbr_t)) == DRIVER_FAILURE){
         hfree(mbr);
         printk("Read failed!\n");
-        STOP
+        //STOP
         return DRIVER_FAILURE; // Failed to read MBR
     }
 

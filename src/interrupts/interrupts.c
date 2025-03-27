@@ -138,8 +138,8 @@ bool CheckPrivelige(){
 // - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
 // - Need a scheduler (just single-tasking as things stand)
 // - For better multitasking, fork() needs to be implemented and exec() needs to be updated
-#pragma GCC push_options
-#pragma GCC optimize ("O0")
+//#pragma GCC push_options
+//#pragma GCC optimize ("O0")
 static HOT void syscall_handler(struct Registers *regs){
     sti
     int result;
@@ -302,6 +302,8 @@ static HOT void syscall_handler(struct Registers *regs){
             // SYS_EXIT
             // EBX contains the exit code
             // Exit a process and return to parent
+
+            //cli
         
             volatile pcb_t* currentProcess = GetCurrentProcess();
             
@@ -335,6 +337,11 @@ static HOT void syscall_handler(struct Registers *regs){
             *regs = parentRegisters;
 
             //regs->ebx = regs->user_esp;
+
+            //sti
+
+            //printk("TSS ESP: 0x%x\n", tss.esp0);
+            //printk("TSS SS: 0x%x\n", tss.ss0);
             
             break;
         }
@@ -1043,7 +1050,7 @@ static HOT void syscall_handler(struct Registers *regs){
         }
     }
 }
-#pragma GCC pop_options
+//#pragma GCC pop_options
 
 static void (*stubs[NUM_ISRS])(struct Registers*) = {
     _isr0,
@@ -1163,11 +1170,15 @@ void InstallISR(size_t i, void (*handler)(struct Registers*)){
     handlers[i] = handler;
 }
 
+extern uint8_t intstack_base;
+extern uint8_t intstack;
+
 void ISRHandler(struct Registers *regs){
     if (handlers[regs->int_no]) {
         handlers[regs->int_no](regs);
     }
-    tss.esp0 = regs->esp + 8;
+    tss.esp0 = (uint32_t)&intstack;
+    tss.ss0 = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
 }
 
 struct IDTEntry{

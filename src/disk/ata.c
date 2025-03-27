@@ -839,145 +839,214 @@ DRIVERSTATUS FindDisk(uint8_t diskno, device_t* ataDevice, blkdev_t* ataBlkDev){
 
 // First 64 bits of buffer = LBA offset
 // Next 16 bits are the sector count
-DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size){
-    if(buffer == NULL || size == 0){
-        //printk("Invalid buffer or size\n");
+DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size) {
+    if(buffer == NULL || size == 0) {
         return DRIVER_FAILURE; // Invalid buffer or size
     }
+    
+    // Extract parameters from buffer
     uint64_t* buf = (uint64_t*)buffer;
     lba offset = buf[0];
     uint64_t sectorCount = buf[1];
-    //printk("%u\n", sectorCount);
-
-    //printk("Reading LBA: %lu, Sector Count: %u\n", offset, sectorCount);
-
+    
+    // Get device information
     blkdev_t* blkdev = (blkdev_t*)this->deviceInfo;
-    if(blkdev->slave){
-        // Read from the slave drive
-        if(blkdev->lba28){
-            // Read using LBA28
-            sectorCount = (sectorCount > 256) ? 256 : sectorCount; // Limit to 256 sectors
-            outb(DriveSelect(blkdev->basePort), SLAVE_DRIVE | (((uint32_t)offset >> 24) & 0x0F));
-        }else if(blkdev->lba48){
-            // Read using LBA48
-            outb(DriveSelect(blkdev->basePort), 0x50);
-        }else{
-            // Convert CHS to LBA...
-            //printk("CHS to LBA conversion not implemented yet\n");
-            return DRIVER_FAILURE; // Not implemented yet
-        }
-    }else{
-        if(blkdev->lba28){
-            // Read using LBA28
-            sectorCount = (sectorCount > 256) ? 256 : sectorCount; // Limit to 256 sectors
-            outb(DriveSelect(blkdev->basePort), MASTER_DRIVE | (((uint32_t)offset >> 24) & 0x0F));
-        }else if(blkdev->lba48){
-            // Read using LBA48
-            outb(DriveSelect(blkdev->basePort), 0x40);
-        }else{
-            // Convert CHS to LBA...
-            //printk("CHS to LBA conversion not implemented yet\n");
-            return DRIVER_FAILURE; // Not implemented yet
-        }
-    }
-    DiskDelay(blkdev->basePort);
-
-    if(offset > blkdev->size){
-        //printk("Invalid offset\n");
+    if(offset > blkdev->size) {
         return DRIVER_FAILURE; // Invalid offset
     }
-
-    // Clear the buffer
+    
+    // Validate buffer size
+    if(size < blkdev->sectorSize * sectorCount) {
+        return DRIVER_FAILURE; // Buffer too small
+    }
+    
+    // Clear the buffer before reading
     memset(buffer, 0, size);
     uint16_t* dataBuffer = (uint16_t*)buffer;
-
-    if(size < blkdev->sectorSize * sectorCount){
-        //printk("%u\n", sectorCount);
-        //STOP
-        return DRIVER_FAILURE; // Invalid size
-    }
-
-    if(blkdev->lba28){
-        offset = (uint32_t)offset;
+    
+    // Wait for drive to be ready
+    WaitForIdle(blkdev->basePort);
+    
+    // Reset error register by reading it
+    inb(ErrorPort(blkdev->basePort));
+    
+    // Select the drive and prepare for command
+    if(blkdev->lba28) {
+        // Limit to 256 sectors for LBA28
+        sectorCount = (sectorCount > 256) ? 256 : sectorCount;
+        
+        // Select master/slave with correct drive bits
+        if(blkdev->slave) {
+            outb(DriveSelect(blkdev->basePort), SLAVE_DRIVE | ((((uint32_t)offset >> 24) & 0x0F) | 0xE0));
+        } else {
+            outb(DriveSelect(blkdev->basePort), MASTER_DRIVE | ((((uint32_t)offset >> 24) & 0x0F) | 0xE0));
+        }
+        
+        // Make sure drive select completes (crucial on real hardware)
+        DiskDelay(blkdev->basePort);
+        
+        // Send command parameters
         outb(FeaturesPort(blkdev->basePort), 0);
-        outb(SectorCount(blkdev->basePort), sectorCount);
+        
+        // If sectorCount is 0, it means 256 sectors in LBA28
+        outb(SectorCount(blkdev->basePort), (uint8_t)(sectorCount == 256 ? 0 : sectorCount));
         outb(LbaLo(blkdev->basePort), (uint8_t)(offset & 0xFF));
         outb(LbaMid(blkdev->basePort), (uint8_t)((offset >> 8) & 0xFF));
         outb(LbaHi(blkdev->basePort), (uint8_t)((offset >> 16) & 0xFF));
-
+        
+        // Wait for drive to be ready to accept command
         WaitForIdle(blkdev->basePort);
-
+        
+        // Send the read command
         outb(CmdPort(blkdev->basePort), COMMAND_READ_SECTORS);
-
-        for(size_t i = 0; i < sectorCount; i++){
-            WaitForIdle(blkdev->basePort);
-            WaitForDrq(blkdev->basePort);
-            for(size_t j = 0; j < 256; j++){
-                dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
-                if(inb(ErrorPort(blkdev->basePort)) != 0){
-                    //printk("Error reading from disk\n");
+        
+        // Handle read process
+        for(size_t i = 0; i < sectorCount; i++) {
+            // Wait for BSY clear and DRQ set
+            uint8_t status;
+            int timeout = 1000;  // Add timeout protection
+            
+            do {
+                DiskDelay(blkdev->basePort);
+                status = inb(StatusPort(blkdev->basePort));
+                
+                // Check for errors
+                if(status & FLG_ERR) {
+                    uint8_t error = inb(ErrorPort(blkdev->basePort));
                     SoftwareReset(blkdev);
-                    return DRIVER_FAILURE; // Error reading
+                    return DRIVER_FAILURE;
                 }
+                
+                if(--timeout <= 0) {
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE;
+                }
+            } while((status & FLG_BSY) || !(status & FLG_DRQ));
+            
+            // Read the data
+            for(size_t j = 0; j < 256; j++) {
+                dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
             }
         }
-
+        
+    } else if(blkdev->lba48) {
+        // Select drive
+        if(blkdev->slave) {
+            outb(DriveSelect(blkdev->basePort), 0x50);
+        } else {
+            outb(DriveSelect(blkdev->basePort), 0x40);
+        }
+        
+        // Make sure drive select completes
         DiskDelay(blkdev->basePort);
-        FlushCache(blkdev->basePort);
-    }else if(blkdev->lba48){
         WaitForIdle(blkdev->basePort);
-
-        // Send the high bytes
+        
+        // Send high bytes first
+        outb(FeaturesPort(blkdev->basePort), 0);
         outb(SectorCount(blkdev->basePort), (uint8_t)((sectorCount >> 8) & 0xFF));
         outb(LbaLo(blkdev->basePort), (uint8_t)((offset >> 24) & 0xFF));
         outb(LbaMid(blkdev->basePort), (uint8_t)((offset >> 32) & 0xFF));
         outb(LbaHi(blkdev->basePort), (uint8_t)((offset >> 40) & 0xFF));
-
-        // Send the low bytes
-        outb(SectorCount(blkdev->basePort), (uint8_t)((sectorCount & 0xFF)));
+        
+        // Send low bytes next
+        outb(FeaturesPort(blkdev->basePort), 0);
+        outb(SectorCount(blkdev->basePort), (uint8_t)(sectorCount & 0xFF));
         outb(LbaLo(blkdev->basePort), (uint8_t)(offset & 0xFF));
         outb(LbaMid(blkdev->basePort), (uint8_t)((offset >> 8) & 0xFF));
         outb(LbaHi(blkdev->basePort), (uint8_t)((offset >> 16) & 0xFF));
-
-        WaitForIdle(blkdev->basePort);
+        
+        // Send the read extended command
         outb(CmdPort(blkdev->basePort), COMMAND_READ_SECTORS_EXT);
-
-        int retries = 3;
-        while(retries-- > 0){
-            for(int i = 0; i < 4; i++){
-                inb(ErrorPort(blkdev->basePort));
-            }
-
-            if(inb(ErrorPort(blkdev->basePort)) == 0){
-                break;
-            }
-
-            if(retries == 0){
-                SoftwareReset(blkdev);
-                return DRIVER_FAILURE; // Error reading
-            }
-        }
-
-        WaitForDrq(blkdev->basePort);
-        for(size_t i = 0; i < sectorCount; i++){
-            WaitForIdle(blkdev->basePort);
-            WaitForDrq(blkdev->basePort);
-            for(size_t j = 0; j < 256; j++){
-                dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
-                if(inb(ErrorPort(blkdev->basePort)) != 0){
-                    //printk("Error reading from disk\n");
+        
+        // Handle read process with retries
+        for(size_t i = 0; i < sectorCount; i++) {
+            // Wait for BSY clear and DRQ set with timeout
+            uint8_t status;
+            int timeout = 1000;
+            
+            do {
+                DiskDelay(blkdev->basePort);
+                status = inb(StatusPort(blkdev->basePort));
+                
+                // Check for errors
+                if(status & FLG_ERR) {
+                    uint8_t error = inb(ErrorPort(blkdev->basePort));
                     SoftwareReset(blkdev);
-                    return DRIVER_FAILURE; // Error reading
+                    return DRIVER_FAILURE;
                 }
+                
+                if(--timeout <= 0) {
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE;
+                }
+            } while((status & FLG_BSY) || !(status & FLG_DRQ));
+            
+            // Read the data
+            for(size_t j = 0; j < 256; j++) {
+                dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
             }
         }
-    }else{
-        // CHS to LBA conversion not implemented yet
-        //printk("CHS to LBA conversion not implemented yet\n");
-        return DRIVER_FAILURE; // Not implemented yet
+        
+    } else {
+        // CHS mode (legacy)
+        uint16_t cylinder = offset / (blkdev->numHeads * blkdev->numSectors);
+        uint8_t head = (offset / blkdev->numSectors) % blkdev->numHeads;
+        uint8_t sector = (offset % blkdev->numSectors) + 1;
+        
+        // Select drive with head information
+        if(blkdev->slave) {
+            outb(DriveSelect(blkdev->basePort), SLAVE_DRIVE | (head & 0x0F));
+        } else {
+            outb(DriveSelect(blkdev->basePort), MASTER_DRIVE | (head & 0x0F));
+        }
+        
+        // Make sure drive select completes
+        DiskDelay(blkdev->basePort);
+        WaitForIdle(blkdev->basePort);
+        
+        // Send parameters
+        outb(SectorCount(blkdev->basePort), (uint8_t)sectorCount);
+        outb(LbaLo(blkdev->basePort), sector);
+        outb(LbaMid(blkdev->basePort), (uint8_t)(cylinder & 0xFF));
+        outb(LbaHi(blkdev->basePort), (uint8_t)((cylinder >> 8) & 0xFF));
+        
+        // Send read command
+        outb(CmdPort(blkdev->basePort), COMMAND_READ_SECTORS);
+        
+        // Handle read with timeout protection
+        for(size_t i = 0; i < sectorCount; i++) {
+            uint8_t status;
+            int timeout = 1000;
+            
+            do {
+                DiskDelay(blkdev->basePort);
+                status = inb(StatusPort(blkdev->basePort));
+                
+                if(status & FLG_ERR) {
+                    uint8_t error = inb(ErrorPort(blkdev->basePort));
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE;
+                }
+                
+                if(--timeout <= 0) {
+                    SoftwareReset(blkdev);
+                    return DRIVER_FAILURE;
+                }
+            } while((status & FLG_BSY) || !(status & FLG_DRQ));
+            
+            // Read the data
+            for(size_t j = 0; j < 256; j++) {
+                dataBuffer[j + (256 * i)] = inw(DataPort(blkdev->basePort));
+            }
+        }
     }
-
+    
+    // Ensure flush completes
+    FlushCache(blkdev->basePort);
+    
+    // Reset the drive for next operation
     SoftwareReset(blkdev);
+    
     return DRIVER_SUCCESS;
 }
 

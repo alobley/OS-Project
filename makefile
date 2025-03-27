@@ -5,12 +5,12 @@ ARCH=i386
 BOOTDISK=main.iso
 
 # QEMU Arguments
-EMARGS=-m 512M -smp 1 -vga vmware -display sdl,gl=on -machine pc
+EMARGS=-m 1024M -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu pentium -accel kvm
 EMARGS+=-cdrom bin/$(BOOTDISK)
 EMARGS+=-hda bin/harddisk.vdi
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-s -S #-d pcall -d int -no-reboot -no-shutdown
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d #-d mmu -no-reboot -no-shutdown #-s -S
 
 # Directories
 SRC_DIR=src
@@ -42,7 +42,7 @@ INCLIDES+=-I$(SRC_DIR)/libc
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -fno-tree-dce
-CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror #-fstack-check
+CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -fstack-check -march=i586 -mtune=generic
 
 # Libraries to compile with
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(KERNEL_DIR)/system.c $(KERNEL_DIR)/drivers.c

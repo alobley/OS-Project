@@ -75,6 +75,9 @@ volatile pcb_t* kernelPCB = NULL;
 extern uint8_t stack_begin;
 extern uint8_t stack;
 
+extern uint8_t intstack_base;
+extern uint8_t intstack;
+
 static ALIGNED(16) struct GDTPointer gdtp;
 static ALIGNED(16) struct GDT gdt;
 
@@ -98,7 +101,7 @@ void CreateGDT(){
     gdtp.base = (uint32_t)&gdt;
 
     tss.ss0 = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
-    tss.esp0 = (uint32_t)&stack;                                // Should this be replaced at any point? I'd assume so.
+    tss.esp0 = (uint32_t)&intstack;                                // Should this be replaced at any point? I'd assume so.
 
     LoadNewGDT((uint32_t)&gdtp);
 
@@ -166,7 +169,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Stress test the memory allocator
     printk("Stress testing the heap allocator...\n");
-    for(int i = 1; i < 10; i++){
+    for(int i = 1; i < 100; i++){
         // Allocate an increasingly large amount of memory
         uint8_t* test = halloc(PAGE_SIZE * i);
         if(test == NULL){
@@ -355,7 +358,7 @@ NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
 
         // Go to the next ATA device and repeat
         ataDevice = ataDevice->next;
-        while(ataDevice != NULL || ataDevice->type != DEVICE_TYPE_BLOCK){
+        while(ataDevice != NULL && ataDevice->type != DEVICE_TYPE_BLOCK){
             ataDevice = ataDevice->next;
             if(ataDevice == NULL){
                 break;

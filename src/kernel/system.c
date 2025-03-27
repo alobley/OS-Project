@@ -66,22 +66,17 @@ int fork(void){
 
 extern void teststub(void);
 
+NAKED void helpstub(int a, int b, int c, int d){
+    // Dilly dally to help return the CPU state to normal
+    return;
+}
+
 int exec(const char* path, const char* argv[], const char* envp[], int argc){
-    teststub();
-
-    //return 0;
-
-    //STOP
-
     int result = 0;
     do_syscall(SYS_EXEC, (_ADDRESS)path, (_ADDRESS)argv, (_ADDRESS)envp, argc, 0);
     getresult(result);
 
-    //asm volatile("mov %ebx, %esp");
-
     //STOP
-
-    teststub();
 
     return result;
 }

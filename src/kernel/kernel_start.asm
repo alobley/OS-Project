@@ -146,6 +146,7 @@ ISR_NO_ERR 48
 extern ISRHandler
 
 IsrCommon:
+    cli
     pusha
     push ds
     push es
@@ -171,6 +172,7 @@ IsrCommon:
 
     add esp, 8
 
+    sti
     iret
 
 section .rodata
@@ -208,3 +210,10 @@ global stack
 stack_begin:
     resb 0x10000
 stack:
+
+global intstack_base
+global intstack
+align 4096
+intstack_base:
+    resb 0x10000
+intstack:
