@@ -581,15 +581,15 @@ load_kernel:
     push bx
 
     ; Check if we have filled this segment with data (it should add up nicely. if not, that would suck very much)
-    cmp ebx, 0xFFFF
+    cmp bx, 0xFFFF
     je .next_segment
 
 .fat_off:
     ; Calculate the FAT offset
     mov ax, word [.currentcluster]
-    mov cx, 3
-    mul cx
-    shr ax, 1
+    mov bx, word [.currentcluster]
+    shr bx, 1
+    add ax, bx
 
     ; Calculate the entry offset
     xor bx, bx

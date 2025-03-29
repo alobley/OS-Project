@@ -11,16 +11,16 @@ CHECKSUM equ -(MAGIC + MBFLAGS)
 
 section .multiboot
 ; Commented out because the custom bootloader doesn't use multiboot
-;align 4
-    ;dd MAGIC
-    ;dd MBFLAGS
-    ;dd CHECKSUM
+align 4
+    dd MAGIC
+    dd MBFLAGS
+    dd CHECKSUM
 
 section .text
 global _start:function (_start.end - _start)
 _start:
-    cli
-    hlt
+    ;cli
+    ;hlt
 
     cld
 
