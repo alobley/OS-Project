@@ -9,11 +9,24 @@
 
 // These entries will be an array of mmap_entry_t structures in contiguous memory (allegedly)
 typedef struct MemoryMap {
-    uint32_t size;
+    uint32_t size;                           // This isn't standard apparently
     uint64_t base_addr;
     uint64_t length;
     uint32_t type;
 } PACKED mmap_entry_t;
+
+// This is what an actual BIOS memory map entry looks like
+typedef struct PACKED BIOS_mmap_entry {
+    uint64_t base_addr;
+    uint64_t length;
+    uint32_t type;
+    uint32_t acpi;                          // ACPI extended attributes bitfield if ACPI version is >= 3.0, otherwise reserved
+} PACKED bios_mmap_entry_t;
+#define MEMTYPE_USABLE 1
+#define MEMTYPE_RESERVED 2
+#define MEMTYPE_ACPI_RECLAIMABLE 3
+#define MEMTYPE_ACPI_NVS 4
+#define MEMTYPE_BADRAM 5
 
 typedef struct Module {
     uintptr_t start;
