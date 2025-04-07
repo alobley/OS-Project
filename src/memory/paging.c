@@ -115,6 +115,12 @@ PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags){
         return INVALID_FRAME; // No valid frame found
     }
 
+    if(virt & 0x00000FFF){
+        // Not page-aligned
+        printk("Page not aligned!\n");
+        return PAGE_NOT_AQUIRED;
+    }
+
     //printk("Allocating page at 0x%x\n", frame);
 
     // Get the page directory index and page table index

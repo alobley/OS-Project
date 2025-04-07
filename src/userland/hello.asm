@@ -1,6 +1,6 @@
-ORG 0
 BITS 32
 CPU 686
+;ORG 0
 
 ; Simple hello world program to test my OS's ABI
 

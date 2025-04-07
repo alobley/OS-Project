@@ -40,14 +40,14 @@ INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $
 INCLIDES+=-I$(SRC_DIR)/libc
 
 # Compilation Flags (TODO: don't compile with lGCC)
-CFLAGS=-T linker.ld -ffreestanding -O2 -nostdlib -fPIC --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -fno-tree-dce
-CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -fstack-check -march=i586 -mtune=generic
+CFLAGS=-T linker.ld -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -fno-tree-dce
+CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic
 
 # Libraries to compile with
 LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(KERNEL_DIR)/system.c $(KERNEL_DIR)/drivers.c
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c 
-LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(SRC_DIR)/libc/stdio.c $(LIB_DIR)/elf.c
+LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(SRC_DIR)/libc/stdio.c
 
 # Assembly and Kernel Files
 ASMFILE=stage0
@@ -57,7 +57,7 @@ CFILE=kernel
 PROGRAM_FILE=programtoload
 
 # Build Targets
-all: assemble compile drive_image addfiles qemu_grub
+all: clean assemble compile drive_image addfiles qemu_grub
 
 custom_boot: assemble compile boot_image addfiles qemu_custom
 grub_boot: assemble compile drive_image addfiles qemu_grub
@@ -72,7 +72,7 @@ boot_image: create_dirs assemble compile
     # Reserve 11 sectors for the bootloader
 	mkfs.fat -F 12 -R 11 $(BIN_DIR)/boot.img
 	sudo mount -o loop,rw $(BIN_DIR)/boot.img mnt
-	sudo cp $(BUILD_DIR)/$(CFILE).bin mnt/KERNEL.BIN
+	sudo cp $(BUILD_DIR)/$(CFILE).bin mnt/KERNEL.ELF
 	sync
 	sudo umount mnt
 	dd if=$(BUILD_DIR)/$(ASMFILE).bin of=$(BIN_DIR)/boot.img conv=notrunc
@@ -81,7 +81,7 @@ boot_image: create_dirs assemble compile
 # Create Boot Disk Image with GRUB
 drive_image: create_dirs assemble compile
 	mkdir -p isodir/boot/grub
-	cp $(BUILD_DIR)/$(CFILE).bin isodir/boot/$(CFILE).bin
+	cp $(BUILD_DIR)/$(CFILE).elf isodir/boot/$(CFILE).elf
 	cp $(BOOT_DIR)/grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o bin/main.iso isodir
 
@@ -92,12 +92,15 @@ assemble: create_dirs
 
 	$(ASM) -fbin $(BOOT_DIR)/stage1.asm -o $(BUILD_DIR)/stage1.bin
 
-	$(ASM) -fbin $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.bin
-	$(ASM) -fbin $(USER_DIR)/hello.asm -o $(BUILD_DIR)/HELLO.BIN
+	$(ASM) -felf32 $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.o
+	$(ASM) -felf32 $(USER_DIR)/hello.asm -o $(BUILD_DIR)/hello.o
+
+	i686-elf-ld $(BUILD_DIR)/prgm.o -o $(BUILD_DIR)/prgm.elf
+	i686-elf-ld $(BUILD_DIR)/hello.o -o $(BUILD_DIR)/hello.elf
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
-	$(CCOM) -o $(BUILD_DIR)/$(CFILE).bin $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
+	$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
 #$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
 # Run QEMU
@@ -111,8 +114,9 @@ qemu_grub: create_dirs
 addfiles: create_dirs
 	sync
 	sudo mount -o loop,rw bin/harddisk.vdi mnt
-	sudo cp $(BUILD_DIR)/prgm.bin mnt/PROGRAM.BIN
-	sudo cp $(BUILD_DIR)/HELLO.BIN mnt/HELLO.BIN
+	sudo rm -rf mnt/*
+	sudo cp $(BUILD_DIR)/prgm.elf mnt/PROGRAM.ELF
+	sudo cp $(BUILD_DIR)/hello.elf mnt/HELLO.ELF
 	sync
 	sudo umount mnt
 

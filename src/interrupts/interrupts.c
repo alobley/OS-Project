@@ -82,7 +82,7 @@ NORET void reboot_system(){
         AcpiReboot();
     }
 
-        uint32_t idt = 0;
+    uint32_t idt = 0;
     // If we get here, just triple fault
     lidt(idt)
     do_syscall(0, 0, 0, 0, 0, 0);
@@ -323,15 +323,51 @@ static HOT void syscall_handler(struct Registers *regs){
             
             // Store exit code in parent's EAX register
             parentRegisters.eax = exitCode;
-
-            // Switch to the parent process first (important to do this before changing registers)
-            SetCurrentProcess(parentProcess);
             
             // Destroy the current process BEFORE switching to prevent memory leaks
             // Unpage the old process's memory and stack
-            for(size_t i = 0; i < (currentProcess->memSize / PAGE_SIZE) + 3; i++){
-                pfree(currentProcess->pageDirectory + (i * PAGE_SIZE));
+
+            //printk("Exiting process\n");
+            
+            // Read the file data from the VFS and unpage the memory
+            vfs_node_t* file = VfsFindNode(currentProcess->executablePath);
+            if(file == NULL){
+                printk("Error: failed to find file\n");
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                STOP
             }
+
+            //printk("Unpaging memory for process %s\n", currentProcess->executablePath);
+            hfree(currentProcess->executablePath);
+
+            // Unpage the memory by reading the ELF
+            Elf32_Ehdr* elfHeader = (Elf32_Ehdr*)file->data;
+            Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
+            for(uint32_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
+                if(programHeader[i].type == PT_LOAD){
+                    // Unmap the memory
+                    virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
+                    for(size_t j = 0; j < programHeader[i].memorySize; j += PAGE_SIZE){
+                        // Unmap the page
+                        //printk("Unpaging page at 0x%x\n", alignedAddress + j);
+                        pfree(alignedAddress + j);
+                    }
+                }
+            }
+
+            //printk("Memory unpaged for process %s\n", currentProcess->name);
+
+            // Unpage the stack
+            for(size_t i = 0; i < 2; i ++){
+                // Unmap the page
+                //printk("Unpaging stack page at 0x%x\n", currentProcess->stackBase + i);
+                pfree(currentProcess->stackBase + (i * PAGE_SIZE));
+            }
+
+            hfree(file->data);
+
+            // Switch to the parent process first (important to do this before changing registers)
+            SetCurrentProcess(parentProcess);
             
             // Now copy the saved parent registers to regs
             *regs = parentRegisters;
@@ -366,7 +402,6 @@ static HOT void syscall_handler(struct Registers *regs){
 
             //printk("User ESP: 0x%x\n", regs->user_esp);
             //printk("Kernel ESP: 0x%x\n", regs->esp);
-            //STOP
 
             if(strlen((char*)regs->ebx) == 0){
                 regs->eax = SYSCALL_TASKING_FAILURE;
@@ -438,28 +473,32 @@ static HOT void syscall_handler(struct Registers *regs){
                 hfree(fullPath);
                 break;
             }
-            hfree(fullPath);
+            //hfree(fullPath);
 
-            virtaddr_t programEnd = 0;
-            // Page some low virtual address space and memcpy the program to it
-            // Pad an extra page at the end of the program just in case
-            for(size_t i = 0; i < (file->size / PAGE_SIZE) + 1; i++){
-                if(palloc(0 + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER) == STANDARD_FAILURE){
-                    //printk("Error: failed to page memory for program\n");
-                    regs->eax = SYSCALL_TASKING_FAILURE;
-                    break;
-                }
-                programEnd += PAGE_SIZE;
+            // Get and parse the ELF header
+            Elf32_Ehdr* elfHeader = (Elf32_Ehdr*)file->data;
+
+            //printk("ELF Magic: 0x%x\n", elfHeader->magic);
+            if(elfHeader->magic != ELF_MAGIC){
+                printk("Error: ELF magic number invalid!\n");
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(file->data);
+                break;
             }
 
-            // Clear the program's memory
-            memset((void*)0, 0, file->size);
+            if(elfHeader->type != ELF_TYPE_EXEC && elfHeader->type != ELF_TYPE_SHARED){
+                printk("Error: ELF type invalid!\n");
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(file->data);
+                break;
+            }
 
-            // Copy the program to the new memory (TODO: change to ELF parsing)
-            memcpy(NULL, file->data, file->size);
-            hfree(file->data);                          // The file handler doesn't need the data anymore
-
-            // Create the PCB for the program
+            if(elfHeader->instructionSet != ISA_X86_32){
+                printk("Error: Invalid ISA!\n");
+                regs->eax = SYSCALL_TASKING_FAILURE;
+                hfree(file->data);
+                break;
+            }
 
             volatile pcb_t* newProcess = CreateProcess(ProgramStart, strdup(file->name), strdup(GetCurrentProcess()->workingDirectory), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
             if(newProcess == NULL){
@@ -467,22 +506,52 @@ static HOT void syscall_handler(struct Registers *regs){
                 regs->eax = SYSCALL_TASKING_FAILURE;
                 break;
             }
-            newProcess->memSize = file->size;
 
-            // Allocate 2 pages (8KB) for the program's stack
+            newProcess->executablePath = fullPath;
+
+            // TODO: Allocate a new page directory for the new process
+
+            // Copy the ELF header to the new process's memory
+            Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
+            virtaddr_t entryPoint = (virtaddr_t)elfHeader->entry;
+            virtaddr_t stackBase = 0;
+            newProcess->EntryPoint = (void*)entryPoint;;
+            for(uint16_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
+                if(programHeader[i].type == PT_LOAD){
+                    virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
+                    size_t offset = programHeader[i].virtualAddress & 0x00000FFF;
+                    for(size_t j = 0; j < programHeader[i].memorySize; j += PAGE_SIZE){
+                        //printk("Allocating virtual address 0x%x\n", programHeader[i].virtualAddress + i);
+                        // Align the address to page
+                        //printk("Paging virtual address 0x%x\n", alignedAddress + j);
+                        //printk("Real address: 0x%x\n", programHeader[i].virtualAddress + j);
+                        PAGE_RESULT result = palloc(alignedAddress + j, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+                        if(result == PAGE_NOT_AQUIRED || result == PAGE_NOT_AQUIRED){
+                            // Only if the page is not aquired, since it may re-page the same area. If that's the case, just copy the data
+                            printk("Error: failed to page memory\n");
+                            regs->eax = SYSCALL_TASKING_FAILURE;
+                            return;
+                        }
+                    }
+                    memset((void*)(programHeader[i].virtualAddress), 0, programHeader[i].memorySize);
+                    memcpy((void*)(programHeader[i].virtualAddress), (void*)((uintptr_t)elfHeader + programHeader[i].offset), programHeader[i].fileSize);
+                    newProcess->memSize += programHeader[i].memorySize;
+                    stackBase = programHeader[i].virtualAddress + programHeader[i].memorySize;              // Ensure the stack is at the end of the memory
+                }
+            }
+
+            stackBase += PAGE_SIZE; // Add a page of padding to the stack base
+            newProcess->stackBase = (stackBase & 0xFFFFF000) + PAGE_SIZE; // Align the stack base to the next page
+
+            // Page the stack
             for(size_t i = 0; i < 2; i++){
-                if(palloc(programEnd + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER) == STANDARD_FAILURE){
-                    printk("Error: failed to page memory for program stack\n");
+                //printk("Allocating virtual address 0x%x\n", newProcess->stackBase + (i * PAGE_SIZE));
+                if(palloc(newProcess->stackBase + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+                    printk("Error: failed to page stack\n");
                     regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
                 }
             }
-            memset((void*)(programEnd), 0, PAGE_SIZE * 2);
-
-
-            // Set up the new process's stack
-            newProcess->stackBase = programEnd;
-            newProcess->stackTop = programEnd + (2 * PAGE_SIZE);
 
             SetCurrentProcess(newProcess);
 
@@ -1174,6 +1243,7 @@ extern uint8_t intstack_base;
 extern uint8_t intstack;
 
 void ISRHandler(struct Registers *regs){
+    tss.esp0 = regs->esp;                                   // Help reduce stack corruption upon a nested interrupt
     if (handlers[regs->int_no]) {
         handlers[regs->int_no](regs);
     }

@@ -5,70 +5,119 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <util.h>
 #include <stdbool.h>
+#include <util.h>
 
-// These are the only architectures I need to worry about for now
-#define ELF_ARCH_X86 0x03
-#define ELF_ARCH_X86_64 0x3E
-
-#define ELF_PT_NULL 0
-#define ELF_PT_LOAD 1
-#define ELF_PT_DYNAMIC 2
-#define ELF_PT_INTERP 3
-#define ELF_PT_NOTE 4
-#define ELF_PT_SHARED 5
-#define ELF_PT_PHDR 6
-#define ELF_PT_TLS 7
-
-// Personal probing showed the value to be this
 #define ELF_MAGIC 0x464C457F
 
-#define ELF_FLAG_EXEC 1
-#define ELF_FLAG_WRITE 2
-#define ELF_FLAG_READ 4
+enum ELF_ISAs {
+    NO_ISA = 0,
+    ISA_SPARC = 0x02,
+    ISA_X86_32 = 0x03,
+    ISA_MIPS = 0x08,
+    ISA_ARM = 0x28,
+    ISA_SUPERH = 0x2A,
+    ISA_IA64 = 0x32,
+    ISA_X86_64 = 0x3E,
+    ISA_AARCH64 = 0xB7,
+    ISA_RISCV = 0xF3,
+};
 
-typedef struct PACKED ELF_Header {
-    uint32_t magic;                 // 0x7F 'E' 'L' 'F'
-    uint8_t bits;                   // 1 = 32-bit, 2 = 64-bit
-    uint8_t endianness;             // 1 = little, 2 = big
-    uint8_t headerVersion;          // 1 = original
-    uint8_t osABI;                  // 0 = System V
-    uint8_t padding[8];
-    uint16_t type;                  // 1 = relocatable, 2 = executable, 3 = shared, 4 = core
-    uint16_t instructionSet;        // The supported architecture
-    uint32_t version;               // 1 = original
-    uintptr_t entryOffset;          // The entry point of the program(?)
-    uintptr_t programHeaderOffset;  // The offset of the program header
-    uintptr_t sectionHeaderOffset;  // The offset of the section header
-    uint32_t flags;                 // Architecture-specific flags
-    uint16_t headerSize;            // Size of this header
-    uint16_t programHeaderSize;     // Size of the program header
-    uint16_t numProgramHeaders;     // Number of entries in the program header
-    uint16_t stringTableIndex;      // The index of the string table section
-} PACKED elf_header_t;
+enum ELF_ABIs {
+    ABI_SYSV = 0,
+    ABI_HPUX = 1,
+    ABI_NETBSD = 2,
+    ABI_LINUX = 3,
+    ABI_SOLARIS = 6,
+    ABI_AIX = 7,
+    ABI_IRIX = 8,
+    ABI_FREEBSD = 9,
+    ABI_TRU64 = 10,
+    ABI_MODESTO = 11,
+    ABI_OPENBSD = 12,
+};
 
+enum ELF_FILE_TYPES {
+    ELF_TYPE_NONE = 0,
+    ELF_TYPE_RELOCATABLE = 1,
+    ELF_TYPE_EXEC = 2,
+    ELF_TYPE_SHARED = 3,
+    ELF_TYPE_CORE = 4,
+};
 
-#define ELF_HEADER_TYPE_NULL 0
-#define ELF_HEADER_TYPE_PROGBITS 1
-#define ELF_HEADER_TYPE_DYNAMIC 2
-#define ELF_HEADER_TYPE_INTERPRETER 3
-#define ELF_HEADER_TYPE_NOTE 4
-#define ELF_HEADER_TYPE_SHARED 5
-#define ELF_HEADER_TYPE_PROGHEADER 6
-#define ELF_HEADER_TYPE_TLS 7
-// Defines segments in the ELF file (is abn array of size numEntries)
-typedef struct PACKED ELF_Program_Header {
-    uint32_t type;                  // 0 = NULL, 1 = load, 2 = dynamic, 3 = interpreter, 4 = note, 5 = shared, 6 = program header, 7 = TLS
-    uint32_t offset;                // Offset in the file where this segment can be found
-    uintptr_t virtualAddress;       // Virtual address in memory where this segment should be loaded
-    uintptr_t physicalAddress;      // Physical address (ignored on x86)
-    uint32_t fileSize;              // Size of this segment in the file
-    uint32_t flags;                 // Flags (read, write, execute)
-    uint32_t alignment;             // Alignment of this segment in memory
-} PACKED elf_program_header_t;
+enum ELF_SEGMENT_TYPES {
+    PT_NULL = 0,
+    PT_LOAD = 1,
+    PT_DYNAMIC = 2,
+    PT_INTERP = 3,
+    PT_NOTE = 4,
+    // Others...
+};
 
-// Check to see if the executable is a valid 32-bit x86 ELF file
-bool IsValidELF(elf_header_t* header);
+typedef struct {
+    uint32_t magic;
+    uint8_t bits;
+    uint8_t endian;
+    uint8_t headerVersion;
+    uint8_t osabi;
+    uint8_t reserved[8];
+    uint16_t type;
+    uint16_t instructionSet;
+    uint32_t elfVersion;
+    uint32_t entry;
+    uint32_t programHeaderOffset;
+    uint32_t sectionHeaderOffset;
+    uint32_t flags;
+    uint16_t headerSize;
+    uint16_t programHeaderEntrySize;
+    uint16_t programHeaderEntryCount;
+    uint16_t sectionHeaderEntrySize;
+    uint16_t sectionHeaderEntryCount;
+    uint16_t sectionHeaderStringIndex;
+} PACKED Elf32_Ehdr;
+
+typedef struct {
+    uint32_t type;                      // Type of segment
+    uint32_t offset;                    // Offset in the file
+    uint32_t virtualAddress;            // Virtual address
+    uint32_t physicalAddress;           // Physical address (not used in most cases)
+    uint32_t fileSize;                  // Size of the segment in the file
+    uint32_t memorySize;                // Size of the segment in memory
+    uint32_t flags;                     // Flags (read, write, execute)
+    uint32_t align;                     // Alignment
+} PACKED Elf32_Phdr;
+
+typedef struct {
+    uint32_t magic;
+    uint8_t bits;
+    uint8_t endian;
+    uint8_t headerVersion;
+    uint8_t osabi;
+    uint8_t _reserved[8];
+    uint16_t type;
+    uint16_t instructionSet;
+    uint32_t elfVersion;
+    uint64_t entry;
+    uint64_t programHeaderOffset;
+    uint64_t sectionHeaderOffset;
+    uint32_t flags;
+    uint16_t headerSize;
+    uint16_t programHeaderEntrySize;
+    uint16_t programHeaderEntryCount;
+    uint16_t sectionHeaderEntrySize;
+    uint16_t sectionHeaderEntryCount;
+    uint16_t sectionHeaderStringIndex;
+} PACKED Elf64_Ehdr;
+
+typedef struct {
+    uint32_t type;
+    uint32_t flags;
+    uint64_t offset;
+    uint64_t virtualAddress;
+    uint64_t physicalAddress;
+    uint64_t fileSize;
+    uint64_t memorySize;
+    uint64_t align;
+} PACKED Elf64_Phdr;
 
 #endif

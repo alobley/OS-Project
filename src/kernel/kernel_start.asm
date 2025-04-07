@@ -1,7 +1,7 @@
 BITS 32
 CPU 386
 
-extern kernel_main
+extern kmain
 
 MBALIGN equ 1 << 0
 MEMINFO equ 1 << 1
@@ -51,7 +51,7 @@ _start:
 
     ; For some reason using the call instruction will always, without fail, cause the first argument to be 0x10.
     ; Note: I have learned that the reason is because it's a far call, so the 0x10 was actually ss. lol.
-    jmp 0x8:kernel_main
+    jmp 0x8:kmain
 .end:
     cli
     hlt
@@ -95,7 +95,15 @@ _isr%1:
     jmp IsrCommon
 %endm
 
-ISR_NO_ERR 0
+global _isr0
+_isr0:
+    ; Special handling for the timer interrupt
+    cli
+    mov esp, timer_stack
+    mov ebp, timer_stack_base
+    push dword 0
+    jmp IsrCommon
+
 ISR_NO_ERR 1
 ISR_NO_ERR 2
 ISR_NO_ERR 3
@@ -148,7 +156,6 @@ ISR_NO_ERR 48
 extern ISRHandler
 
 IsrCommon:
-    cli
     pusha
     push ds
     push es
@@ -175,7 +182,7 @@ IsrCommon:
     add esp, 8
 
     sti
-    iret
+    iretd
 
 section .rodata
 ALIGN 16
@@ -215,7 +222,12 @@ stack:
 
 global intstack_base
 global intstack
-align 4096
+align 16
 intstack_base:
-    resb 0x10000
+    resb 0x1000
 intstack:
+
+align 16
+timer_stack_base:
+    resb 0x1000
+timer_stack:

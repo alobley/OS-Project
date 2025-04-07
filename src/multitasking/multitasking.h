@@ -48,6 +48,7 @@ typedef struct Process_Control_Block {
     process_flags_t flags;                      // Process flags
     process_state_t state;                      // Process state
     char* name;                                 // Process name
+    char* executablePath;                       // Executable path
     void (*EntryPoint)(void);                   // Entry point
 
     // Environment/Args

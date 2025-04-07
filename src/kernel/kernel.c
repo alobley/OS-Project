@@ -42,22 +42,22 @@ extern void shell(void);
 //
 // This is my reminder to update the GRUB menu entry when I update this
 //
-version_t kernelVersion = {0, 9, 0};
+version_t kernelVersion = {0, 10, 0};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;
 
 // Notes:
-// - I need lookup tables for files and processes for proper management of them
+// - I need lookup tables or bitmaps or something for files and processes for proper management of them (they are linked lists and trees currently, respectively)
 
 /* Short-Term TODO:
  * - Implement a proper command parser in KISh (done)
  * - Finish up the driver/module implementation (done)
  * - Implement file then program loading (done)
  * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
+ * - Implement a proper task scheduler and multitasking (current goal and REQUIRED)
  * - Create a driver to be loaded as a module
- * - Improve the memory manager (Needed? The heap allocator can take a lot of abuse)
- * - Implement a proper task scheduler
+ * - Improve the memory manager (done)
  * - Read up on UNIX philosophy and more closely follow it (in progress)
 */
 
@@ -90,6 +90,8 @@ void FlushTSS(uint16_t tss_segment) {
 void CreateGDT(){
     cli
     memset(&tss, 0, sizeof(struct TSS_Entry));                 // Clear the TSS
+
+    // Create the GDT descriptors for the kernel and user segments
     gdt.null = GDT_NULL_SEGMENT;
     gdt.kernelCode = CreateDescriptor(0, 0xFFFFFFFF, GDT_CODE_PL0);
     gdt.kernelData = CreateDescriptor(0, 0xFFFFFFFF, GDT_DATA_PL0);
@@ -97,14 +99,18 @@ void CreateGDT(){
     gdt.userData = CreateDescriptor(0, 0xFFFFFFFF, GDT_DATA_PL3);
     gdt.tss = CreateDescriptor((uint32_t)&tss, sizeof(struct TSS_Entry), GDT_TSS_SEGMENT);
 
+    // Set the GDT pointer to the GDT
     gdtp.limit = sizeof(struct GDT) - 1;
     gdtp.base = (uint32_t)&gdt;
 
+    // Set the only required entries of the TSS
     tss.ss0 = GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_DATA);
     tss.esp0 = (uint32_t)&intstack;                                // Should this be replaced at any point? I'd assume so.
 
+    // Load t he GDT
     LoadNewGDT((uint32_t)&gdtp);
 
+    // Load the TSS
     FlushTSS(GDT_RING0_SEGMENT_POINTER(GDT_TSS));
     sti
 }
@@ -113,7 +119,7 @@ void CreateGDT(){
 /// @param magic The magic number provided by the bootloader (must be multiboot-compliant)
 /// @param mbootInfo A pointer to the multiboot info structure provided by the bootloader
 /// @return Doesn't return
-NORET void kernel_main(uint32_t magic, multiboot_info_t* mbootInfo){
+NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     if(magic != MULTIBOOT2_MAGIC && magic != MULTIBOOT_MAGIC){
         // Check if the magic number is valid (if not, boot may have failed)
         printk("KERNEL PANIC: Invalid multiboot magic number: 0x%x\n", magic);
