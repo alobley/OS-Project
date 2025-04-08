@@ -315,14 +315,8 @@ static HOT void syscall_handler(struct Registers *regs){
                 STOP
             }
             
-            // Save exit code to return to the parent
-            uint32_t exitCode = regs->ebx;
-            
-            // Save the parent's registers before any modifications
-            struct Registers parentRegisters = *parentProcess->regs;
-            
             // Store exit code in parent's EAX register
-            parentRegisters.eax = exitCode;
+            parentProcess->regs->eax = regs->ebx;
             
             // Destroy the current process BEFORE switching to prevent memory leaks
             // Unpage the old process's memory and stack
@@ -337,7 +331,6 @@ static HOT void syscall_handler(struct Registers *regs){
                 STOP
             }
 
-            //printk("Unpaging memory for process %s\n", currentProcess->executablePath);
             hfree(currentProcess->executablePath);
 
             // Unpage the memory by reading the ELF
@@ -355,8 +348,6 @@ static HOT void syscall_handler(struct Registers *regs){
                 }
             }
 
-            //printk("Memory unpaged for process %s\n", currentProcess->name);
-
             // Unpage the stack
             for(size_t i = 0; i < 2; i ++){
                 // Unmap the page
@@ -370,14 +361,7 @@ static HOT void syscall_handler(struct Registers *regs){
             SetCurrentProcess(parentProcess);
             
             // Now copy the saved parent registers to regs
-            *regs = parentRegisters;
-
-            //regs->ebx = regs->user_esp;
-
-            //sti
-
-            //printk("TSS ESP: 0x%x\n", tss.esp0);
-            //printk("TSS SS: 0x%x\n", tss.ss0);
+            *regs = *parentProcess->regs;
             
             break;
         }
@@ -399,6 +383,8 @@ static HOT void syscall_handler(struct Registers *regs){
             // Execute a new process (replaces current process)
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
+
+            // This is an early implementation, so right now it creates a new process and switches to it, then switches back to the caller when SYS_EXIT is called
 
             //printk("User ESP: 0x%x\n", regs->user_esp);
             //printk("Kernel ESP: 0x%x\n", regs->esp);
@@ -1291,9 +1277,9 @@ void InitIDT(){
 static void ExceptionHandler(struct Registers *regs){
     cli
     // Uncomment this when debugging system calls
-    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    //regdump(regs);
-    //STOP
+    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
+    STOP
 
     volatile pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
@@ -1308,25 +1294,25 @@ static void ExceptionHandler(struct Registers *regs){
         case PAGE_FAULT:{
             // Gracefully handle a page fault
             sti
-            exit(SYSCALL_FAULT_DETECTED);
+            //exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_STACK_FAULT:{
             // Gracefully handle a stack fault (likely a stack overflow)
             sti
-            exit(SYSCALL_FAULT_DETECTED);
+            //exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_GENERAL_PROTECTION_FAULT:{
             // Gracefully handle a general protection fault
             sti
-            exit(SYSCALL_FAULT_DETECTED);
+            //exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         // Other exceptions thrown by user applications...
         default:{
             sti
-            exit(SYSCALL_FAULT_DETECTED);
+            //exit(SYSCALL_FAULT_DETECTED);
             break;
         }
     }

@@ -49,8 +49,6 @@ _start:
     push eax
     push .end
 
-    ; For some reason using the call instruction will always, without fail, cause the first argument to be 0x10.
-    ; Note: I have learned that the reason is because it's a far call, so the 0x10 was actually ss. lol.
     jmp 0x8:kmain
 .end:
     cli
@@ -60,6 +58,25 @@ _start:
 
 section .text.interrupts
 ALIGN 4
+
+%define SYS_EXEC 21
+
+global exec:function (exec.end - exec)
+exec:
+    push ebp
+    mov ebp, esp
+
+    mov ebx, [esp + 8]
+    mov ecx, [esp + 12]
+    mov edx, [esp + 16]
+    mov esi, [esp + 20]
+    mov eax, SYS_EXEC
+    int 0x30
+
+    pop ebp
+    ret
+.end:
+
 
 global LoadNewGDT:function (LoadNewGDT.end - LoadNewGDT)
 LoadNewGDT:

@@ -41,10 +41,10 @@ INCLIDES+=-I$(SRC_DIR)/libc
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -fno-tree-dce
-CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic
+CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer
 
 # Libraries to compile with
-LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(KERNEL_DIR)/system.c $(KERNEL_DIR)/drivers.c
+LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(LIB_DIR)/kernel_system.c $(KERNEL_DIR)/drivers.c
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(USER_DIR)/shell.c $(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c 
 LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(SRC_DIR)/libc/stdio.c
@@ -95,12 +95,13 @@ assemble: create_dirs
 	$(ASM) -felf32 $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.o
 	$(ASM) -felf32 $(USER_DIR)/hello.asm -o $(BUILD_DIR)/hello.o
 
-	i686-elf-ld $(BUILD_DIR)/prgm.o -o $(BUILD_DIR)/prgm.elf
-	i686-elf-ld $(BUILD_DIR)/hello.o -o $(BUILD_DIR)/hello.elf
+	i686-elf-ld $(BUILD_DIR)/prgm.o -o $(BUILD_DIR)/prgm.elf -m elf_i386
+	i686-elf-ld $(BUILD_DIR)/hello.o -o $(BUILD_DIR)/hello.elf -m elf_i386
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
 	$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
+	$(CCOM) -o $(BUILD_DIR)/userc.elf $(USER_DIR)/userc.c $(USER_DIR)/system.c -I $(USER_DIR) -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer
 #$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
 # Run QEMU
@@ -117,6 +118,7 @@ addfiles: create_dirs
 	sudo rm -rf mnt/*
 	sudo cp $(BUILD_DIR)/prgm.elf mnt/PROGRAM.ELF
 	sudo cp $(BUILD_DIR)/hello.elf mnt/HELLO.ELF
+	sudo cp $(BUILD_DIR)/userc.elf mnt/USERC.ELF
 	sync
 	sudo umount mnt
 

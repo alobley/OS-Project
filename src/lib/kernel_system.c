@@ -1,6 +1,8 @@
 #include <system.h>
 #include <kernel.h>
 
+#define asm __asm__
+
 typedef unsigned int _ADDRESS;
 #define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x));
 
@@ -53,31 +55,10 @@ FILESTATUS read(int fd, void* buf, unsigned int count){
     return result;
 }
 
-void exit(int status){
-    do_syscall(SYS_EXIT, status, 0, 0, 0, 0);
-}
-
 int fork(void){
     int result = 0;
     do_syscall(SYS_FORK, 0, 0, 0, 0, 0);
     getresult(result);
-    return result;
-}
-
-extern void teststub(void);
-
-NAKED void helpstub(int a, int b, int c, int d){
-    // Dilly dally to help return the CPU state to normal
-    return;
-}
-
-int exec(const char* path, const char* argv[], const char* envp[], int argc){
-    int result = 0;
-    do_syscall(SYS_EXEC, (_ADDRESS)path, (_ADDRESS)argv, (_ADDRESS)envp, argc, 0);
-    getresult(result);
-
-    //STOP
-
     return result;
 }
 
@@ -207,7 +188,7 @@ int sysinfo(struct sysinfo* info){
 
 int open_device(char* path, user_device_t* device){
     int result = 0;
-    do_syscall(SYS_OPEN_DEVICE, (uintptr_t)path, (uintptr_t)device, 0, 0, 0);
+    do_syscall(SYS_OPEN_DEVICE, (_ADDRESS)path, (_ADDRESS)device, 0, 0, 0);
     getresult(result);
     return result;
 }
