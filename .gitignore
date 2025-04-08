@@ -24,6 +24,7 @@ Thumbs.db  # Windows
 .vscode/
 .idea/
 *.swp
+.VSCodeCounter/
 
 # Cross-compilation files
 *.bin
