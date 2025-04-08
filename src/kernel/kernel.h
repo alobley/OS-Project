@@ -106,7 +106,7 @@ extern version_t kernelVersion;
 
 // Simple wrapper for system calls
 #define do_syscall(num, arg1, arg2, arg3, arg4, arg5) \
-    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5));
+    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5) : "memory");
 
 
 #endif // KERNEL_H

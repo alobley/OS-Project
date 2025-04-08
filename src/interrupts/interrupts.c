@@ -361,7 +361,8 @@ static HOT void syscall_handler(struct Registers *regs){
             SetCurrentProcess(parentProcess);
             
             // Now copy the saved parent registers to regs
-            *regs = *parentProcess->regs;
+            //*regs = *parentProcess->regs;
+            memcpy(regs, parentProcess->regs, sizeof(struct Registers));
             
             break;
         }
@@ -403,7 +404,7 @@ static HOT void syscall_handler(struct Registers *regs){
                 break;
             }
 
-            *currentProcess->regs = *regs;
+            memcpy(currentProcess->regs, regs, sizeof(struct Registers));
 
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
@@ -494,6 +495,7 @@ static HOT void syscall_handler(struct Registers *regs){
             }
 
             newProcess->executablePath = fullPath;
+            hfree(fullPath);
 
             // TODO: Allocate a new page directory for the new process
 
@@ -563,7 +565,7 @@ static HOT void syscall_handler(struct Registers *regs){
             regs->user_esp = newProcess->stackTop;
             regs->ebp = newProcess->stackBase;
 
-            *newProcess->regs = *regs;
+            memcpy(newProcess->regs, regs, sizeof(struct Registers));
 
             break;
         }
@@ -1277,9 +1279,9 @@ void InitIDT(){
 static void ExceptionHandler(struct Registers *regs){
     cli
     // Uncomment this when debugging system calls
-    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    regdump(regs);
-    STOP
+    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    //regdump(regs);
+    //STOP
 
     volatile pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){
@@ -1294,25 +1296,25 @@ static void ExceptionHandler(struct Registers *regs){
         case PAGE_FAULT:{
             // Gracefully handle a page fault
             sti
-            //exit(SYSCALL_FAULT_DETECTED);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_STACK_FAULT:{
             // Gracefully handle a stack fault (likely a stack overflow)
             sti
-            //exit(SYSCALL_FAULT_DETECTED);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         case EXCEPTION_GENERAL_PROTECTION_FAULT:{
             // Gracefully handle a general protection fault
             sti
-            //exit(SYSCALL_FAULT_DETECTED);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
         // Other exceptions thrown by user applications...
         default:{
             sti
-            //exit(SYSCALL_FAULT_DETECTED);
+            exit(SYSCALL_FAULT_DETECTED);
             break;
         }
     }

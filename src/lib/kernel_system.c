@@ -4,7 +4,7 @@
 #define asm __asm__
 
 typedef unsigned int _ADDRESS;
-#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x));
+#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory")
 
 int sys_debug(void){
     int result = 0;
@@ -131,6 +131,11 @@ int gettime(datetime_t* datetime){
     do_syscall(SYS_GET_TIME, datetime, 0, 0, 0, 0);
     getresult(result);
     return result;
+}
+
+void exit(int status){
+    do_syscall(SYS_EXIT, status, 0, 0, 0, 0);
+    while(1);
 }
 
 int kill(pid_t pid){

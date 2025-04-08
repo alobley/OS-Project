@@ -223,7 +223,7 @@ void ProcessCommand(char* cmd){
         int result = exec(cmd, NULL, NULL, 0);
 
         if(result == SYSCALL_TASKING_FAILURE){
-            printf("Error: failed to load and execute file %s\n", cmd);
+            printf("Error: failed to load and execute file.\n");
         }else if(result == SYSCALL_FAULT_DETECTED){
             printf("Segmentation Fault\n");
         }else{

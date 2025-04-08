@@ -1,6 +1,5 @@
 BITS 32
 CPU 686
-;ORG 0
 
 ; Just a simple example program in assembly
 

@@ -98,10 +98,10 @@ enum System_Calls {
 };
 
 #define do_syscall(num, arg1, arg2, arg3, arg4, arg5) \
-    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5));
+    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5) : "memory");
 
 typedef unsigned int _ADDRESS;
-#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x));
+#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory");
 
 int sys_debug(void){
     int result = 0;

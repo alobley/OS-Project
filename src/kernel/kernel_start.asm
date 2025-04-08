@@ -19,12 +19,13 @@ align 4
 section .text
 global _start:function (_start.end - _start)
 _start:
-    ;cli
-    ;hlt
-
     cld
 
     lgdt [gdtp]
+
+    mov edx, cr0
+    or edx, 1
+    mov cr0, edx
 
     mov dx, (gdt_data_segment - gdt_start)
     mov ds, dx
@@ -66,13 +67,13 @@ exec:
     push ebp
     mov ebp, esp
 
-    mov ebx, [esp + 8]
-    mov ecx, [esp + 12]
-    mov edx, [esp + 16]
-    mov esi, [esp + 20]
+    mov ebx, [ebp + 8]
+    mov ecx, [ebp + 12]
+    mov edx, [ebp + 16]
+    mov esi, [ebp + 20]
     mov eax, SYS_EXEC
     int 0x30
-
+    
     pop ebp
     ret
 .end:
