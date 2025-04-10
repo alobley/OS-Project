@@ -278,15 +278,12 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
             uint64_t* buf = (uint64_t*)dataBuf;
             buf[0] = firstDataSector + ((currentCluster - 2) * bpb->sectorsPerCluster);
             buf[1] = bpb->sectorsPerCluster;
-            //printk("Reading sector %lu\n", buf[0]);
             if(device_read(disk->id, dataBuf, bpb->bytesPerSector * bpb->sectorsPerCluster) == DRIVER_FAILURE){
                 hfree(buffer);
                 hfree(rootDir);
                 //printk("Failed to read cluster data\n");
                 return NULL; // Failed to read cluster data
             }
-
-            //printk("Cluster read! Next cluster: 0x%x\n", tableValue);
 
             current->cluster = currentCluster;
             current->data = dataBuf;
@@ -317,7 +314,7 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
         current = rootDir;
         offset = 0;
         while(current != NULL){
-            memcpy(fileBuffer + offset, current->data, bpb->sectorsPerCluster * bpb->bytesPerSector);
+            memcpy((void*)(fileBuffer) + offset, current->data, bpb->sectorsPerCluster * bpb->bytesPerSector);
             offset += bpb->sectorsPerCluster * bpb->bytesPerSector;
             current = current->next;
         }
@@ -338,7 +335,6 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
         //printk("Successfully read %u entries from the cluster\n", numEntries);
 
         // Read successful!
-
         return fileBuffer;
     }else{
         //printk("Invalid filesystem!\n");

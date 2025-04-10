@@ -63,6 +63,10 @@ PAGE_RESULT physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags);
 
 void PageKernel(size_t memSize);
 
+pde_t* AllocatePageDirectory();
+void FreePageDirectory(pde_t* pageDir);
+void SetPageDirectory(pde_t* pageDir);
+
 // This is a non-page-aligned address, so it is not a valid pageable address
 #define INVALID_ADDRESS 3
 

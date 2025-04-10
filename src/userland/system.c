@@ -1,7 +1,4 @@
 #include <system.h>
-//#include <kernel.h>
-
-#define asm __asm__
 
 enum System_Calls {
     SYS_DBG = 1,                            // Debug system call
@@ -98,10 +95,10 @@ enum System_Calls {
 };
 
 #define do_syscall(num, arg1, arg2, arg3, arg4, arg5) \
-    asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5) : "memory");
+    __asm__ volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5) : "memory");
 
 typedef unsigned int _ADDRESS;
-#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory");
+#define getresult(x) __asm__ volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory");
 
 int sys_debug(void){
     int result = 0;
@@ -148,6 +145,13 @@ FILESTATUS write(int fd, const void* buf, unsigned int count){
 FILESTATUS read(int fd, void* buf, unsigned int count){
     int result = 0;
     do_syscall(SYS_READ, fd, (_ADDRESS)buf, count, 0, 0);
+    getresult(result);
+    return result;
+}
+
+FILESTATUS stat(const char* directory, unsigned int number, struct Node_Data* buf){
+    int result = 0;
+    do_syscall(SYS_STAT, (_ADDRESS)directory, number, (_ADDRESS)buf, 0, 0);
     getresult(result);
     return result;
 }
@@ -210,7 +214,7 @@ file_result open(const char* path){
     file_result result = {0, 0};
     do_syscall(SYS_OPEN, (_ADDRESS)path, 0, 0, 0, 0);
     getresult(result.status);
-    asm volatile("mov %%ebx, %0" : "=r" (result.fd));
+    __asm__ volatile("mov %%ebx, %0" : "=r" (result.fd));
     return result;
 }
 

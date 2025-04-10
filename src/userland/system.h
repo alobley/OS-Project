@@ -89,6 +89,19 @@ typedef void (*KeyboardCallback)(KeyboardEvent_t event);
 
 typedef unsigned int pid_t;
 
+struct Node_Data {
+    unsigned int size;                         // Size of the node in bytes
+    unsigned int type;                         // Type of the node (file, directory, etc.)
+    unsigned int permissions;                  // Permissions for the node (read, write, etc.)
+    pid_t owner;                               // Owner of the node
+    char name[12];                             // Name of the node (8.3 format)
+};
+
+#define NODE_TYPE_FILE 0
+#define NODE_TYPE_DIRECTORY 1
+#define NODE_TYPE_DEVICE 2
+#define NODE_TYPE_OTHER 10
+
 // For peeking a mutex
 typedef int MUTEXSTATUS;
 #define MUTEX_IS_UNLOCKED 0
@@ -149,6 +162,9 @@ FILESTATUS write(int fd, const void* buf, unsigned int count);
 
 // Read from a file descriptor
 FILESTATUS read(int fd, void* buf, unsigned int count);
+
+// Read file data
+FILESTATUS stat(const char* directory, unsigned int number, struct Node_Data* buf);
 
 // Exit the current process
 void exit(int status);

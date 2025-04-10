@@ -61,9 +61,9 @@ _start:
 ; Input: ecx = pointer to the string
 ; Output: edx = length of the string
 strlen:
-    xor edx, edx               ; Clear edx (length)
+    xor edx, edx                ; Clear edx (length)
 .loop:
-    cmp byte [ecx + edx], 0    ; Check if the current byte is null
+    cmp byte [ecx + edx], 0     ; Check if the current byte is null
     je .done                    ; If it is, we are done
     inc edx                     ; Increment length
     jmp .loop                   ; Repeat the loop

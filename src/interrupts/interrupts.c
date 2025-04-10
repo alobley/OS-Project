@@ -138,8 +138,6 @@ bool CheckPrivelige(){
 // - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
 // - Need a scheduler (just single-tasking as things stand)
 // - For better multitasking, fork() needs to be implemented and exec() needs to be updated
-//#pragma GCC push_options
-//#pragma GCC optimize ("O0")
 static HOT void syscall_handler(struct Registers *regs){
     sti
     int result;
@@ -298,6 +296,80 @@ static HOT void syscall_handler(struct Registers *regs){
             regs->eax = FILE_READ_SUCCESS;
             break;
         }
+        case SYS_STAT: {
+            // SYS_STAT
+            // EBX contains a pointer to the directory
+            // ECX is the number of the node to read (its position in the directory)
+            // EDX is a pointer to the buffer to read into
+            // Read node information from the given directory (or the current directory if none given)
+
+            struct Node_Data* node = (struct Node_Data*)regs->edx;
+
+            vfs_node_t* directory = NULL;
+
+            if(regs->ebx == 0){
+                // If EBX is 0, use the current working directory
+                directory = VfsFindNode(GetCurrentProcess()->workingDirectory);
+            }else{
+                // If the start of the string is a slash, it is an absolute path. Otherwise, construct the path
+                char* path = (char*)regs->ebx;
+                if(*path == '/'){
+                    directory = VfsFindNode(path);
+                }else{
+                    char* fullPath = JoinPath(GetCurrentProcess()->workingDirectory, path);
+                    if(fullPath == NULL){
+                        //printk("Error: failed to join path\n");
+                        regs->eax = SYSCALL_TASKING_FAILURE;
+                        break;
+                    }
+                    directory = VfsFindNode(fullPath);
+                    hfree(fullPath);
+                }
+            }
+
+            if(directory == NULL){
+                //printk("Error: failed to find directory\n");
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+
+            vfs_node_t* vfsNode = directory->firstChild;
+            if(vfsNode == NULL){
+                //printk("Error: directory is empty\n");
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+            // Get the node at the given index
+            for(uint32_t i = 0; i < regs->ecx; i++){
+                vfsNode = vfsNode->next;
+                if(vfsNode == NULL){
+                    regs->eax = FILE_NOT_FOUND;
+                    return;
+                }
+            }
+
+            node->size = vfsNode->size;
+            if(vfsNode->isDirectory){
+                node->type = NODE_TYPE_DIRECTORY;
+            }else if(vfsNode->isDevice){
+                node->type = NODE_TYPE_DEVICE;
+            }else{
+                node->type = NODE_TYPE_FILE;
+            }
+
+            node->permissions = vfsNode->permissions;
+            if(vfsNode->lock.owner != NULL){
+                node->owner = vfsNode->lock.owner->pid;
+            }else{
+                node->owner = ROOT_UID;
+            }
+
+            strcpy(node->name, vfsNode->name);
+
+            regs->eax = FILE_EXISTS;
+
+            break;
+        }
         case SYS_EXIT: {
             // SYS_EXIT
             // EBX contains the exit code
@@ -328,7 +400,7 @@ static HOT void syscall_handler(struct Registers *regs){
             if(file == NULL){
                 printk("Error: failed to find file\n");
                 regs->eax = SYSCALL_TASKING_FAILURE;
-                STOP
+                break;
             }
 
             hfree(currentProcess->executablePath);
@@ -356,6 +428,8 @@ static HOT void syscall_handler(struct Registers *regs){
             }
 
             hfree(file->data);
+
+            DestroyProcess(currentProcess);
 
             // Switch to the parent process first (important to do this before changing registers)
             SetCurrentProcess(parentProcess);
@@ -454,6 +528,8 @@ static HOT void syscall_handler(struct Registers *regs){
                 break;
             }
 
+            //STOP
+
             if(file->mountPoint->device->read(file->mountPoint->device, fullPath, file->size) != DRIVER_SUCCESS){
                 //printk("Error: failed to read file %s\n", path);
                 regs->eax = SYSCALL_TASKING_FAILURE;
@@ -499,13 +575,13 @@ static HOT void syscall_handler(struct Registers *regs){
 
             // TODO: Allocate a new page directory for the new process
 
-            // Copy the ELF header to the new process's memory
+            // Copy the ELF data to the new process's memory
             Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
             virtaddr_t entryPoint = (virtaddr_t)elfHeader->entry;
             virtaddr_t stackBase = 0;
             newProcess->EntryPoint = (void*)entryPoint;;
             for(uint16_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
-                if(programHeader[i].type == PT_LOAD){
+                if(programHeader[i].type == PT_LOAD || programHeader[i].type == PT_DYNAMIC){
                     virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
                     size_t offset = programHeader[i].virtualAddress & 0x00000FFF;
                     for(size_t j = 0; j < programHeader[i].memorySize; j += PAGE_SIZE){
@@ -530,11 +606,14 @@ static HOT void syscall_handler(struct Registers *regs){
 
             stackBase += PAGE_SIZE; // Add a page of padding to the stack base
             newProcess->stackBase = (stackBase & 0xFFFFF000) + PAGE_SIZE; // Align the stack base to the next page
+            newProcess->stackTop = newProcess->stackBase + (PAGE_SIZE * 2); // Set the stack top to the next page
 
             // Page the stack
             for(size_t i = 0; i < 2; i++){
                 //printk("Allocating virtual address 0x%x\n", newProcess->stackBase + (i * PAGE_SIZE));
-                if(palloc(newProcess->stackBase + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+                PAGE_RESULT result = palloc(newProcess->stackBase + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+                //printk("Result: %d\n", result);
+                if(result == PAGE_NOT_AQUIRED){
                     printk("Error: failed to page stack\n");
                     regs->eax = SYSCALL_TASKING_FAILURE;
                     break;
@@ -552,16 +631,18 @@ static HOT void syscall_handler(struct Registers *regs){
             regs->edi = 0;
 
             // Enter ring 3 and execute the program (iret method)
-            //regs->eflags.iopl = 0;
-            //regs->eflags.interruptEnable = 1;
-            //regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
-            //regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            //regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            //regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            //regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            //regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->eflags.iopl = 0;
+            regs->eflags.interruptEnable = 1;
+            regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
+            regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
+            regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
 
             regs->eip = (uintptr_t)newProcess->EntryPoint;
+            //printk("Stack top: 0x%x\n", newProcess->stackTop);
+            //printk("Stack base: 0x%x\n", newProcess->stackBase);
             regs->user_esp = newProcess->stackTop;
             regs->ebp = newProcess->stackBase;
 
@@ -1107,7 +1188,6 @@ static HOT void syscall_handler(struct Registers *regs){
         }
     }
 }
-//#pragma GCC pop_options
 
 static void (*stubs[NUM_ISRS])(struct Registers*) = {
     _isr0,
@@ -1279,9 +1359,9 @@ void InitIDT(){
 static void ExceptionHandler(struct Registers *regs){
     cli
     // Uncomment this when debugging system calls
-    //printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
-    //regdump(regs);
-    //STOP
+    printk("KERNEL PANIC: %s\n", exceptions[regs->int_no]);
+    regdump(regs);
+    STOP
 
     volatile pcb_t* current = GetCurrentProcess();
     if(current == kernelPCB){

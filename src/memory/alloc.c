@@ -13,6 +13,7 @@ typedef struct MemoryBlock {
     uint32_t magic;
     size_t size;
     bool free;
+    uint32_t padding; // Padding to ensure proper alignment
     struct MemoryBlock* next;
     struct MemoryBlock* prev;
 } block_header_t;
@@ -32,6 +33,52 @@ void InitializeAllocator(void){
     firstBlock->prev = NULL;
     firstBlock->magic = MEMBLOCK_MAGIC;
     heapEnd = heapStart + PAGE_SIZE;
+}
+
+// Allocate aligned memory
+MALLOC void* aligned_halloc(size_t size, size_t alignment) {
+    // Alignment must be a power of 2
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        return NULL;
+    }
+    
+    // Alignment less than pointer size doesn't make sense
+    if (alignment < sizeof(void*)) {
+        alignment = sizeof(void*);
+    }
+    
+    // Allocate enough extra space to ensure we can align the pointer
+    // and store the original allocation address
+    size_t extra = alignment + sizeof(void*);
+    void* raw_memory = halloc(size + extra);
+    if (raw_memory == NULL) {
+        return NULL;
+    }
+    
+    // Calculate the aligned address
+    uintptr_t raw_addr = (uintptr_t)raw_memory;
+    uintptr_t offset = (alignment - (raw_addr % alignment)) % alignment;
+    uintptr_t aligned_addr = raw_addr + offset;
+    
+    // Store the original pointer just before the aligned memory
+    void** ptr_storage = (void**)(aligned_addr - sizeof(void*));
+    *ptr_storage = raw_memory;
+    
+    return (void*)aligned_addr;
+}
+
+// Free aligned memory
+void aligned_hfree(void* ptr) {
+    if (ptr == NULL) {
+        return;
+    }
+    
+    // Get the original allocation address
+    void** ptr_storage = (void**)((uintptr_t)ptr - sizeof(void*));
+    void* original_ptr = *ptr_storage;
+    
+    // Free the original allocation
+    hfree(original_ptr);
 }
 
 // More complex memory allocation algorithm that takes blocks and makes them exactly the correct size
@@ -57,6 +104,7 @@ MALLOC void* halloc(size_t size){
             newBlock->next = current->next;
             newBlock->prev = current;
             newBlock->magic = MEMBLOCK_MAGIC;
+            newBlock->padding = 0; // Ensure proper alignment
             current->size = size;
             current->free = false;
             current->next = newBlock;
@@ -114,6 +162,7 @@ MALLOC void* halloc(size_t size){
                 newBlock->next = NULL;
                 newBlock->magic = MEMBLOCK_MAGIC;
                 newBlock->prev = current;
+                newBlock->padding = 0;
                 current->size = size;
                 current->next = newBlock;
             }else{
@@ -171,6 +220,7 @@ MALLOC void* halloc(size_t size){
     newBlock->free = false;
     newBlock->next = NULL;
     newBlock->magic = MEMBLOCK_MAGIC;
+    newBlock->padding = 0;
     
     // Fix: properly link the new block to the existing list
     if (previous != NULL) {

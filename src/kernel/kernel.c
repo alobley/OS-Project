@@ -417,8 +417,12 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Other final initialization steps...
 
-    // Initialization complete - start the system
+    // Initialization complete - start the shell
 
+    // Search for the shell in the root directory
+    exec("/root/SHELL.ELF", NULL, NULL, 0);
+
+    // Upon failure to enter the user shell, switch to the kernel one
     // Create a dummy PCB for the shell
     volatile pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, KERNEL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
     // The kernel is the steward of all processes

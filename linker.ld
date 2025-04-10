@@ -2,7 +2,7 @@ ENTRY(_start)
 
 SECTIONS
 {   
-    . = 0x200000;
+    . = 0xA0000000;
     __kernel_start = .;
 
     .text BLOCK(4k) : ALIGN(4K)

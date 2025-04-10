@@ -208,6 +208,7 @@ int VfsAddDevice(device_t* device, char* name, char* path){
     if(node == NULL){
         return STANDARD_FAILURE;
     }
+    node->isDevice = true;
     VfsAddChild(VfsFindNode(path), node);
     return STANDARD_SUCCESS;
 }

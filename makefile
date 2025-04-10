@@ -5,11 +5,11 @@ ARCH=i386
 BOOTDISK=boot.img
 
 # QEMU Arguments
-EMARGS=-m 1024M -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu pentium -accel kvm
+EMARGS=-m 4G -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu pentium -accel kvm
 EMARGS+=-hda bin/harddisk.vdi
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int,cpu_reset,in_asm -no-reboot -no-shutdown #-s -S
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int -no-reboot -no-shutdown #-s -S
 
 # Directories
 SRC_DIR=src
@@ -101,7 +101,7 @@ assemble: create_dirs
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
 	$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
-	$(CCOM) -o $(BUILD_DIR)/userc.elf $(USER_DIR)/userc.c $(USER_DIR)/system.c -I $(USER_DIR) -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer
+	$(CCOM) -o $(BUILD_DIR)/usershell.elf src/libc/stdio.c $(USER_DIR)/userc.c $(USER_DIR)/system.c -I $(USER_DIR) -I src/libc -I $(LIB_DIR) -static -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -T $(USER_DIR)/userland.ld
 #$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
 # Run QEMU
@@ -118,7 +118,7 @@ addfiles: create_dirs
 	sudo rm -rf mnt/*
 	sudo cp $(BUILD_DIR)/prgm.elf mnt/PROGRAM.ELF
 	sudo cp $(BUILD_DIR)/hello.elf mnt/HELLO.ELF
-	sudo cp $(BUILD_DIR)/userc.elf mnt/USERC.ELF
+	sudo cp $(BUILD_DIR)/usershell.elf mnt/SHELL.ELF
 	sync
 	sudo umount mnt
 

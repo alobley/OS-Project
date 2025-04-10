@@ -21,6 +21,7 @@ typedef struct Filesystem filesystem_t;
 typedef struct VFS_Node {
     char* name;                         // Name of the file or directory
     bool isDirectory;                   // Whether the node is a file or directory
+    bool isDevice;                      // Whether the node is a device
     bool readOnly;                      // Whether the file is read-only
     bool writeOnly;                     // Whether the file is write-only
     bool isResizeable;                  // Whether the file is resizeable (STDOUT, for example, is not)

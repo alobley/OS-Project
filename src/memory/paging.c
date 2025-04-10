@@ -69,8 +69,8 @@ void MapBitmap(uint32_t memSize, mmap_entry_t* mmap, size_t mmapLength /* In tot
 // Align the frame to a page boundary
 #define SET_FRAME(physaddr) (physaddr & 0xFFFFF000)
 
-pde_t kernelPageDirectory[1024] ALIGNED(4096);
-page_table_t kernelPageTables[1024] ALIGNED(4096);
+pde_t kernelPageDirectory[1024] ALIGNED(4096) = {0};
+page_table_t kernelPageTables[1024] ALIGNED(4096) = {0};
 
 pde_t* currentPageDir = &kernelPageDirectory[0];
 page_table_t* currentPageTables = &kernelPageTables[0];
@@ -353,10 +353,20 @@ void PageKernel(size_t memSize){
 
     printk("Allocating heap pages...\n");
 
-    // Map the first page of the heap
-    if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-        printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
-        STOP
+    if(heapEnd == 0){
+        // Map the first page of the heap
+        if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+            printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
+            STOP
+        }
+    }else{
+        // Map the heap pages
+        for(size_t i = heapStart; i < heapEnd; i += PAGE_SIZE){
+            if(palloc(i, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
+                printk("KERNEL PANIC: Failed to allocate heap page at 0x%x\n", i);
+                STOP
+            }
+        }
     }
 
     // Map MMIO and other things...
@@ -369,4 +379,47 @@ void PageKernel(size_t memSize){
     asm volatile("mov %0, %%cr0" :: "r" (cr0));
 
     RemapVGA(firstVgaPage);                                                 // Move the VGA framebuffer pointer to the new location
+}
+
+// New page directory allocation/deallocation
+
+pde_t* AllocatePageDirectory() {
+    pde_t* pageDir = (pde_t*)aligned_halloc(sizeof(pde_t) * 1024, PAGE_SIZE);
+    if (!pageDir) return NULL;
+    memset(pageDir, 0, sizeof(pde_t) * 1024);
+
+    printk("Allocating page directory at 0x%x\n", pageDir);
+    printk("Number of PDEs to copy: %u\n", ((totalMemSize - (uintptr_t)&__kernel_start) / PAGE_SIZE) / 1024);
+
+    // Allocate the page tables for under the kernel's start address
+    for(size_t i = 0; i < PD_INDEX((uintptr_t)&__kernel_start); i++){
+        page_table_t* pageTable = (page_table_t*)aligned_halloc(sizeof(page_table_t), PAGE_SIZE);
+        if (!pageTable) {
+            FreePageDirectory(pageDir);
+            return NULL;
+        }
+        memset(pageTable, 0, sizeof(page_table_t));
+        pageDir[i] = (((uintptr_t)(pageTable)) & 0xFFFFF000) | PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER; // Set the present, writable and user flags
+    }
+
+    // Clone kernel space from existing directory (e.g., higher-half entries)
+    for (size_t i = PD_INDEX((uintptr_t)&__kernel_start); i < PD_INDEX(totalMemSize - (uintptr_t)&__kernel_start); i++) {
+        pageDir[i] = kernelPageDirectory[i]; // Copy the physical address of the page table
+    }
+
+    return pageDir;
+}
+
+void SetPageDirectory(pde_t* pageDir){
+    currentPageDir = pageDir;
+    asm volatile("mov %0, %%cr3" :: "r" (pageDir));
+}
+
+void FreePageDirectory(pde_t* pageDir){
+    // Free the page tables
+    for(size_t i = 0; i < 1024; i++){
+        page_table_t* pageTable = (page_table_t*)(pageDir[i] & 0xFFFFF000);
+        aligned_hfree(pageTable);
+    }
+    aligned_hfree(pageDir);
 }
