@@ -25,7 +25,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Add the ability to load and execute programs [x]
 - Implement a userland kernel API in C [x] (more or less functional, can be compiled with user programs)
 - Fully implement process scheduling and multitasking [*]
-- Replace KISh with a proper userland shell [*]
+- Replace KISh with a proper userland shell [x]
 - Make a libc and more complete userland [*]
 - Add PCI/PCIE support [*]
 - Add USB support [*]
