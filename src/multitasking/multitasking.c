@@ -176,6 +176,7 @@ void DestroyProcess(volatile pcb_t* process){
         currentProcess->next->previous = currentProcess->previous;
     }
 
+    //printk("Destroying file list for process %s\n", process->name);
     if(process->fileList != NULL){
         DestroyFileList(process->fileList);
     }
@@ -183,12 +184,14 @@ void DestroyProcess(volatile pcb_t* process){
     // Recursively kill all children
     // Should I reparent instead?
     volatile pcb_t* child = process->firstChild;
+    //printk("Destroying children of process %s\n", process->name);
     while(child != NULL){
         volatile pcb_t* nextChild = child->next;
         DestroyProcess(child);
         child = nextChild;
     }
 
+    //printk("Freeing the working directory of process %s\n", process->name);
     if(process->workingDirectory != NULL){
         // Free the working directory of the process
         hfree(process->workingDirectory);
@@ -200,6 +203,7 @@ void DestroyProcess(volatile pcb_t* process){
 
     // Search the device tree for any devices owned by the process and destroy them... (needed?)
 
+    //printk("Freeing the process %s\n", process->name);
     hfree((void*)process);
     numProcesses--;
 }

@@ -1,11 +1,6 @@
 #include <system.h>
 #include <kernel.h>
 
-#define asm __asm__
-
-typedef unsigned int _ADDRESS;
-#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory")
-
 int sys_debug(void){
     int result = 0;
     do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
@@ -97,9 +92,9 @@ int chdir(const char* path){
     return result;
 }
 
-file_result open(const char* path){
+file_result open(const char* path, int flags){
     file_result result = {0, 0};
-    do_syscall(SYS_OPEN, (_ADDRESS)path, 0, 0, 0, 0);
+    do_syscall(SYS_OPEN, (_ADDRESS)path, flags, 0, 0, 0);
     getresult(result.status);
     asm volatile("mov %%ebx, %0" : "=r" (result.fd));
     return result;
@@ -187,27 +182,6 @@ int sys_dumpregs(){
 int sysinfo(struct sysinfo* info){
     int result = 0;
     do_syscall(SYS_SYSINFO, info, 0, 0, 0, 0);
-    getresult(result);
-    return result;
-}
-
-int open_device(char* path, user_device_t* device){
-    int result = 0;
-    do_syscall(SYS_OPEN_DEVICE, (_ADDRESS)path, (_ADDRESS)device, 0, 0, 0);
-    getresult(result);
-    return result;
-}
-
-int device_read(int deviceID, void* buffer, unsigned int size){
-    int result = 0;
-    do_syscall(SYS_DEVICE_READ, deviceID, (_ADDRESS)buffer, size, 0, 0);
-    getresult(result);
-    return result;
-}
-
-int device_write(int deviceID, const void* buffer, unsigned int size){
-    int result = 0;
-    do_syscall(SYS_DEVICE_WRITE, deviceID, (_ADDRESS)buffer, size, 0, 0);
     getresult(result);
     return result;
 }

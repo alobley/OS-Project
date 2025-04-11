@@ -1,9 +1,6 @@
 #include <drivers.h>
 #include <kernel.h>
 
-typedef unsigned int _ADDRESS;
-#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x));
-
 DRIVERSTATUS module_load(driver_t* this, device_t* device){
     DRIVERSTATUS result = 0;
     do_syscall(SYS_MODULE_LOAD, (uintptr_t)this, (uintptr_t)device, 0, 0, 0);
@@ -100,15 +97,4 @@ DRIVERSTATUS io_port_write(unsigned short port, unsigned int size, unsigned int 
     do_syscall(SYS_IO_PORT_WRITE, (unsigned int)port, size, value, 0, 0);
     getresult(result);
     return result;
-}
-
-int close_device(char* path){
-    int result = 0;
-    do_syscall(SYS_CLOSE_DEVICE, (uintptr_t)path, 0, 0, 0, 0);
-    getresult(result);
-    return result;
-}
-
-void enter_v86_mode(void){
-    do_syscall(SYS_ENTER_V86_MODE, 0, 0, 0, 0, 0);
 }

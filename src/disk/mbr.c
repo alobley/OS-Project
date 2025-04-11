@@ -28,7 +28,8 @@ DRIVERSTATUS GetPartitionsFromMBR(device_t* disk){
     uint64_t* buf = (uint64_t*)addr;
     buf[0] = 0;                                                     // Set the LBA to read
     buf[1] = 1;                                                     // Set the sector count to 1
-    if(device_read(disk->id, (void*)mbr, sizeof(mbr_t)) == DRIVER_FAILURE){
+    file_result devRes = open(disk->path, 0);                       // Open the device for reading
+    if(read(devRes.fd, (void*)mbr, sizeof(mbr_t)) == DRIVER_FAILURE){
         hfree(mbr);
         printk("Read failed!\n");
         //STOP

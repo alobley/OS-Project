@@ -84,6 +84,7 @@ typedef struct Device {
     const char* description;                    // Description of the device
 
     const char* devName;                        // String that will be presented in /dev (i.e. kb0, sda, etc.)
+    char* path;                                 // Path to the device in the VFS (i.e. /dev/kb0, /dev/sda, etc.)
 
     driver_t* driver;                           // Pointer to the driver for this device (determines whether this device can be used. NULL if no driver loaded)
     void* deviceInfo;                           // Device-specific information (likely a pointer to a struct containing device commands and other info)

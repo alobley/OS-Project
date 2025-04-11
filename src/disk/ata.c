@@ -848,6 +848,9 @@ DRIVERSTATUS ReadSectors(device_t* this, void* buffer, size_t size) {
     uint64_t* buf = (uint64_t*)buffer;
     lba offset = buf[0];
     uint64_t sectorCount = buf[1];
+
+    //printk("ReadSectors: offset = %llu, sectorCount = %llu\n", offset, sectorCount);
+    //printk("Number of bytes to read: %u\n", size);
     
     // Get device information
     blkdev_t* blkdev = (blkdev_t*)this->deviceInfo;
@@ -1096,72 +1099,139 @@ DRIVERSTATUS InitializeAta(){
     do_syscall(SYS_GET_PID, 0, 0, 0, 0, 0);
     asm volatile("mov %%eax, %0" : "=r" (ataDriver->driverProcess));
 
-    blkdev_t* ataBlkDev = (blkdev_t*)halloc(sizeof(blkdev_t));
-    if(ataBlkDev == NULL){
-        hfree(ataDriver);
-        return DRIVER_OUT_OF_MEMORY;
-    }
-    memset(ataBlkDev, 0, sizeof(blkdev_t));
-
-    // Create the first PATA device to assign
-    device_t* ataDevice = CreateDevice("PATA Disk", strcpy(halloc(5), name), "PATA Hard Drive", (void*)ataBlkDev, ataDriver, DEVICE_TYPE_BLOCK, 0, (device_flags_t){0}, ReadSectors, WriteSectors, ProcessIoctl, NULL);
+    device_t* firstDevice = NULL;
+    device_t* currentDevice = NULL;
+    blkdev_t* currentBlkDev = NULL;
     
-    ataBlkDev->device = memcpy(halloc(sizeof(user_device_t)), ataDevice->userDevice, sizeof(user_device_t));
-    ataBlkDev->firstPartition = NULL;
-    ataBlkDev->next = NULL;
-    ataDevice->deviceInfo = ataBlkDev;
-
-    blkdev_t* currentBlk = ataBlkDev;
-    device_t* currentDev = ataDevice;
-
     uint8_t currentDisk = 0;
+    uint8_t foundDisks = 0;
+    char diskName[5] = "pat0";
 
     for(int i = 0; i < MAX_ATA_DRIVES; i++){
-        if(FindDisk(currentDisk, ataDevice, ataBlkDev) == 0){
-            do_syscall(SYS_REGISTER_DEVICE, (uintptr_t)ataDevice, 0, 0, 0, 0);
-            do_syscall(SYS_ADD_VFS_DEV, (uint32_t)ataDevice, (uint32_t)ataDevice->devName, (uint32_t)"/dev", 0, 0);
-
-            currentBlk = ataBlkDev;
-            currentDev = ataDevice;
-
-            name[3]++; // Increment the device name (i.e. pat0 -> pat1)
-
-            if(i != MAX_ATA_DRIVES - 1){
-                ataBlkDev = (blkdev_t*)halloc(sizeof(blkdev_t));
-                if(ataBlkDev == NULL){
-                    hfree(ataDriver);
-                    hfree((char*)ataDevice->devName);
-                    hfree(ataDevice);
-                    hfree(ataBlkDev);
-                    return DRIVER_OUT_OF_MEMORY;
-                }
-                memset(ataBlkDev, 0, sizeof(blkdev_t));
-                ataDevice = CreateDevice("PATA Disk", strcpy(halloc(5), name), "PATA Hard Drive", (void*)ataBlkDev, ataDriver, DEVICE_TYPE_BLOCK, 0, (device_flags_t){0}, ReadSectors, WriteSectors, ProcessIoctl, NULL);
-                //currentBlk->next = ataBlkDev;
-                //currentDev->next = ataDevice;
-                ataBlkDev->device = memcpy(halloc(sizeof(user_device_t)), ataDevice->userDevice, sizeof(user_device_t));
-                ataBlkDev->firstPartition = NULL;
-                ataBlkDev->next = NULL;
-                ataDevice->deviceInfo = ataBlkDev;
+        // Allocate a new block device structure
+        blkdev_t* newBlkDev = (blkdev_t*)halloc(sizeof(blkdev_t));
+        if(newBlkDev == NULL){
+            // Clean up on allocation failure
+            device_t* temp;
+            while(firstDevice != NULL){
+                temp = firstDevice->next;
+                hfree((char*)firstDevice->devName);
+                hfree(((blkdev_t*)firstDevice->deviceInfo)->device);
+                hfree(firstDevice->deviceInfo);
+                hfree(firstDevice);
+                firstDevice = temp;
             }
-        }else{
-            currentBlk->next = NULL;
-            currentDev->next = NULL;
+            hfree(ataDriver);
+            return DRIVER_OUT_OF_MEMORY;
         }
+        memset(newBlkDev, 0, sizeof(blkdev_t));
+        
+        // Create a new device
+        char* deviceName = halloc(5);
+        if(deviceName == NULL){
+            hfree(newBlkDev);
+            // Perform the same cleanup as above
+            device_t* temp;
+            while(firstDevice != NULL){
+                temp = firstDevice->next;
+                hfree((char*)firstDevice->devName);
+                hfree(((blkdev_t*)firstDevice->deviceInfo)->device);
+                hfree(firstDevice->deviceInfo);
+                hfree(firstDevice);
+                firstDevice = temp;
+            }
+            hfree(ataDriver);
+            return DRIVER_OUT_OF_MEMORY;
+        }
+        strcpy(deviceName, diskName);
+        
+        device_t* newDevice = CreateDevice("PATA Disk", deviceName, "PATA Hard Drive", 
+                                         (void*)newBlkDev, ataDriver, DEVICE_TYPE_BLOCK, 0, 
+                                         (device_flags_t){0}, ReadSectors, WriteSectors, 
+                                         ProcessIoctl, NULL);
+        if(newDevice == NULL){
+            hfree(deviceName);
+            hfree(newBlkDev);
+            // Perform the same cleanup as above
+            device_t* temp;
+            while(firstDevice != NULL){
+                temp = firstDevice->next;
+                hfree((char*)firstDevice->devName);
+                hfree(((blkdev_t*)firstDevice->deviceInfo)->device);
+                hfree(firstDevice->deviceInfo);
+                hfree(firstDevice);
+                firstDevice = temp;
+            }
+            hfree(ataDriver);
+            return DRIVER_OUT_OF_MEMORY;
+        }
+        
+        // Set up block device structure
+        newBlkDev->device = halloc(sizeof(user_device_t));
+        if(newBlkDev->device == NULL){
+            hfree(newDevice);
+            hfree(deviceName);
+            hfree(newBlkDev);
+            // Perform the same cleanup as above
+            device_t* temp;
+            while(firstDevice != NULL){
+                temp = firstDevice->next;
+                hfree((char*)firstDevice->devName);
+                hfree(((blkdev_t*)firstDevice->deviceInfo)->device);
+                hfree(firstDevice->deviceInfo);
+                hfree(firstDevice);
+                firstDevice = temp;
+            }
+            hfree(ataDriver);
+            return DRIVER_OUT_OF_MEMORY;
+        }
+        
+        memcpy(newBlkDev->device, newDevice->userDevice, sizeof(user_device_t));
+        newBlkDev->firstPartition = NULL;
+        newBlkDev->next = NULL;
+        newDevice->deviceInfo = newBlkDev;
+        
+        // Try to find a disk at this position
+        if(FindDisk(currentDisk, newDevice, newBlkDev) == 0){
+            // Disk found!
+            register_device(newDevice);
+            add_vfs_device(newDevice, newDevice->devName, "/dev");
+            
+            // Add to our linked list of devices
+            if(firstDevice == NULL){
+                firstDevice = newDevice;
+                currentDevice = newDevice;
+            } else {
+                currentDevice->next = newDevice;
+                currentDevice = newDevice;
+            }
+            
+            if(currentBlkDev != NULL){
+                currentBlkDev->next = newBlkDev;
+            }
+            currentBlkDev = newBlkDev;
+            
+            // Increment for the next device name
+            diskName[3]++;
+            foundDisks++;
+        } else {
+            // No disk at this position, free allocated memory
+            hfree(newBlkDev->device);
+            hfree(newDevice);
+            hfree(newBlkDev);
+        }
+        
         currentDisk++;
     }
 
-    if(currentDisk == 0){
+    if(foundDisks == 0){
         // No disks found
         hfree(ataDriver);
-        hfree((char*)ataDevice->devName);
-        hfree(ataDevice);
-        hfree(ataBlkDev);
         return DRIVER_NOT_SUPPORTED;
     }
 
-    // Register the driver
-    do_syscall(SYS_MODULE_LOAD, (uint32_t)ataDriver, (uint32_t)ataDevice, 0, 0, 0);
+    // Register the driver with the first device
+    module_load(ataDriver, firstDevice);
 
     return 0;
 }

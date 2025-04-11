@@ -8,5 +8,8 @@
 #include <string.h>
 #include <alloc.h>
 #include <kernel.h>
+#include <system.h>
+
+extern version_t kernelVersion;
 
 #endif  // COMMON_H

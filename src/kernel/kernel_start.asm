@@ -60,7 +60,7 @@ _start:
 section .text.interrupts
 ALIGN 4
 
-%define SYS_EXEC 21
+%define SYS_EXEC 32
 
 global exec:function (exec.end - exec)
 exec:

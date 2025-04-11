@@ -6,9 +6,9 @@ CPU 686
 section .text
 global _start
 
-%define SYS_WRITE 4                     ; Syscall number for sys_write
+%define SYS_WRITE 3                     ; Syscall number for sys_write
 %define STDOUT_FILENO 1                 ; File descriptor 1 is stdout
-%define SYS_EXIT 19                     ; Syscall number for sys_exit
+%define SYS_EXIT 30                     ; Syscall number for sys_exit
 %define NEWL 0x0A                       ; Newline character (\n)
 
 _start:

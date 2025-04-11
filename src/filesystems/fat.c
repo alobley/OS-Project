@@ -243,7 +243,8 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
             uint64_t* fatbuf = (uint64_t*)buffer;
             fatbuf[0] = fatSector; // Set the LBA to read
             fatbuf[1] = 1; // Set the sector count to 1
-            if(device_read(disk->id, buffer, bpb->bytesPerSector) == DRIVER_FAILURE){
+            file_result devRes = open(disk->path, 0);
+            if(read(devRes.fd, buffer, bpb->bytesPerSector) == DRIVER_FAILURE){
                 hfree(buffer);
                 hfree(rootDir);
                 //printk("Failed to read FAT table\n");
@@ -278,7 +279,7 @@ fat_entry_t* FATReadCluster(device_t* this, size_t cluster){
             uint64_t* buf = (uint64_t*)dataBuf;
             buf[0] = firstDataSector + ((currentCluster - 2) * bpb->sectorsPerCluster);
             buf[1] = bpb->sectorsPerCluster;
-            if(device_read(disk->id, dataBuf, bpb->bytesPerSector * bpb->sectorsPerCluster) == DRIVER_FAILURE){
+            if(read(devRes.fd, dataBuf, bpb->bytesPerSector * bpb->sectorsPerCluster) == DRIVER_FAILURE){
                 hfree(buffer);
                 hfree(rootDir);
                 //printk("Failed to read cluster data\n");
@@ -729,7 +730,9 @@ DRIVERSTATUS ProbeFATFilesystem(device_t* device){
             uint64_t* buf = (uint64_t*)addr;
             buf[0] = 0;                                                     // Set the LBA to read
             buf[1] = 1;                                                     // Set the sector count to 1
-            if(device_read(device->id, (void*)mbr, sizeof(mbr_t)) == DRIVER_FAILURE){
+            file_result devRes = open(device->path, 0);
+            fd devFd = devRes.fd;
+            if(read(devFd, (void*)mbr, sizeof(mbr_t)) == DRIVER_FAILURE){
                 //printk("Read failed!\n");
                 hfree(mbr);
                 return DRIVER_NOT_SUPPORTED; // Failed to read MBR

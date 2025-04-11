@@ -204,12 +204,23 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
 }
 
 int VfsAddDevice(device_t* device, char* name, char* path){
-    vfs_node_t* node = VfsMakeNode(name, false, true, true, false, 0, 0755, ROOT_UID, device);
+    vfs_node_t* node = VfsMakeNode(name, false, false, false, false, 0, 0755, ROOT_UID, device);
     if(node == NULL){
         return STANDARD_FAILURE;
     }
     node->isDevice = true;
     VfsAddChild(VfsFindNode(path), node);
+
+    device->path = halloc(strlen(path) + strlen(name) + 2);
+    if(device->path == NULL){
+        hfree(node->name);
+        hfree(node);
+        return STANDARD_FAILURE;
+    }
+    memset(device->path, 0, strlen(path) + strlen(name) + 2);
+    strcpy(device->path, path);
+    strcat(device->path, "/");
+    strcat(device->path, name);
     return STANDARD_SUCCESS;
 }
 
@@ -302,7 +313,7 @@ file_list_t* CreateFileList(){
         return NULL;
     }
     node = node->next;
-    node->context->fd = STDIN_FILENO;
+    node->context->fd = STDOUT_FILENO;
     node->context->used = true;
     node->context->refCount = 1;
 
@@ -382,7 +393,45 @@ int AddFileToList(file_list_t* list, file_context_t* context){
     }
     
     list->size++;
+    //printk("New file descriptor: %d\n", newNode->context->fd);
     return newNode->context->fd;
+}
+
+int RemoveFileFromList(file_list_t* list, int fd){
+    if(list == NULL || fd < 0){
+        return INVALID_FD;
+    }
+    file_list_node_t* current = list->root;
+    file_list_node_t* prev = NULL;
+
+    while(current != NULL){
+        if(current->context != NULL && current->context->fd == fd && current->context->refCount == 1){
+            if(prev == NULL){
+                list->root = current->next;
+            }else{
+                prev->next = current->next;
+            }
+            hfree(current->context);
+            hfree(current);
+            list->size--;
+            return STANDARD_SUCCESS;
+        }else{
+            if(current->context != NULL && current->context->fd == fd){
+                current->context->refCount--;
+                prev->next = current->next;
+                if(current->context->refCount == 0){
+                    hfree(current->context);
+                    hfree(current);
+                    list->size--;
+                }
+                hfree(current);
+                return STANDARD_SUCCESS;
+            }
+        }
+        prev = current;
+        current = current->next;
+    }
+    return INVALID_FD;
 }
 
 void DestroyFileList(file_list_t* list){
@@ -392,7 +441,6 @@ void DestroyFileList(file_list_t* list){
     file_list_node_t* current = list->root;
     while(current != NULL){
         file_list_node_t* next = current->next;
-        hfree(current->context);
         hfree(current);
         current = next;
     }
@@ -402,11 +450,22 @@ void DestroyFileList(file_list_t* list){
 file_context_t* FindFile(file_list_t* list, int fd){
     // Since the file descriptors are added in numerical order, we can just iterate through the list
     file_list_node_t* current = list->root;
-    for(int i = 0; i < fd; i++){
-        // Iterate through the list
+    if(current == NULL){
+        printk("Current was NULL!\n");
+        return NULL;
+    }
+    // Check if the file descriptor is valid
+    //printk("Searching for file descriptor %d\n", fd);
+    for(size_t i = 0; i < list->size; i++){
+        //printk("File descriptor %d\n", current->context->fd);
+        if(current->context != NULL && current->context->fd == fd){
+            return current->context;
+        }
         current = current->next;
     }
-    return current->context;
+
+    //printk("File descriptor not found!\n");
+    return NULL;
 }
 
 // Function to search for a free file descriptor...

@@ -9,14 +9,13 @@
 #include <acpi.h>
 #include <elf.h>
 #include <gdt.h>
+#include <syscalls.h>
 
 void teststub(){
     return;
 }
 
 // There appears to be an INTO instruction specifically meant for calling an overflow exception handler. That's pretty cool.
-
-void (*ProgramStart)(void) = NULL;
 
 #define NUM_ISRS 49
 
@@ -138,17 +137,19 @@ bool CheckPrivelige(){
 // - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
 // - Need a scheduler (just single-tasking as things stand)
 // - For better multitasking, fork() needs to be implemented and exec() needs to be updated
+// - The syscall handler needs to be updated to handle the new syscall ABI
+// - Should move all the syscalls to other functions to reduce this file's size (2,000 lines is a little big)
 static HOT void syscall_handler(struct Registers *regs){
     sti
     int result;
     if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
         // Better to check once at the beginning rather than checking every time
         // Why not just return DRIVER_ACCESS_DENIED?
-        printk("Unpriveliged Application requesting system resources. Killing process.\n");
+        //printk("Unpriveliged Application requesting system resources. Killing process.\n");
         // Log the error
         
         // Kill the process
-        SwitchProcess(true, regs);
+        exit(SYSCALL_FAULT_DETECTED);
         return;
     }
     switch(regs->eax){
@@ -162,26 +163,136 @@ static HOT void syscall_handler(struct Registers *regs){
             // SYS_INSTALL_KBD_HANDLE
             // EBX contains the pointer to the callback function
             // Installs a keyboard callback on the first keyboard in the system. For more keyboards developers will have to open the keyboard device and install a callback.
-            device_t* keyboardDevice = GetDeviceFromVfs("/dev/kb0");
-            if(keyboardDevice != NULL){
-                keyboard_t* keyboardDeviceInfo = (keyboard_t*)keyboardDevice->deviceInfo;
-                keyboardDeviceInfo->AddCallback((KeyboardCallback)regs->ebx);
-                regs->eax = SYSCALL_SUCCESS;
-            }else{
-                regs->eax = SYSCALL_INVALID_ARGUMENT;
-            }
+            kb_handle_install(regs);
+
             break;
         }
         case SYS_REMOVE_KBD_HANDLE: {
             // SYS_REMOVE_KBD_HANDLE
-            device_t* keyboardDevice = GetDeviceFromVfs("/dev/kb0");
-            if(keyboardDevice != NULL){
-                keyboard_t* keyboardDeviceInfo = (keyboard_t*)keyboardDevice->deviceInfo;
-                keyboardDeviceInfo->RemoveCallback((KeyboardCallback)regs->ebx);
-                regs->eax = STANDARD_SUCCESS;
-            }else{
-                regs->eax = STANDARD_FAILURE;
+            // EBX contains the pointer to the callback function
+            // Removes a keyboard callback
+            kb_handle_remove(regs);
+
+            break;
+        }
+        case SYS_WRITE:{
+            // SYS_WRITE
+            // EBX contains the file descriptor
+            // ECX contains the pointer to the data to write
+            // EDX contains the number of bytes to write
+            // EAX contains the result
+            // Write data to a file descriptor
+            sys_write(regs);
+
+            break;
+        }
+        case SYS_READ:{
+            // SYS_READ
+            // EBX contains the file descriptor
+            // ECX contains the pointer to the buffer to read into (found using the open syscall)
+            // EDX contains the number of bytes to read
+            // Read data from a file descriptor
+            sys_read(regs);
+
+            break;
+        }
+        case SYS_OPEN: {
+            // SYS_OPEN
+            // Open a file from the VFS
+            // EBX contains the pointer to the path of the file
+            // ECX contains the flags to open the file with
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+            if(node == NULL || node->isDirectory){
+                // If the node is not found or is a directory, return an error
+                regs->eax = FILE_NOT_FOUND;
+                break;
             }
+            MutexLock(&node->lock);
+            volatile pcb_t* currentProcess = GetCurrentProcess();
+            file_context_t* context = CreateFileContext(node);
+            if(context == NULL){
+                // If the context is not created, return an error
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+            AddFileToList(currentProcess->fileList, context);
+
+            regs->eax = STANDARD_SUCCESS;
+            regs->ebx = context->fd; // Return the file descriptor
+
+            // EAX will contain the result
+            // EBX will contain the file descriptor
+            break;
+        }
+        case SYS_CLOSE: {
+            // SYS_CLOSE
+            // Close a file
+            // EBX contains the file descriptor to close
+            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
+            if(context == NULL){
+                // If the context is not found, return an error
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+            // Remove the file from the list
+            if(RemoveFileFromList(GetCurrentProcess()->fileList, context->fd) == INVALID_FD){
+                // If the file is not removed, return an error
+                regs->eax = FILE_NOT_FOUND;
+                break;
+            }
+            // Free the context
+            if(context->refCount == 0){
+                // If the reference count is 1, free the context
+                hfree(context);
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            regs->ebx = 0; // Just in case
+            
+            break;
+        }
+        case SYS_SEEK:
+            // SYS_SEEK
+            // EBX contains the file descriptor
+            // ECX contains the offset to seek to
+            // EDX contains the whence (0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END)
+            // Seek to a position in a file
+            // Will return the new offset or 0xFFFFFFFF (-1) if the seek failed
+            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
+            if(context == NULL){
+                regs->eax = FILE_INVALID_OFFSET;
+                break;
+            }
+            switch(regs->edx){
+                case SEEK_SET:
+                    if(regs->ecx > context->node->size){
+                        regs->eax = FILE_INVALID_OFFSET;
+                    }
+                    context->node->offset = regs->ecx;
+                    regs->eax = context->node->offset;
+                    break;
+                case SEEK_CUR:
+                    if(context->node->offset += regs->ecx > context->node->size){
+                        regs->eax = FILE_INVALID_OFFSET;
+                    }else{
+                        context->node->offset += regs->ecx;
+                        context->node->offset;
+                    }
+                    break;
+                case SEEK_END:
+                    context->node->offset = context->node->size;
+                    regs->eax = context->node->offset;
+                    break;
+            }
+            break;
+        case SYS_ISTAT: {
+            // SYS_STAT
+            // EBX contains a pointer to the directory
+            // ECX is the number of the node to read (its position in the directory)
+            // EDX is a pointer to the buffer to read into
+            // Read node information from the given directory (or the current directory if none given)
+            sys_istat(regs);
+
             break;
         }
         case SYS_INSTALL_TIMER_HANDLE:{
@@ -192,6 +303,7 @@ static HOT void syscall_handler(struct Registers *regs){
             AddTimerCallback((timer_callback_t)regs->ebx, (uint64_t)regs->ecx);
             regs->eax = SYSCALL_SUCCESS;
             regs->ebx = 0; // Just in case
+
             break;
         }
         case SYS_REMOVE_TIMER_HANDLE:{
@@ -199,174 +311,6 @@ static HOT void syscall_handler(struct Registers *regs){
             // EBX contains the pointer to the callback function
             // Removes a timer callback on the system timer
             RemoveTimerCallback((timer_callback_t)regs->ebx);
-            break;
-        }
-        case SYS_WRITE:{
-            // SYS_WRITE
-            // EBX contains the file descriptor
-            // ECX contains the pointer to the data to write
-            // EDX contains the number of bytes to write
-
-            // EAX contains the result
-            // Write data to a file descriptor
-
-            file_list_t* processFiles = GetCurrentProcess()->fileList;
-            file_context_t* context = FindFile(processFiles, regs->ebx);
-            if(context == NULL){
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-
-            if(context->node->readOnly == true){
-                regs->eax = FILE_READ_ONLY;
-                break;
-            }
-
-            // Write the data to the file's buffer
-            for(uint32_t i = 0; i < regs->edx; i++){
-                if(context->node->offset + i >= context->node->size){
-                    // Stop writing if we go past the end of the buffer
-                    if(context->node->isResizeable == false){
-                        regs->eax = FILE_NOT_RESIZEABLE;
-                        break;
-                    }else{
-                        context->node->data = rehalloc(context->node->data, context->node->size * 2);
-                        context->node->size *= 2;
-                    }
-                }
-
-                if(IsTTY((tty_t*)context->node->data)){
-                    // Just in case the file is a TTY and not actually a file
-                    context->node->offset = ttyNode->offset;
-                    TTYWrite(GetActiveTTY(), ((const char*)regs->ecx + i), regs->edx);
-                    context->node->offset = ttyNode->offset;
-                    break;
-                }else{
-                    ((char*)context->node->data)[context->node->offset++] = ((char*)regs->ecx)[i];
-                }
-            }
-
-            regs->eax = FILE_WRITE_SUCCESS;
-            break;
-        }
-        case SYS_READ:{
-            // SYS_READ
-            // EBX contains the file descriptor
-            // ECX contains the pointer to the buffer to read into (found using the open syscall)
-            // EDX contains the number of bytes to read
-
-            // Read data from a file descriptor
-
-            file_list_t* processFiles = GetCurrentProcess()->fileList;
-            file_context_t* context = FindFile(processFiles, regs->ebx);
-            if(context == NULL){
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-
-            if(context->node->writeOnly == true){
-                regs->eax = FILE_WRITE_ONLY;
-                break;
-            }
-
-            if(IsTTY((tty_t*)context->node->data)){
-                // Just in case the file is a TTY and not actually a file
-                context->node->offset = ttyNode->offset;
-                int result = TTYRead((tty_t*)context->node->data, (char*)regs->ecx, regs->edx);
-                //printk((char*)regs->ecx);
-                context->node->offset = ttyNode->offset;
-                //printk("Offset: %u\n", context->node->offset);
-                //printk("Data located at offset in node buffer: %s\n", (char*)context->node->data + (context->node->offset - result));
-
-                //strcpy((char*)regs->ecx, (char*)context->node->data + (context->node->offset - result));
-                regs->eax = FILE_READ_SUCCESS;
-                break;
-            }
-
-            // Read the data from the file's buffer
-            for(size_t i = 0; i < regs->edx; i++){
-                if(context->node->offset + i >= context->node->size){
-                    // Stop reading if we go past the end of the buffer
-                    regs->eax = FILE_READ_INCOMPLETE;
-                    break;
-                }
-                ((char*)regs->ecx)[i] = ((char*)context->node->data)[context->node->offset++];
-            }
-
-            regs->eax = FILE_READ_SUCCESS;
-            break;
-        }
-        case SYS_STAT: {
-            // SYS_STAT
-            // EBX contains a pointer to the directory
-            // ECX is the number of the node to read (its position in the directory)
-            // EDX is a pointer to the buffer to read into
-            // Read node information from the given directory (or the current directory if none given)
-
-            struct Node_Data* node = (struct Node_Data*)regs->edx;
-
-            vfs_node_t* directory = NULL;
-
-            if(regs->ebx == 0){
-                // If EBX is 0, use the current working directory
-                directory = VfsFindNode(GetCurrentProcess()->workingDirectory);
-            }else{
-                // If the start of the string is a slash, it is an absolute path. Otherwise, construct the path
-                char* path = (char*)regs->ebx;
-                if(*path == '/'){
-                    directory = VfsFindNode(path);
-                }else{
-                    char* fullPath = JoinPath(GetCurrentProcess()->workingDirectory, path);
-                    if(fullPath == NULL){
-                        //printk("Error: failed to join path\n");
-                        regs->eax = SYSCALL_TASKING_FAILURE;
-                        break;
-                    }
-                    directory = VfsFindNode(fullPath);
-                    hfree(fullPath);
-                }
-            }
-
-            if(directory == NULL){
-                //printk("Error: failed to find directory\n");
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-
-            vfs_node_t* vfsNode = directory->firstChild;
-            if(vfsNode == NULL){
-                //printk("Error: directory is empty\n");
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            // Get the node at the given index
-            for(uint32_t i = 0; i < regs->ecx; i++){
-                vfsNode = vfsNode->next;
-                if(vfsNode == NULL){
-                    regs->eax = FILE_NOT_FOUND;
-                    return;
-                }
-            }
-
-            node->size = vfsNode->size;
-            if(vfsNode->isDirectory){
-                node->type = NODE_TYPE_DIRECTORY;
-            }else if(vfsNode->isDevice){
-                node->type = NODE_TYPE_DEVICE;
-            }else{
-                node->type = NODE_TYPE_FILE;
-            }
-
-            node->permissions = vfsNode->permissions;
-            if(vfsNode->lock.owner != NULL){
-                node->owner = vfsNode->lock.owner->pid;
-            }else{
-                node->owner = ROOT_UID;
-            }
-
-            strcpy(node->name, vfsNode->name);
-
-            regs->eax = FILE_EXISTS;
 
             break;
         }
@@ -396,6 +340,7 @@ static HOT void syscall_handler(struct Registers *regs){
             //printk("Exiting process\n");
             
             // Read the file data from the VFS and unpage the memory
+            //printk("Searching for file %s\n", currentProcess->executablePath);
             vfs_node_t* file = VfsFindNode(currentProcess->executablePath);
             if(file == NULL){
                 printk("Error: failed to find file\n");
@@ -403,6 +348,7 @@ static HOT void syscall_handler(struct Registers *regs){
                 break;
             }
 
+            //printk("Freeing executable path\n");
             hfree(currentProcess->executablePath);
 
             // Unpage the memory by reading the ELF
@@ -427,12 +373,16 @@ static HOT void syscall_handler(struct Registers *regs){
                 pfree(currentProcess->stackBase + (i * PAGE_SIZE));
             }
 
+            //printk("Freeing file data\n");
             hfree(file->data);
 
+            //printk("Destroying process\n");
             DestroyProcess(currentProcess);
 
             // Switch to the parent process first (important to do this before changing registers)
             SetCurrentProcess(parentProcess);
+
+            //printk("All done!\n");
             
             // Now copy the saved parent registers to regs
             //*regs = *parentProcess->regs;
@@ -459,194 +409,7 @@ static HOT void syscall_handler(struct Registers *regs){
             // Load the next process
             // Keep the PCB of the caller but modify it and replace it with what the new process needs
 
-            // This is an early implementation, so right now it creates a new process and switches to it, then switches back to the caller when SYS_EXIT is called
-
-            //printk("User ESP: 0x%x\n", regs->user_esp);
-            //printk("Kernel ESP: 0x%x\n", regs->esp);
-
-            if(strlen((char*)regs->ebx) == 0){
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            char* path = (char*)regs->ebx;
-
-            volatile pcb_t* currentProcess = GetCurrentProcess();
-            if(currentProcess == NULL){
-                //printk("Error: failed to get current process\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            memcpy(currentProcess->regs, regs, sizeof(struct Registers));
-
-            vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
-            if(current == NULL){
-                //printk("Error: current directory does not exist\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            vfs_node_t* file = NULL;
-
-            char* fullPath = JoinPath(currentProcess->workingDirectory, path);
-            if(fullPath == NULL){
-                //printk("Error: failed to join path\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            if(*path != '/'){
-                file = VfsFindNode(fullPath);
-                if(file == NULL){
-                    //printk("Error: file %s does not exist\n", path);
-                    hfree(fullPath);
-                    regs->eax = SYSCALL_TASKING_FAILURE;
-                    break;
-                }
-            }else{
-                file = VfsFindNode(path);
-                if(file == NULL){
-                    regs->eax = SYSCALL_TASKING_FAILURE;
-                    hfree(fullPath);
-                    break;
-                }
-            }
-
-            if(file->mountPoint == NULL){
-                //printk("Error: file %s doesn't seem to be mounted\n", path);
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(fullPath);
-                break;
-            }
-
-            if(file->mountPoint->device == NULL){
-                //printk("Error: file at %s seems to have an invalid filesystem device\n", path);
-                //printk("Mountpoint address: 0x%x\n", file->mountPoint);
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(fullPath);
-                break;
-            }
-
-            //STOP
-
-            if(file->mountPoint->device->read(file->mountPoint->device, fullPath, file->size) != DRIVER_SUCCESS){
-                //printk("Error: failed to read file %s\n", path);
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(fullPath);
-                break;
-            }
-            //hfree(fullPath);
-
-            // Get and parse the ELF header
-            Elf32_Ehdr* elfHeader = (Elf32_Ehdr*)file->data;
-
-            //printk("ELF Magic: 0x%x\n", elfHeader->magic);
-            if(elfHeader->magic != ELF_MAGIC){
-                printk("Error: ELF magic number invalid!\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(file->data);
-                break;
-            }
-
-            if(elfHeader->type != ELF_TYPE_EXEC && elfHeader->type != ELF_TYPE_SHARED){
-                printk("Error: ELF type invalid!\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(file->data);
-                break;
-            }
-
-            if(elfHeader->instructionSet != ISA_X86_32){
-                printk("Error: Invalid ISA!\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                hfree(file->data);
-                break;
-            }
-
-            volatile pcb_t* newProcess = CreateProcess(ProgramStart, strdup(file->name), strdup(GetCurrentProcess()->workingDirectory), currentProcess->owner, true, false, true, NORMAL, PROCESS_DEFAULT_TIME_SLICE, GetCurrentProcess());
-            if(newProcess == NULL){
-                printk("Error: failed to create new process\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            newProcess->executablePath = fullPath;
-            hfree(fullPath);
-
-            // TODO: Allocate a new page directory for the new process
-
-            // Copy the ELF data to the new process's memory
-            Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
-            virtaddr_t entryPoint = (virtaddr_t)elfHeader->entry;
-            virtaddr_t stackBase = 0;
-            newProcess->EntryPoint = (void*)entryPoint;;
-            for(uint16_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
-                if(programHeader[i].type == PT_LOAD || programHeader[i].type == PT_DYNAMIC){
-                    virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
-                    size_t offset = programHeader[i].virtualAddress & 0x00000FFF;
-                    for(size_t j = 0; j < programHeader[i].memorySize; j += PAGE_SIZE){
-                        //printk("Allocating virtual address 0x%x\n", programHeader[i].virtualAddress + i);
-                        // Align the address to page
-                        //printk("Paging virtual address 0x%x\n", alignedAddress + j);
-                        //printk("Real address: 0x%x\n", programHeader[i].virtualAddress + j);
-                        PAGE_RESULT result = palloc(alignedAddress + j, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-                        if(result == PAGE_NOT_AQUIRED || result == PAGE_NOT_AQUIRED){
-                            // Only if the page is not aquired, since it may re-page the same area. If that's the case, just copy the data
-                            printk("Error: failed to page memory\n");
-                            regs->eax = SYSCALL_TASKING_FAILURE;
-                            return;
-                        }
-                    }
-                    memset((void*)(programHeader[i].virtualAddress), 0, programHeader[i].memorySize);
-                    memcpy((void*)(programHeader[i].virtualAddress), (void*)((uintptr_t)elfHeader + programHeader[i].offset), programHeader[i].fileSize);
-                    newProcess->memSize += programHeader[i].memorySize;
-                    stackBase = programHeader[i].virtualAddress + programHeader[i].memorySize;              // Ensure the stack is at the end of the memory
-                }
-            }
-
-            stackBase += PAGE_SIZE; // Add a page of padding to the stack base
-            newProcess->stackBase = (stackBase & 0xFFFFF000) + PAGE_SIZE; // Align the stack base to the next page
-            newProcess->stackTop = newProcess->stackBase + (PAGE_SIZE * 2); // Set the stack top to the next page
-
-            // Page the stack
-            for(size_t i = 0; i < 2; i++){
-                //printk("Allocating virtual address 0x%x\n", newProcess->stackBase + (i * PAGE_SIZE));
-                PAGE_RESULT result = palloc(newProcess->stackBase + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-                //printk("Result: %d\n", result);
-                if(result == PAGE_NOT_AQUIRED){
-                    printk("Error: failed to page stack\n");
-                    regs->eax = SYSCALL_TASKING_FAILURE;
-                    break;
-                }
-            }
-
-            SetCurrentProcess(newProcess);
-
-            // Be very nice and (definitely not conspicuously) clear the registers for the new process :)
-            regs->eax = 0;
-            regs->ebx = 0;
-            regs->ecx = 0;
-            regs->edx = 0;
-            regs->esi = 0;
-            regs->edi = 0;
-
-            // Enter ring 3 and execute the program (iret method)
-            regs->eflags.iopl = 0;
-            regs->eflags.interruptEnable = 1;
-            regs->cs = GDT_RING3_SEGMENT_POINTER(GDT_USER_CODE);
-            regs->ds = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->es = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->fs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->gs = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-            regs->ss = GDT_RING3_SEGMENT_POINTER(GDT_USER_DATA);
-
-            regs->eip = (uintptr_t)newProcess->EntryPoint;
-            //printk("Stack top: 0x%x\n", newProcess->stackTop);
-            //printk("Stack base: 0x%x\n", newProcess->stackBase);
-            regs->user_esp = newProcess->stackTop;
-            regs->ebp = newProcess->stackBase;
-
-            memcpy(newProcess->regs, regs, sizeof(struct Registers));
+            sys_exec(regs);
 
             break;
         }
@@ -709,8 +472,9 @@ static HOT void syscall_handler(struct Registers *regs){
                 regs->eax = STANDARD_FAILURE;
                 break;
             }
-            hfree(currentProcess->workingDirectory);
+            
             if(strcmp(dir, "..") == 0 && current->parent != NULL){
+                hfree(currentProcess->workingDirectory);
                 currentProcess->workingDirectory = GetFullPath(current->parent);
                 regs->eax = STANDARD_SUCCESS;
                 break;
@@ -718,7 +482,9 @@ static HOT void syscall_handler(struct Registers *regs){
                 regs->eax = STANDARD_SUCCESS;
                 break;
             }
+            
             char* fullPath = JoinPath(currentProcess->workingDirectory, dir);
+            hfree(currentProcess->workingDirectory);
             vfs_node_t* newDir = VfsFindNode(fullPath);
             if(newDir != NULL && newDir->isDirectory){
                 currentProcess->workingDirectory = GetFullPath(newDir);
@@ -727,56 +493,6 @@ static HOT void syscall_handler(struct Registers *regs){
             }else{
                 hfree(fullPath);
                 regs->eax = STANDARD_FAILURE;
-            }
-            break;
-        case SYS_OPEN: {
-            // SYS_OPEN
-            // Open a file from the VFS
-            // EBX contains the pointer to the path of the file
-
-            // EAX will contain the result
-            // EBX will contain the file descriptor
-            break;
-        }
-        case SYS_CLOSE: {
-            // SYS_CLOSE
-            // Close a file
-            // EBX contains the file descriptor to close
-            
-            break;
-        }
-        case SYS_SEEK:
-            // SYS_SEEK
-            // EBX contains the file descriptor
-            // ECX contains the offset to seek to
-            // EDX contains the whence (0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END)
-            // Seek to a position in a file
-            // Will return the new offset or 0xFFFFFFFF (-1) if the seek failed
-            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
-            if(context == NULL){
-                regs->eax = FILE_INVALID_OFFSET;
-                break;
-            }
-            switch(regs->edx){
-                case SEEK_SET:
-                    if(regs->ecx > context->node->size){
-                        regs->eax = FILE_INVALID_OFFSET;
-                    }
-                    context->node->offset = regs->ecx;
-                    regs->eax = context->node->offset;
-                    break;
-                case SEEK_CUR:
-                    if(context->node->offset += regs->ecx > context->node->size){
-                        regs->eax = FILE_INVALID_OFFSET;
-                    }else{
-                        context->node->offset += regs->ecx;
-                        context->node->offset;
-                    }
-                    break;
-                case SEEK_END:
-                    context->node->offset = context->node->size;
-                    regs->eax = context->node->offset;
-                    break;
             }
             break;
         case SYS_SLEEP:
@@ -817,8 +533,8 @@ static HOT void syscall_handler(struct Registers *regs){
         case SYS_PIPE:
             // Create a new file for reading and another one for writing but don't add it to the VFS or write it to the disk. It's specifically for inter-process communication.
             break;
-        case SYS_REPDUP:
-            // SYS_REPDUP
+        case SYS_DUP2:
+            // SYS_DUP2
             // Replace and duplicate a file descriptor
             // EBX contains the old file descriptor
             // ECX contains the new file descriptor
@@ -889,87 +605,6 @@ static HOT void syscall_handler(struct Registers *regs){
             memcpy(info->cpuID, others, sizeof(others));
             regs->eax = STANDARD_SUCCESS;
             break;
-        case SYS_OPEN_DEVICE: {
-            // SYS_OPEN_DEVICE
-            // Open a device from the VFS
-            // EBX contains the pointer to the path of the device
-            // ECX contains a pointer to the buffer to copy into
-            // Return the user device struct
-            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
-            if(node == NULL || node->data == NULL || node->isDirectory){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            MutexLock(&node->lock);
-
-            device_t* device = GetDeviceFromVfs((char*)regs->ebx);
-            if(device == NULL){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            memcpy((user_device_t*)regs->ecx, device->userDevice, sizeof(user_device_t));
-            regs->eax = STANDARD_SUCCESS;
-            break;
-        }
-        case SYS_CLOSE_DEVICE: {
-            // SYS_CLOSE_DEVICE
-            // Close a device
-            // EBX contains the path of the device to close
-            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
-            if(node == NULL || node->data == NULL || node->isDirectory){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            MutexUnlock(&node->lock);
-            regs->eax = STANDARD_SUCCESS;
-
-            break;
-        }
-
-        // Do I need to also switch the registers to the driver's PCB? Is it fine to keep them at the kernel?
-        case SYS_DEVICE_READ: {
-            // SYS_DEVICE_READ
-            // EBX contains device ID of the device to read from
-            // ECX contains the pointer to the buffer to read into
-            // EDX contains the size of the buffer
-            device_t* device = GetDeviceByID(regs->ebx);
-            if(device == NULL){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            MutexLock(&device->lock);                                                                       // Lock the device
-            volatile pcb_t* current = GetCurrentProcess();                                                  // Save the calling process
-            SetCurrentProcess(device->driver->driverProcess);                                               // Switch to the driver
-            regs->eax = device->read(device, (char*)regs->ecx, regs->edx);                                  // Call the device's read function
-            SetCurrentProcess(current);                                                                     // Switch back to the caller
-            MutexUnlock(&device->lock);                                                                     // Unlock the device
-            break;
-        }
-        case SYS_DEVICE_WRITE: {
-            // SYS_DEVICE_WRITE
-            // EBX contains device ID of the device to write to
-            // ECX contains the pointer to the buffer to write from
-            // EDX contains the size of the buffer
-            device_t* device = GetDeviceByID(regs->ebx);
-            if(device == NULL){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            MutexLock(&device->lock);                                                                       // Lock the device
-            volatile pcb_t* current = GetCurrentProcess();                                                  // Save the calling process
-            SetCurrentProcess(device->driver->driverProcess);                                               // Switch to the driver
-            regs->eax = device->write(device, (char*)regs->ecx, regs->edx);                                 // Call the device's write function
-            SetCurrentProcess(current);                                                                     // Switch back to the caller
-            MutexUnlock(&device->lock);  
-            break;
-        }
-        case SYS_DEVICE_IOCTL: {
-            // SYS_DEVICE_IOCTL
-            // EBX contains the device ID of the device perform the ioctl on
-            // ECX contains the command to perform
-            // EDX contains the argument for the command
-            break;
-        }
         
 
 
@@ -1163,11 +798,6 @@ static HOT void syscall_handler(struct Registers *regs){
             regs->eax = DRIVER_SUCCESS;
             break;
         }
-        case SYS_ENTER_V86_MODE:
-            // SYS_ENTER_V86_MODE
-            // Needed?
-            regs->eflags.virtual8086 = true;
-            break;
         case SYS_SHUTDOWN:{
             // SYS_SHUTDOWN
             // Shutdown the system

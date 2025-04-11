@@ -190,6 +190,7 @@ tty_t* CreateTTY(char* name, vfs_node_t* node){
     return tty;
 }
 
+// TODO: Adapt the TTY system to the new device system (it should have already been that way... I should have done that. This may have to be redone.)
 void InitializeTTY(void){
     // Driver for the TTY (can just be built into the kernel)
     driver_t* ttyDriver = CreateDriver("TTY Subsystem", "The Dedication OS TTY Subsystem", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);

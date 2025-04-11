@@ -35,14 +35,11 @@
 size_t memSize = 0;                     // Local variable for total memory size in bytes
 size_t memSizeMiB = 0;                  // Local variable for total memory size in 1024-based megabytes (Do they have a special name?)
 
-// Reference the built-in shell
-extern void shell(void);
-
 // The current version of the kernel (major, minor, patch)
 //
 // This is my reminder to update the GRUB menu entry when I update this
 //
-version_t kernelVersion = {0, 10, 1};
+version_t kernelVersion = {0, 11, 0};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;
@@ -56,9 +53,12 @@ multiboot_info_t mbootCopy;
  * - Implement file then program loading (done)
  * - Complete the VFS and add full disk drivers  (nearly done, have reading and mounting)
  * - Implement a proper task scheduler and multitasking (current goal and REQUIRED)
+ * - Add FAT subdirectory support
+ * - Add FAT12/16 support and LFN support
  * - Create a driver to be loaded as a module
  * - Improve the memory manager (done)
  * - Read up on UNIX philosophy and more closely follow it (in progress)
+ * - Make a new filesystem driver (which one? I was thinking ISO9660 or EXT2)
 */
 
 
@@ -66,6 +66,7 @@ multiboot_info_t mbootCopy;
  * - Program loading and execution
  * - Proper implementation of SYS_EXEC and SYS_EXIT, allowing for proper singletasking and context switching
  * - Finally added the user mode GDT and proper iret-based context switching (after much difficulty)
+ * - Shell in userland
 */
 
 // The kernel's process control block
@@ -114,6 +115,8 @@ void CreateGDT(){
     FlushTSS(GDT_RING0_SEGMENT_POINTER(GDT_TSS));
     sti
 }
+
+extern int shell();
 
 /// @brief The main entry point for the kernel
 /// @param magic The magic number provided by the bootloader (must be multiboot-compliant)
@@ -327,10 +330,13 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     uint64_t* buf = (uint64_t*)buffer;
     buf[0] = 0;                                                     // Set the LBA to read
     buf[1] = 1;                                                     // Set the sector count to 1
-    if(device_read(ataDevice->id, (void*)buffer, ((blkdev_t*)ataDevice->deviceInfo)->sectorSize) != DRIVER_SUCCESS){
+    file_result devRes = open(ataDevice->path, 0);                  // Open the device for reading
+    if(read(devRes.fd, buf, ((blkdev_t*)ataDevice->deviceInfo)->sectorSize) != FILE_READ_SUCCESS){
         printk("Failed to read from disk!\n");
         STOP
     }
+
+   // STOP
 
     printk("Successfully read from disk!\n");
 
@@ -398,6 +404,7 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
             // Just mount any found non-removable filesystem for now (this will always mount the LAST valid one)
             if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/root") == DRIVER_SUCCESS){
                 printk("Filesystem mounted successfully!\n");
+                break;
             }else{
                 printk("Failed to mount filesystem!\n");
             }
@@ -413,36 +420,24 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
         }
     }
 
+    close(devRes.fd);
+
+    printk("Boot complete. Starting shell...\n");
+
     // Load a users file and create the users...
 
     // Other final initialization steps...
 
     // Initialization complete - start the shell
 
-    // Search for the shell in the root directory
+    SetCurrentProcess(kernelPCB);                               // Set the current process to the kernel PCB
+
+    // Search for the shell in the root directory and execute it
     exec("/root/SHELL.ELF", NULL, NULL, 0);
 
-    // Upon failure to enter the user shell, switch to the kernel one
-    // Create a dummy PCB for the shell
-    volatile pcb_t* shellPCB = CreateProcess(shell, "shell", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, false, true, KERNEL, PROCESS_DEFAULT_TIME_SLICE, kernelPCB);
-    // The kernel is the steward of all processes
-    kernelPCB->firstChild = shellPCB;
+    shell();
 
-    SetCurrentProcess(shellPCB);
-
-    //STOP
-    
-    // Jump to the built-in debug shell
-    // TODO:
-    // - Load the shell from the filesystem
-    // - Make the shell a userland application
-    shellPCB->EntryPoint();
-
-    DestroyProcess(shellPCB);
-    SetCurrentProcess(kernelPCB);
-
-    // Schedule the first process (doesn't do anything yet)
-    //Scheduler();
+    printk("ERROR: No shell or init loaded!");
 
     for(;;){
         // Infinite halt

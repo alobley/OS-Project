@@ -1,3 +1,18 @@
+/***********************************************************************************************************************************************************************
+ * Copyright (c) 2025, xWatexx. All rights reserved.
+ * (put some licensing stuff here idk, look at the LICENSE file for details)
+ * 
+ * This file is part of Dedication OS.
+ * This file is my first true useful userland program in my operating system, a shell! This replaces the kernel-integrated shell (KISh)
+ * as the primary shell of Dedication OS.
+ * It is responsible for executing commands and managing the user environment.
+ * TODO: 
+ * - Implement a proper command parser and add more commands
+ * - Add command history
+ * - Add PATH construction
+ * - Implement an stdlib malloc
+ * - Move some commands out of the shell and into their own programs (in proper UNIX-like fashion)
+ ***********************************************************************************************************************************************************************/
 #include <system.h>
 #include <string.h>
 #include <stdarg.h>
@@ -14,7 +29,7 @@ const char* prompt = "> ";
 void PrintPrompt(){
     printf("[");
     // Get only the last part of the working directory
-    if(workingdir == NULL){
+    if(*workingdir == '\0'){
         printf("ERROR");
     }else{
         char* lastPart = strrchr(workingdir, '/');
@@ -66,9 +81,10 @@ void ProcessCommand(char* cmdBuffer){
     }else if(strcmp(cmdBuffer, "pwd") == 0){
         printf("%s\n", workingdir);
     }else if(strcmp(cmdBuffer, "ls") == 0){
+        printf("..\n");
         size_t i = 0;
         struct Node_Data node = {0};
-        while(stat(NULL, i, &node) != FILE_NOT_FOUND){
+        while(istat(NULL, i, &node) != FILE_NOT_FOUND){
             printf("%s\n", node.name);
             i++;
         }
@@ -136,7 +152,7 @@ NORET void _start(){
         memset(cmdBuffer, 0, sizeof(cmdBuffer));
         if(read(STDIN_FILENO, cmdBuffer, sizeof(cmdBuffer)) != FILE_READ_SUCCESS){
             printf("Error: failed to read from stdin\n");
-            return;
+            exit(1);
         }
         size_t bufferLen = strlen(cmdBuffer);
         cmdBuffer[bufferLen - 1] = '\0'; // Remove the newline character

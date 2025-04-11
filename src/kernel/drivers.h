@@ -55,7 +55,4 @@ DRIVERSTATUS io_port_read(unsigned short port, unsigned int size);
 /// @return Success or error code
 DRIVERSTATUS io_port_write(unsigned short port, unsigned int size, unsigned int value);
 
-// Enter virtual 8086 mode
-void enter_v86_mode(void);
-
 #endif  // DRIVERS_H

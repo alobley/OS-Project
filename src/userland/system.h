@@ -6,6 +6,8 @@
 // Header file containing macros and functions for system calls and other system-level functions
 // This file is meant to be used both in the kernel and in userland
 
+#include <kernel.h>
+
 #define ANSI_ESCAPE "\033[2J\033[H"
 
 #define STDIN_FILENO 0
@@ -94,7 +96,7 @@ struct Node_Data {
     unsigned int type;                         // Type of the node (file, directory, etc.)
     unsigned int permissions;                  // Permissions for the node (read, write, etc.)
     pid_t owner;                               // Owner of the node
-    char name[12];                             // Name of the node (8.3 format)
+    char name[];                               // Name of the node (TODO: change this)
 };
 
 #define NODE_TYPE_FILE 0
@@ -144,6 +146,18 @@ struct sysinfo {
     _Bool acpiSupported;                  // Whether ACPI is supported
 };
 
+struct p_info {
+    pid_t pid;                            // Process ID
+    pid_t ppid;                           // Parent process ID
+    char name[16];                        // Process name
+    unsigned int state;                   // Process state (running, sleeping, etc.)
+    unsigned int memoryUsage;             // Memory usage in bytes
+    unsigned int heapStart;               // Start address of the heap
+    unsigned int heapSize;                // Size of the heap in bytes
+};
+
+typedef int fd;
+
 // Debug system call - prints a confirmation to the screen
 int sys_debug(void);
 
@@ -164,7 +178,7 @@ FILESTATUS write(int fd, const void* buf, unsigned int count);
 FILESTATUS read(int fd, void* buf, unsigned int count);
 
 // Read file data
-FILESTATUS stat(const char* directory, unsigned int number, struct Node_Data* buf);
+FILESTATUS istat(const char* directory, unsigned int number, struct Node_Data* buf);
 
 // Exit the current process
 void exit(int status);
@@ -191,7 +205,7 @@ int getcwd(char* buf, unsigned int size);
 int chdir(const char* path);
 
 // Open a file
-file_result open(const char* path);
+file_result open(const char* path, int flags);
 
 // Close a file
 FILESTATUS close(int fd);
@@ -226,15 +240,6 @@ int mprotect(void* addr, unsigned int length, unsigned int flags);
 int sys_dumpregs();
 
 int sysinfo(struct sysinfo* info);
-
-// Open a device from the VFS
-int open_device(char* path, user_device_t* device);
-
-// Call a device's read function
-int device_read(int deviceID, void* buffer, unsigned int size);
-
-// Call a device's write function
-int device_write(int deviceID, const void* buffer, unsigned int size);
 
 // Priveliged system call. Shuts down the system.
 int shutdown(void);

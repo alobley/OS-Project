@@ -97,6 +97,7 @@ file_list_node_t* CreateListNode(file_context_t* context);
 int AddFileToList(file_list_t* list, file_context_t* context);
 void DestroyFileList(file_list_t* list);
 file_context_t* FindFile(file_list_t* list, int fd);
+int RemoveFileFromList(file_list_t* list, int fd);
 
 void VfsDetachMountpoint(vfs_node_t* mountNode);
 
