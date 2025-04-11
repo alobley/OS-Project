@@ -459,40 +459,40 @@ static HOT void syscall_handler(struct Registers *regs){
             char* dir = (char*)regs->ebx;
             if(dir == NULL || strlen(dir) == 0){
                 // No directory specified
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_FAILURE;
                 break;
             }
 
             vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
             if(current == NULL){
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_FAILURE;
                 break;
             }
             if(!current->isDirectory){
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_FAILURE;
                 break;
             }
             
             if(strcmp(dir, "..") == 0 && current->parent != NULL){
                 hfree(currentProcess->workingDirectory);
                 currentProcess->workingDirectory = GetFullPath(current->parent);
-                regs->eax = STANDARD_SUCCESS;
+                regs->eax = SYSCALL_SUCCESS;
                 break;
             }else if(strcmp(dir, ".") == 0){
-                regs->eax = STANDARD_SUCCESS;
+                regs->eax = SYSCALL_SUCCESS;
                 break;
             }
             
             char* fullPath = JoinPath(currentProcess->workingDirectory, dir);
-            hfree(currentProcess->workingDirectory);
             vfs_node_t* newDir = VfsFindNode(fullPath);
             if(newDir != NULL && newDir->isDirectory){
+                hfree(currentProcess->workingDirectory);
                 currentProcess->workingDirectory = GetFullPath(newDir);
                 hfree(fullPath);
-                regs->eax = STANDARD_SUCCESS;
+                regs->eax = SYSCALL_SUCCESS;
             }else{
                 hfree(fullPath);
-                regs->eax = STANDARD_FAILURE;
+                regs->eax = SYSCALL_FAILURE;
             }
             break;
         case SYS_SLEEP:

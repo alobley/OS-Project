@@ -56,6 +56,10 @@ CFILE=kernel
 # Placeholder for additional kernel functionality
 PROGRAM_FILE=programtoload
 
+USER_CFLAGS=-I $(USER_DIR) -I $(KERNEL_DIR) -I src/libc -I $(LIB_DIR) -static -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align
+USER_CFLAGS+=-lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -T $(USER_DIR)/userland.ld
+USER_CFLAGS+=-Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic
+
 # Build Targets
 all: clean assemble compile drive_image addfiles qemu_grub
 
@@ -101,7 +105,7 @@ assemble: create_dirs
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
 	$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
-	$(CCOM) -o $(BUILD_DIR)/usershell.elf src/libc/stdio.c $(USER_DIR)/userc.c $(USER_DIR)/system.c -I $(USER_DIR) -I $(KERNEL_DIR) -I src/libc -I $(LIB_DIR) -static -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -T $(USER_DIR)/userland.ld
+	$(CCOM) -o $(BUILD_DIR)/usershell.elf src/libc/stdio.c $(USER_DIR)/userc.c $(USER_DIR)/system.c $(USER_CFLAGS)
 #$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
 # Run QEMU
