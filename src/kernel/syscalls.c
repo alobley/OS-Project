@@ -400,8 +400,16 @@ void sys_exec(struct Registers* regs){
     // Copy the ELF data to the new process's memory
     Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
     virtaddr_t entryPoint = (virtaddr_t)elfHeader->entry;
+    if(entryPoint < USER_MEM_START || entryPoint > USER_MEM_END){
+        //printk("Error: entry point is outside of user memory range!\n");
+        regs->eax = SYSCALL_TASKING_FAILURE;
+        DestroyProcess(newProcess);
+        hfree(file->data);
+        return;
+    }
+
     virtaddr_t stackBase = 0;
-    newProcess->EntryPoint = (void*)entryPoint;;
+    newProcess->EntryPoint = (void*)entryPoint;
     for(uint16_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
         if(programHeader[i].type == PT_LOAD || programHeader[i].type == PT_DYNAMIC){
             virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
@@ -411,7 +419,7 @@ void sys_exec(struct Registers* regs){
                 // Align the address to page
                 //printk("Paging virtual address 0x%x\n", alignedAddress + j);
                 //printk("Real address: 0x%x\n", programHeader[i].virtualAddress + j);
-                page_result_t result = palloc(alignedAddress + j, PAGE_PRESENT | PAGE_RW | PAGE_USER);
+                page_result_t result = user_palloc(alignedAddress + j, PAGE_PRESENT | PAGE_RW | PAGE_USER);
                 if(result != PAGE_OK){
                     // Only if the page is not aquired, since it may re-page the same area. If that's the case, just copy the data
                     //printk("Error: failed to page memory\n");

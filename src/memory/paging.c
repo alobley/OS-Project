@@ -415,6 +415,18 @@ page_result_t pfree(virtaddr_t address){
     return PAGE_OK;
 }
 
+/// @brief Used for allocating pages to user programs. This checks the kernel's bounds and ensures the kernel isn't overwritten or unpaged.
+/// @param address The virtual address of the page to allocate
+/// @param flags The flags of the page to allocate
+/// @return Success or error code
+page_result_t user_palloc(virtaddr_t address, unsigned int flags){
+    if(address < USER_MEM_START || address > USER_MEM_END){
+        // Simple bounds check to prevent user programs from unmapping the kernel
+        return PROTECTION_VIOLATION;
+    }
+    return palloc(address, flags);
+}
+
 /// @brief Specifically meant for programs to call, this checks the kernel's bounds and ensures the kernel isn't overwritten or unpaged.
 /// @param address The address of the page to free
 /// @return success or error code

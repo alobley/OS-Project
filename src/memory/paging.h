@@ -153,6 +153,12 @@ page_result_t physpalloc(virtaddr_t virt, physaddr_t phys, unsigned int flags);
 /// @return Success or error code
 page_result_t pfree(virtaddr_t address);
 
+/// @brief Used for allocating pages to user programs. This checks the kernel's bounds and ensures the kernel isn't overwritten or unpaged.
+/// @param address The virtual address of the page to allocate
+/// @param flags The flags of the page to allocate
+/// @return Success or error code
+page_result_t user_palloc(virtaddr_t address, unsigned int flags);
+
 /// @brief Specifically meant for programs to call, this checks the kernel's bounds and ensures the kernel isn't overwritten or unpaged.
 /// @param address The address of the page to free
 /// @return success or error code
@@ -169,7 +175,6 @@ page_result_t PageKernel(size_t systemMem);
 /// @param cr2 The value of CR2
 /// @return Whether the fault was handled or not
 page_result_t HandlePageFault(uint32_t errCode, uint32_t cr2);
-
 
 /// @brief Check all of the page tables and page directories for sanity
 /// @warning This function will take a lot of time to complete. It checks every possible page frame for every possible page.
