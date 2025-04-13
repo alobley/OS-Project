@@ -15,6 +15,9 @@
 #define MALLOC __attribute__((malloc))
 #define UNREACHABLE __builtin_unreachable();
 
+// An index of an object
+typedef unsigned int index_t;
+
 #define asm __asm__
 
 #define cli asm("cli");

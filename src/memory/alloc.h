@@ -18,9 +18,6 @@ void hfree(void* ptr);
 // Reallocate a block of memory
 void* rehalloc(void* ptr, size_t newSize);
 
-MALLOC void* aligned_halloc(size_t size, size_t alignment);
-void aligned_hfree(void* ptr);
-
 void InitializeAllocator(void);
 
 #endif

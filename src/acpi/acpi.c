@@ -130,12 +130,10 @@ bool PS2ControllerExists(){
 }
 
 void AcpiShutdown(){
-    if(PS2ControllerExists()){
-        outb(0x64, 0xFE);
-    }else{
-        outb(acpiInfo.fadt->pm1aCtrlBlk, 0x00);
-        outb(acpiInfo.fadt->pm1bCtrlBlk, 0x00);
-    }
+    // Need ACPI stuff, don't have a full implementation yet
+
+    printk("No shutdown available. It is now safe to turn off your computer.\n");
+    STOP
 }
 
 void AcpiReboot(){

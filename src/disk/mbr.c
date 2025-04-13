@@ -2,6 +2,7 @@
 #include <drivers.h>
 #include <kernel.h>
 #include <alloc.h>
+#include <console.h>
 
 lba ChsToLba(uint16_t head, uint16_t sector, uint16_t cylinder, blkdev_t* disk){
     // Ensure valid CHS values

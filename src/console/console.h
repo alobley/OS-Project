@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+static uint16_t VGA_WIDTH = 80;
+static uint16_t VGA_HEIGHT = 25;
 
 #define VGA_SIZE (VGA_WIDTH * VGA_HEIGHT)
 #define VGA_BYTES (VGA_SIZE * 2)

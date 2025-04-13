@@ -1,6 +1,7 @@
 #include <devices.h>
 #include <alloc.h>
 #include <vfs.h>
+#include <console.h>
 
 device_registry_t* registry = NULL;
 

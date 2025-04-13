@@ -60,6 +60,7 @@ void ProcessCommand(char* cmdBuffer){
         printf("ls: lists the files in the current directory\n");
         printf("cd: changes the current directory\n");
         printf("shutdown: shuts down the system\n");
+        printf("reboot: reboots the system\n");
         printf("sysinfo: prints system information\n");
     }else if(strcmp(cmdBuffer, "exit") == 0){
         exit(0);
@@ -121,7 +122,10 @@ void ProcessCommand(char* cmdBuffer){
             printf("yes\n");
         }else{
             printf("no\n");
-    }
+        }
+    }else if(strcmp(cmdBuffer, "reboot") == 0){
+        printf("Rebooting...\n");
+        reboot();
     }else{
         if(*cmdBuffer == 0){
             PrintPrompt();

@@ -593,8 +593,8 @@ static HOT void syscall_handler(struct Registers *regs){
             struct sysinfo* info = (struct sysinfo*)regs->ebx;
             info->uptime = GetTicks() / 1000; // Convert to seconds
             info->totalMemory = totalMemSize;
-            info->usedMemory = totalPages * PAGE_SIZE;
-            info->freeMemory = (totalMemSize - (totalPages * PAGE_SIZE));
+            info->usedMemory = mappedPages * PAGE_SIZE;
+            info->freeMemory = (totalMemSize - (mappedPages * PAGE_SIZE));
             info->numProcesses = 0; // TODO: Implement this
             memcpy(&info->kernelVersion, &kernelVersion, sizeof(version_t));
             memcpy(info->kernelRelease, kernelRelease, strlen(kernelRelease) + 1);

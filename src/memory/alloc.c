@@ -2,6 +2,8 @@
 #include <kernel.h>
 #include <system.h>
 #include <multitasking.h>
+#include <console.h>
+#include <system.h>
 
 // Get the start of the kernel's heap
 uintptr_t heapStart = 0;
@@ -33,6 +35,18 @@ void InitializeAllocator(void){
     firstBlock->prev = NULL;
     firstBlock->magic = MEMBLOCK_MAGIC;
     heapEnd = heapStart + PAGE_SIZE;
+
+    for(int i = 0; i < 500; i++){
+        nop
+    }
+
+    if(firstBlock->magic != MEMBLOCK_MAGIC){
+        printk("KERNEL PANIC: Kernel could not write memory to 0x%x.\n", firstBlock);
+        printk("Physical address of offending memory: 0x%x\n", GetPhysicalAddress((virtaddr_t)firstBlock));
+        printk("Tried to write: 0x%x\n", MEMBLOCK_MAGIC);
+        printk("Value found: 0x%x\n", firstBlock->magic);
+        STOP
+    }
 }
 
 // Allocate aligned memory
@@ -98,6 +112,7 @@ MALLOC void* halloc(size_t size){
             STOP
         }
         if(current->free && current->size > size + HEADER_SIZE + 1){
+            // A suitable block was found, split it
             block_header_t* newBlock = (block_header_t*)((uint8_t*)current + HEADER_SIZE + size);
             newBlock->size = (current->size - size) - HEADER_SIZE;
             newBlock->free = true;
@@ -115,26 +130,30 @@ MALLOC void* halloc(size_t size){
             }
             
             MutexUnlock(&heapMutex);
-            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
+            //printk("Splitting block\n");
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }else if(current->free && current->size >= size){
+            // A suitable block of perfect size was found
             current->free = false;
             MutexUnlock(&heapMutex);
-            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
+            //printk("Perfect block found\n");
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         if(current->next == NULL && current->free && current->size < size + HEADER_SIZE){
+            // We reached the end of the heap and now must extend it
             // Calculate total needed size including potential split header
             size_t totalNeeded = size + HEADER_SIZE;
             if(totalNeeded + HEADER_SIZE + 1 <= PAGE_SIZE) {
                 totalNeeded += HEADER_SIZE + 1; // Account for potential split
             }
+
+            //printk("Extending heap by %u bytes\n", totalNeeded);
             
             // Calculate pages needed with proper rounding
             size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
             
             // Check if we would exceed memory limits
-            if(heapEnd + (pagesToAdd * PAGE_SIZE) > totalMemSize || 
+            if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
                heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
                 MutexUnlock(&heapMutex);
                 return NULL;
@@ -142,7 +161,7 @@ MALLOC void* halloc(size_t size){
             
             // Allocate pages
             for(size_t i = 0; i < pagesToAdd; i++){
-                if(palloc(heapEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW) == PAGE_NOT_AQUIRED){
+                if(palloc(heapEnd + (i * PAGE_SIZE), PDE_PRESENT | PDE_RW) != PAGE_OK){
                     // Deallocate any pages we've already allocated
                     for(size_t j = 0; j < i; j++) {
                         pfree(heapEnd + (j * PAGE_SIZE));
@@ -165,25 +184,26 @@ MALLOC void* halloc(size_t size){
                 newBlock->padding = 0;
                 current->size = size;
                 current->next = newBlock;
+                //printk("Split block magic number: 0x%x\n", newBlock->magic);
             }else{
                 current->size = totalSpace - HEADER_SIZE;
                 current->next = NULL;
             }
             
-            totalPages += pagesToAdd;
             current->free = false;
             current->magic = MEMBLOCK_MAGIC;
             heapEnd += pagesToAdd * PAGE_SIZE;
             MutexUnlock(&heapMutex);
-            //printk("Memory allocated at 0x%x ", current + HEADER_SIZE);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         previous = current;
         current = current->next;
     }
 
+    //printk("Extending heap by %u bytes and creating new block\n", size);
+
     // We've reached the end of the list and didn't find a suitable block
-    if(heapEnd >= totalMemSize || heapEnd + size + HEADER_SIZE <= heapEnd){
+    if(heapEnd >= USER_MEM_START || heapEnd + size + HEADER_SIZE <= heapEnd){
         MutexUnlock(&heapMutex);
         return NULL;
     }
@@ -196,14 +216,14 @@ MALLOC void* halloc(size_t size){
     size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
     
     // Check if we would exceed memory limits
-    if(heapEnd + (pagesToAdd * PAGE_SIZE) > totalMemSize || 
+    if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
        heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
         MutexUnlock(&heapMutex);
         return NULL;
     }
     
     for(size_t i = 0; i < pagesToAdd; i++){
-        if(palloc(heapEnd + (i * PAGE_SIZE), PDE_FLAG_PRESENT | PDE_FLAG_RW) == PAGE_NOT_AQUIRED){
+        if(palloc(heapEnd + (i * PAGE_SIZE), PDE_PRESENT | PDE_RW) != PAGE_OK){
             // Deallocate any pages we've already allocated
             for(size_t j = 0; j < i; j++) {
                 pfree(heapEnd + (j * PAGE_SIZE));
@@ -214,7 +234,6 @@ MALLOC void* halloc(size_t size){
         }
     }
     
-    totalPages += pagesToAdd;
     block_header_t* newBlock = (block_header_t*) heapEnd;
     newBlock->size = size;
     newBlock->free = false;
@@ -305,7 +324,6 @@ void hfree(void* ptr){
             // Keep first page, free the rest
             for (size_t i = 1; i < heapSizeInPages; i++) {
                 pfree(heapStart + (i * PAGE_SIZE));
-                totalPages--;
             }
             
             // Reset heap to initial state
@@ -334,7 +352,6 @@ void hfree(void* ptr){
                 
                 for (size_t i = 0; i < pagesToFree; i++) {
                     pfree(usedEndAligned + (i * PAGE_SIZE));
-                    totalPages--;
                 }
                 
                 // Update heap end

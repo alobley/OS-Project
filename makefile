@@ -9,7 +9,7 @@ EMARGS=-m 1024M -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu p
 EMARGS+=-hda bin/harddisk.vdi
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
-EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int -no-reboot -no-shutdown #-s -S
+EMARGS+=-device ich9-usb-uhci1 -monitor stdio -boot d -d int #-no-reboot -no-shutdown #-s -S
 
 # Directories
 SRC_DIR=src
@@ -99,8 +99,8 @@ assemble: create_dirs
 	$(ASM) -felf32 $(USER_DIR)/program.asm -o $(BUILD_DIR)/prgm.o
 	$(ASM) -felf32 $(USER_DIR)/hello.asm -o $(BUILD_DIR)/hello.o
 
-	i686-elf-ld $(BUILD_DIR)/prgm.o -o $(BUILD_DIR)/prgm.elf -m elf_i386
-	i686-elf-ld $(BUILD_DIR)/hello.o -o $(BUILD_DIR)/hello.elf -m elf_i386
+	i686-elf-ld $(BUILD_DIR)/prgm.o -o $(BUILD_DIR)/prgm.elf -m elf_i386 -T $(USER_DIR)/temp_userland.ld
+	i686-elf-ld $(BUILD_DIR)/hello.o -o $(BUILD_DIR)/hello.elf -m elf_i386 -T $(USER_DIR)/temp_userland.ld
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c

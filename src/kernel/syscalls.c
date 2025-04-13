@@ -411,8 +411,8 @@ void sys_exec(struct Registers* regs){
                 // Align the address to page
                 //printk("Paging virtual address 0x%x\n", alignedAddress + j);
                 //printk("Real address: 0x%x\n", programHeader[i].virtualAddress + j);
-                PAGE_RESULT result = palloc(alignedAddress + j, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-                if(result == PAGE_NOT_AQUIRED || result == PAGE_NOT_AQUIRED){
+                page_result_t result = palloc(alignedAddress + j, PAGE_PRESENT | PAGE_RW | PAGE_USER);
+                if(result != PAGE_OK){
                     // Only if the page is not aquired, since it may re-page the same area. If that's the case, just copy the data
                     //printk("Error: failed to page memory\n");
                     regs->eax = SYSCALL_TASKING_FAILURE;
@@ -433,9 +433,9 @@ void sys_exec(struct Registers* regs){
     // Page the stack
     for(size_t i = 0; i < 2; i++){
         //printk("Allocating virtual address 0x%x\n", newProcess->stackBase + (i * PAGE_SIZE));
-        PAGE_RESULT result = palloc(newProcess->stackBase + (i * PAGE_SIZE), PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
+        page_result_t result = palloc(newProcess->stackBase + (i * PAGE_SIZE), PAGE_PRESENT | PAGE_RW | PAGE_USER);
         //printk("Result: %d\n", result);
-        if(result == PAGE_NOT_AQUIRED){
+        if(result != PAGE_OK){
             //printk("Error: failed to page stack\n");
             regs->eax = SYSCALL_TASKING_FAILURE;
             return;

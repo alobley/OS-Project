@@ -1,5 +1,6 @@
 #include <vfs.h>
 #include <alloc.h>
+#include <console.h>
 
 // TODO:
 // - Add mutex checking in the VFS

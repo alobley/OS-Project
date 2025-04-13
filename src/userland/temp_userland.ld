@@ -1,10 +1,11 @@
 OUTPUT_FORMAT("elf32-i386")
 ENTRY(_start)
 
+/* This linker script is a temporary measure until I have proper paging */
+
 SECTIONS
 {
-    /* Define the starting address where the program will be loaded */
-    . = 0x40000000;
+    . = 0x60000000;
     
     .text ALIGN(0x1000) :
     {

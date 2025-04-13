@@ -1,425 +1,655 @@
+/***********************************************************************************************************************************************************************
+ * Copyright (c) 2025, xWatexx. All rights reserved.
+ * This software is licensed under the MIT license. See the LICENSE file in the root directory for more details.
+ * 
+ * This file is part of Dedication OS.
+ * This file contains the code and core components of the paging subsystem for Dedication OS. All virtual memory management is performed here.
+ ***********************************************************************************************************************************************************************/
 #include <paging.h>
 #include <alloc.h>
-#include <acpi.h>
 #include <system.h>
+#include <console.h>
+#include <acpi.h>
 
+// The total amount of system RAM in bytes
+size_t totalMemSize;
 
-// This isn't used yet, must learn how to implement higher-half kernel
-#define KERNEL_VIRTADDR 0xC0000000
+// The total number of mapped pages (including those not currently in the page directory)
+size_t mappedPages;
 
-#define TOTAL_PAGES (MAX_MEMORY_SIZE / PAGE_SIZE)    // 1048576 pages
-#define TOTAL_BITS (TOTAL_PAGES / 8)                 // 131072 bytes
+physaddr_t lastPhysicalAddress = 0;
 
-size_t totalMemSize = 0;
+// Page table entry
+typedef unsigned int page_t;
 
-size_t totalPages = 0;
+// Page directory entry
+typedef unsigned int pde_t;
 
-size_t lastFreeBit = 0;
+// Page table structure (size is one page each)
+struct ALIGNED(PAGE_SIZE) Page_Table {
+    page_t pages[1024];
+};
 
-// Define a memory bitmap of 4KiB pages - include every page up to 4GiB
-// This defines usable memory for the OS to page, but the page allocation doesn't change it
-char memoryBitmap[TOTAL_BITS] ALIGNED(4096) = {0};
+// Page directory structure (size is one page)
+struct ALIGNED(PAGE_SIZE) Page_Directory {
+    pde_t tables[1024];
+};
 
-// Set a bit in the memory bitmap
-void SetBit(uint32_t bit){
-    memoryBitmap[bit / 8] |= (1 << (bit % 8));
+// Helper macros for translating a virtual address
+#define PDE_INDEX(virt) ((virt >> 22) & 0x3FF)              // Index in a page directory
+#define PTE_INDEX(virt) ((virt >> 12) & 0x3FF)              // Index in a page table
+#define PAGE_OFFSET(virt) (virt & 0xFFF)                    // Just the offset within a page - not particularly important
+
+// Reconstruct a virtual address from the page directory index, page table index, and offset
+#define ReconstructVirtualAddress(pdIndex, ptIndex, offset) \
+    ((pdIndex << 22) | (ptIndex << 12) | offset)
+
+// Macros for interacting with the control registers to enable paging
+
+// Invalidate a TLB entry
+#define invlpg(x) asm volatile("invlpg (%0)" :: "r" (x) : "memory")
+
+// Set the PE bit in CR0
+#define EnablePaging()              \
+    asm volatile (                  \
+        "mov %%cr0, %%eax\n\t"      \
+        "or $0x80000000, %%eax\n\t" \
+        "mov %%eax, %%cr0"          \
+        ::: "eax")
+
+#define DisablePaging()             \
+    asm volatile (                  \
+        "mov %%cr0, %%eax\n\t"      \
+        "and $0x7FFFFFFF, %%eax\n\t"\
+        "mov %%eax, %%cr0"          \
+        ::: "eax")
+
+// Clear the whole TLB
+#define FlushTLB()                  \
+        asm volatile (              \
+            "mov %%cr3, %%eax\n\t"  \
+            "mov %%eax, %%cr3\n\t"  \
+            ::: "eax", "memory")
+
+// Load CR3 with a pointer (physical address) to a page directory
+#define LoadPageDirectory(dir) asm volatile("mov %0, %%cr3" :: "r"(dir))
+
+// REMINDER TO ME: parse the memory map to put this somewhere
+static physaddr_t kernel_PD_physaddr = 0;
+
+#define PAGE_DIR_VIRTUAL ((struct Page_Directory*) PD_VIRTADDR)
+#define PAGE_TABLE_VIRTUAL(pdIndex)  ((struct Page_Table*)(PT_VIRTADDR + (pdIndex * PAGE_SIZE)))
+
+// Define a stack of free page frames for extremely easy page frame allocation (this uses a whopping 4MB of memory... wow)
+ALIGNED(PAGE_SIZE) page_t _frameStack[MAX_PAGES] = {0};
+page_t* frameSp = &_frameStack[0];
+
+// Define a bitmap to keep track of available page frames
+ALIGNED(PAGE_SIZE) unsigned char memoryBitmap[TOTAL_BITS / BITS_PER_BITMAP_ENTRY] = {0};
+
+/// @brief Take a virtual address and return its actual address in physical memory (does not require alignment)
+/// @param virt The virtual address to convert
+/// @return The physical address of the memory
+physaddr_t GetPhysicalAddress(virtaddr_t virt){
+    // Get the nececarry offsets
+    virtaddr_t offset = PAGE_OFFSET(virt);
+    index_t pdIndex = PDE_INDEX(virt);
+    index_t ptIndex = PTE_INDEX(virt);
+
+    // Get the page value (we can skip the page directory itself but we still need the PD index to find the correct page table)
+    page_t page = PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex];
+
+    // Extract the physical address of the page
+    physaddr_t addr = PAGE_ADDR_MASK(page);
+    addr += offset;                                         // Add the offset within the page so aligned addresses aren't required
+
+    return addr;
 }
 
-// Clear a bit in the memory bitmap
-void ClearBit(uint32_t bit){
-    memoryBitmap[bit / 8] &= ~(1 << (bit % 8));
+/// @brief Set a bit in the memory bitmap to 1
+/// @param bit The index of the bit to set
+void SetBit(index_t bit){
+    memoryBitmap[bit / BITS_PER_BITMAP_ENTRY] |= (1 << (bit % BITS_PER_BITMAP_ENTRY));
 }
 
-// Check if a bit is set in the memory bitmap
-bool TestBit(uint32_t bit){
-    return memoryBitmap[bit / 8] & (1 << (bit % 8));
+/// @brief Clear a bit in the memory bitmap
+/// @param bit The index of the bit to clear
+void ClearBit(index_t bit){
+    memoryBitmap[bit / BITS_PER_BITMAP_ENTRY] &= ~(1 << (bit % BITS_PER_BITMAP_ENTRY));
 }
 
-// Map the bitmap using the memory map. This allows the OS to know which pages are usable
-void MapBitmap(uint32_t memSize, mmap_entry_t* mmap, size_t mmapLength /* In total entries */){
-    size_t pages = memSize / 4096;
+/// @brief Check if a bit in the bitmap has been set or not
+/// @param bit The index of the bit to check
+/// @return True or false, based on whether the bit is set or not
+bool TestBit(index_t bit){
+    return memoryBitmap[bit / BITS_PER_BITMAP_ENTRY] & (1 << (bit % BITS_PER_BITMAP_ENTRY));
+}
+
+// Flag for determining whether the stack is empty
+bool stackEmpty = false;
+
+/// @brief Clear the page frame stack - should be done upon a physpalloc. This should happen very rarely.
+void FlushFrameStack(){
+    memset(&_frameStack[0], 0, MAX_PAGES);
+    frameSp = &_frameStack[0];
+    stackEmpty = true;
+}
+
+/// @brief After a page was freed, its frame can be reused by another page allocation
+/// @param physicalAddress The physical address of the freed page. Must be page-aligned.
+bool PushFrame(physaddr_t physicalAddress){
+    if(frameSp > &_frameStack[MAX_PAGES - 1]){
+        // This should never happen (and if coded correctly, it won't ever happen), but just in case.
+        printk("CRITICAL ERROR: FRAME STACK OVERFLOW! THIS IS A KERNEL BUG.\nPLEASE REPORT THIS TO THE DEVELOPER.\n");
+        STOP
+    }
+
+    if(PAGE_ADDR_MASK(physicalAddress) != physicalAddress){
+        return false;
+    }
+
+    if(frameSp < &_frameStack[0]){
+        // The stack is empty, reset the pointer
+        frameSp = &_frameStack[0];
+    }
+
+    *frameSp = physicalAddress;
+    frameSp++;
+    stackEmpty = false;
+    return true;
+}
+
+/// @brief Pop a page frame from the stack for use. 
+/// @warning DO NOT DISCARD A POPPED FRAME
+/// @return The frame which can be used
+physaddr_t PopFrame(){
+    if(frameSp < &_frameStack[0]){
+        // Out of memory!
+        return INVALID_ADDRESS;
+    }
+
+    if(PAGE_ADDR_MASK(*frameSp) != *frameSp){
+        printk("CRITICAL ERROR: INVALID FRAME DETECTED! THIS IS A KERNEL BUG.\n");
+        printk("PLEASE REPORT TO THE DEVELOPER ASAP.\n");
+        STOP
+    }
+    while(!TestBit(*frameSp / PAGE_SIZE)){
+        // Just in case the frame was incorrectly pushed or its status changed, skip it.
+        // Changes to the memory bitmap should be exceedingly rare after the kernel maps itself.
+        if(frameSp <= &_frameStack[0]){
+            // Out of memory!
+            return INVALID_ADDRESS;
+        }
+        frameSp--;
+    }
+
+    physaddr_t frame = *frameSp;
+    frameSp--;
+    return frame;
+}
+
+/// @brief Read the memory bitmap to build the page frame stack
+void MapFrameStack(){
+    frameSp = &_frameStack[0];
+    for(index_t i = 0; i < MAX_PAGES; i++){
+        if(TestBit(i)){
+            if(!PushFrame(i * PAGE_SIZE)){
+                printk("ERROR: Kernel bug when mapping the frame stack!\n");
+                STOP;
+            }
+        }
+    }
+
+    physaddr_t frame = PopFrame();
+    while(frame == 0 || frame > lastPhysicalAddress - PAGE_SIZE){
+        // Skip zero frames and invalid frames
+        frame = PopFrame();
+    }
+
+    if(frame != 0 && frame != INVALID_ADDRESS && (frame & 0xFFF) == 0){
+        // Push the frame back onto the stack
+        PushFrame(frame);
+    }
+}
+
+/// @brief Map the memory bitmap based on the multiboot memory map
+/// @param memoryMap The array of multiboot memory map entries
+/// @return Success or error code
+void MapBitmap(mmap_entry_t* memoryMap, size_t memmapLength){
+    // Clear the bitmap
+    memset(memoryBitmap, 0, sizeof(memoryBitmap));
+
+    // Get the actual end of usable RAM based on the memory map (the provided numbers by GRUB are usually not accurate)
+    physaddr_t highestUsableAddr = 0;
+    for (size_t j = 0; j < memmapLength; j++) {
+        if (memoryMap[j].type == MEMTYPE_USABLE) {
+            physaddr_t top = memoryMap[j].base_addr + memoryMap[j].length;
+            if (top > highestUsableAddr) {
+                highestUsableAddr = top;
+            }
+        }
+    }
+
+    lastPhysicalAddress = highestUsableAddr;
+
+    // Get the total number of pages in the system
+    size_t pages = highestUsableAddr / PAGE_SIZE;
     for(size_t i = 0; i < pages; i++){
-        // Check if the page is usable using the memory map
         bool usable = false;
-        for(size_t j = 0; j < mmapLength; j++){
-            mmap_entry_t* entry = &mmap[j];
-            if(entry->type == 1 && i >= entry->base_addr / PAGE_SIZE && i < (entry->base_addr + entry->length) / 4096){
+        for(size_t j = 0; j < memmapLength; j++){
+            mmap_entry_t* entry = &memoryMap[j];
+            if(entry->type == MEMTYPE_USABLE && i >= entry->base_addr / PAGE_SIZE && i < (entry->base_addr + entry->length) / PAGE_SIZE){
                 usable = true;
                 break;
             }
         }
-
         if(usable){
+            // Set the bit in the bitmap and push its frame onto the page frame stack
             SetBit(i);
-        }else{
-            ClearBit(i);
         }
     }
+
+    MapFrameStack();
 }
 
-// Get the page directory index from a virtual address
-#define PD_INDEX(addr) ((addr) >> 22)
+/// @brief Get a physical address that is page-aligned and contains enough memory to contain a single page table and then add it to the page directory.
+/// @warning ENSURE that either the current PDE at that address is saved freed. This function overwrites its PDE and does not push its frame.
+/// @return Success or error code
+page_result_t AllocatePageTable(virtaddr_t addr){
+    index_t pdIndex = PDE_INDEX(addr);
+    index_t ptIndex = PTE_INDEX(addr);
 
-// Get the page table index from a virtual address
-#define PT_INDEX(addr) (((addr) >> 12) & 0x3FF)
-
-// Extract the physical address from a frame
-#define GET_PHYSICAL_ADDR(frame) (frame & 0xFFFFF000)
-
-// Align the frame to a page boundary
-#define SET_FRAME(physaddr) (physaddr & 0xFFFFF000)
-
-pde_t kernelPageDirectory[1024] ALIGNED(4096) = {0};
-page_table_t kernelPageTables[1024] ALIGNED(4096) = {0};
-
-pde_t* currentPageDir = &kernelPageDirectory[0];
-page_table_t* currentPageTables = &kernelPageTables[0];
-
-// Find a valid page frame in the memory bitmap
-physaddr_t FindValidFrame(){
-    while(!TestBit(lastFreeBit) && lastFreeBit < TOTAL_PAGES){
-        // Skip to the next free bit if this one is unavailable
-        lastFreeBit++;
+    physaddr_t pageTable = PopFrame();
+    if(pageTable == INVALID_ADDRESS){
+        // The frame can be safely discarded here as it was invalid anyway
+        return NO_MORE_MEMORY;
     }
-    if(lastFreeBit >= totalMemSize / PAGE_SIZE){
-        // Search the whole memory bitmap in a dword-by-dword manner (32 times faster than checking individual bits)
-        uint32_t* bitmap = (uint32_t*)memoryBitmap;
-        for(size_t i = 0; i < TOTAL_BITS / 32; i++){
-            if(bitmap[i] != 0xFFFFFFFF){
-                // Find the first zero bit in the dword
-                for(size_t j = 0; j < 32; j++){
-                    if(!(bitmap[i] & (1 << j))){
-                        lastFreeBit = i * 32 + j + 1;
-                        ClearBit(lastFreeBit);
-                        return lastFreeBit * PAGE_SIZE;
+
+    ClearBit(pageTable / PAGE_SIZE);
+
+    // Page permissions and flags can be on a per-page basis, so this should be fine.
+    PAGE_DIR_VIRTUAL->tables[pdIndex] = PAGE_ADDR_MASK(pageTable) | DEFAULT_USER_PDE_FLAGS;
+
+    memset(PAGE_TABLE_VIRTUAL(pdIndex), 0, PAGE_SIZE); // Clear the page table
+    return PAGE_OK;
+}
+
+/// @brief Release an allocated page table
+/// @param table An actual pointer to the virtual address of the table (this should be easy to get)
+/// @return Success or error code
+page_result_t FreePageTable(struct Page_Table* table){
+    index_t pdIndex = PDE_INDEX((virtaddr_t)table);
+    index_t ptIndex = PTE_INDEX((virtaddr_t)table);
+
+    if(!(PAGE_DIR_VIRTUAL->tables[pdIndex] & PDE_PRESENT)){
+        // No page table for this virtual address
+        return PAGE_NOT_PRESENT;
+    }
+
+    if(!(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] & PDE_PRESENT)){
+        // No page table for this virtual address
+        return PAGE_NOT_PRESENT;
+    }
+
+    // Free the page table
+    physaddr_t frame = PAGE_ADDR_MASK(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex]);
+    SetBit(frame / PAGE_SIZE);
+    PushFrame(frame);
+
+    // Remove the page table from the directory
+    PAGE_DIR_VIRTUAL->tables[pdIndex] = 0;
+    mappedPages--;
+    return PAGE_OK;
+}
+
+/// @brief Allocate a page with a given virtual address
+/// @param address The address of the new page (must be aligned)
+/// @return Success or error code
+page_result_t palloc(virtaddr_t address, unsigned int flags){
+    if(PAGE_ADDR_MASK(address) != address){
+        // Unaligned address!
+        return ADDRESS_NOT_ALIGNED;
+    }
+    index_t pdIndex = PDE_INDEX(address);
+    index_t ptIndex = PTE_INDEX(address);
+
+    if(!(PAGE_DIR_VIRTUAL->tables[pdIndex] & PDE_PRESENT)){
+        // No page table for this virtual address, allocate one
+        if(AllocatePageTable(address) != PAGE_OK){
+            // Most likely out of memory
+            return NO_MORE_MEMORY;
+        }
+    }
+
+    if(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] & PAGE_PRESENT){
+        // This page is already mapped!
+        return PAGE_ALREADY_MAPPED;
+    }
+
+    // Get the frame to allocate
+    physaddr_t frame = PopFrame();
+    if(frame == INVALID_ADDRESS){
+        // If there was an invalid address, it's likely there's no more memory
+        return NO_MORE_MEMORY;
+    }
+    ClearBit(frame / PAGE_SIZE);
+    // If we make it here, the page shall be allocated
+    PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] = PAGE_ADDR_MASK(frame) | flags;
+    invlpg(PAGE_ADDR_MASK(address));
+    mappedPages++;
+    return PAGE_OK;
+}
+
+/// @brief Allocate a page based on a given physical address
+/// @param virt The virtual address of the page to allocate
+/// @param phys The physical address of the page to allocate
+/// @return Success or error code
+page_result_t physpalloc(virtaddr_t virt, physaddr_t phys, unsigned int flags){
+    if(PAGE_ADDR_MASK(virt) != virt || PAGE_ADDR_MASK(phys) != phys){
+        return ADDRESS_NOT_ALIGNED;
+    }
+    index_t pdIndex = PDE_INDEX(virt);
+    index_t ptIndex = PTE_INDEX(virt);
+
+    if(!(PAGE_DIR_VIRTUAL->tables[pdIndex] & PDE_PRESENT)){
+        if(AllocatePageTable(virt) != PAGE_OK){
+            // Most likely out of memory
+            return NO_MORE_MEMORY;
+        }
+    }
+
+    if(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] & PAGE_PRESENT){
+        return PAGE_ALREADY_MAPPED;
+    }
+
+    if(TestBit(PAGE_ADDR_MASK(phys) / PAGE_SIZE)){
+        // Sometimes usable memory will be physically allocated, so only clear the bit if it needs to be cleared.
+        ClearBit(PAGE_ADDR_MASK(phys) / PAGE_SIZE);
+
+        // Reload the frame stack (this function likely won't often be called, and since it's a stack, a complete reload is neccessary)
+        // It's also likely that (after the kernel is paged) most physically allocated regions won't be located in usable RAM.
+        FlushFrameStack();
+        MapFrameStack();
+    }
+
+    // Map the address
+    PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] = PAGE_ADDR_MASK(phys) | flags | PAGE_NOREMAP;
+    invlpg(PAGE_ADDR_MASK(virt));
+    mappedPages++;
+    return PAGE_OK;
+}
+
+/// @brief Release a page of virtual memory
+/// @param address The virtual address of the page frame to release
+/// @return Success or error code
+page_result_t pfree(virtaddr_t address){
+    if(PAGE_ADDR_MASK(address) != address){
+        // Unaligned address
+        return ADDRESS_NOT_ALIGNED;
+    }
+    index_t pdIndex = PDE_INDEX(address);
+    index_t ptIndex = PTE_INDEX(address);
+
+    if((!(PAGE_DIR_VIRTUAL->tables[pdIndex] & PDE_PRESENT)) || (!(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] & PDE_PRESENT))){
+        // Nothing to be done
+        return PAGE_NOT_PRESENT;
+    }
+
+    physaddr_t frame = PAGE_ADDR_MASK(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex]);
+
+    if(!(PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] & PAGE_NOREMAP)){
+        // Page is remappable, set its bit and push its frame
+        SetBit(frame / PAGE_SIZE);
+        if(!PushFrame(frame)){
+            // Alignment error in the kernel, caller likely not at fault
+            return GENERIC_ERROR;
+        }
+    }
+
+    // Need to do something for shared pages...
+
+    // Remove the page
+    PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] = 0;
+    invlpg(PAGE_ADDR_MASK(address));
+    mappedPages--;
+    return PAGE_OK;
+}
+
+/// @brief Specifically meant for programs to call, this checks the kernel's bounds and ensures the kernel isn't overwritten or unpaged.
+/// @param address The address of the page to free
+/// @return success or error code
+page_result_t user_pfree(virtaddr_t address){
+    if(address < USER_MEM_START || address > USER_MEM_END){
+        // Simple bounds check to prevent user programs from unmapping the kernel
+        return PROTECTION_VIOLATION;
+    }
+    return pfree(address);
+}
+
+/// @brief Handle a page fault within the system
+/// @param errCode The error code of the fault
+/// @param cr2 The value of CR2
+/// @return Whether the fault was handled or not
+page_result_t HandlePageFault(uint32_t errCode, uint32_t cr2){
+    // This is currently a stub and not entirely needed (I have a simple handler elsewhere).
+    // Do something about a page fault, such as search the swap partition for a page and return whether there was a success.
+    return FAULT_FATAL;
+}
+
+// This pragma makes it a lot faster but I'm worried it won't work correctly if I use this.
+//#pragma GCC push_options
+//#pragma GCC optimize ("O3,unroll-loops")
+
+/// @brief Check all of the page tables and page directories currently active for sanity. Looks for duplicate non-shared physical frames.
+/// @warning This function will take a lot of time to complete (around one second). It checks every possible page frame for every possible page. 
+/// @warning Best to only use for debugging.
+/// @return True if the sanity check passed, false if it failed
+bool SanityCheck(){
+    // Painstakingly check every single page frame in the page directory and page tables with every possible page frame and search for the same frame mapped
+    // to multiple addresses
+    cli
+    bool one = false;
+    virtaddr_t firstVirt = 0;
+    for(index_t i = 0; i < 1024; i++){
+        for(index_t j = 0; j < MAX_PAGES; j++){
+            if(PDE_ADDR_MASK(PAGE_DIR_VIRTUAL->tables[i]) == j * PAGE_SIZE && (!(PAGE_DIR_VIRTUAL->tables[i] & PDE_PRESENT)) && PDE_ADDR_MASK(PAGE_DIR_VIRTUAL->tables[i]) != 0){
+                if(one){
+                    // Sanity check failed! One frame has two or more virtual addresses!
+                    //printk("Offending frame: 0x%x\n", j * PAGE_SIZE);
+                    //printk("Offending virtual address: 0x%x\n", PAGE_TABLE_VIRTUAL(i));
+                    //printk("First virtual address: 0x%x\n", firstVirt);
+                    return false;
+                }else{
+                    firstVirt = (virtaddr_t)PAGE_TABLE_VIRTUAL(i);
+                    one = true;
+                }
+            }
+
+            if(!(PAGE_DIR_VIRTUAL->tables[i] & PDE_PRESENT)){
+                // This page directory entry is not present, skip it
+                continue;
+            }
+            // Now do it for all the pages in the page table this directory entry points to (skip non-allocated tables)
+            for(index_t k = 0; k < 1024; k++){
+                if(!(PAGE_TABLE_VIRTUAL(i)->pages[k] & PAGE_PRESENT) || PAGE_TABLE_VIRTUAL(i)->pages[k] & PAGE_SHARED){
+                    // This page is not present or is shared, skip it
+                    continue;
+                }
+                if(PAGE_ADDR_MASK(PAGE_TABLE_VIRTUAL(i)->pages[k]) == j * PAGE_SIZE && PAGE_TABLE_VIRTUAL(i)->pages[k] & PAGE_PRESENT){
+                    if(one){
+                        // Sanity check failed! One frame has two or more virtual addresses!
+                        //printk("Offending frame: 0x%x\n", j * PAGE_SIZE);
+                        //printk("Second virtual address: 0x%x\n", (i << 22) | (k << 12));
+                        //printk("First virtual address: 0x%x\n", firstVirt);
+                        return false;
+                    }else{
+                        firstVirt = (i << 22) | (k << 12);
+                        one = true;
                     }
                 }
             }
+            one = false;
         }
-    }else{
-        // We found a free page with the lookup
-        physaddr_t frame = lastFreeBit * PAGE_SIZE;
-        lastFreeBit++;
-        return frame;
     }
 
-    // Return something that isn't page aligned
-    return INVALID_ADDRESS;
+    return true;
 }
+//#pragma GCC pop_options
 
-// Allocate a page at the specified virtual address
-PAGE_RESULT palloc(virtaddr_t virt, uint32_t flags){
-    physaddr_t frame = FindValidFrame();
-    if(frame == INVALID_ADDRESS){
-        printk("KERNEL ERROR: Failed to find a valid frame for page allocation\n");
-        return INVALID_FRAME; // No valid frame found
+/// @brief Create the initial page directory and map the kernel to it as well as some other initialization
+/// @param systemMem The total amount of system RAM in bytes
+/// @return Success or error code
+page_result_t PageKernel(size_t systemMem){
+    // Uses recursive paging (which is great and simple)
+    totalMemSize = systemMem;
+
+    // Get the page fram of the page directory (this can be address 0x00000000)
+    struct Page_Directory* pageDir = (struct Page_Directory*)PopFrame();
+    if(pageDir == PAGE_NULL){
+        printk("The page directory was NULL!\n");
+        return GENERIC_ERROR;
     }
+    ClearBit((physaddr_t)pageDir / PAGE_SIZE);
+    memset(pageDir, 0, sizeof(struct Page_Directory));
+    mappedPages++;
 
-    if(virt & 0x00000FFF){
-        // Not page-aligned
-        printk("Page not aligned!\n");
-        return PAGE_NOT_AQUIRED;
-    }
+    // Map the page table to the last page directory entry for recursive paging
+    pageDir->tables[1023] = PDE_ADDR_MASK((physaddr_t)pageDir) | DEFAULT_KERNEL_PDE_FLAGS;
 
-    //printk("Allocating page at 0x%x\n", frame);
+    struct Page_Table* pageTable = NULL;
 
-    // Get the page directory index and page table index
-    uint32_t pd_idx = PD_INDEX(virt);
-    uint32_t pt_idx = PT_INDEX(virt);
+    // Recursive paging is as simple as that. Now we must page the kernel.
+    for(physaddr_t i = (physaddr_t)kernel_start; i < (physaddr_t)kernel_end; i += PAGE_SIZE){
+        // Get the page table index
+        index_t pdIndex = PDE_INDEX(i);
+        index_t ptIndex = PTE_INDEX(i);
 
-    //printk("Virtual address: 0x%x\n", virt);
-    //printk("PD Index: %d, PT Index: %d\n", pd_idx, pt_idx);
-
-    // Check if page directory entry is present
-    if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
-        // Get the page table physical address from the page directory entry
-        physaddr_t table_phys = currentPageDir[pd_idx] & 0xFFFFF000;
-        //printk("Table physical address: 0x%x\n", table_phys);
-
-        if(flags & PTE_FLAG_USER){
-            currentPageDir[pd_idx] |= PDE_FLAG_USER;
-        }
-        
-        // Access the page table
-        page_table_t* pt = (page_table_t*)table_phys;
-
-        if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
-            // Page already allocated!
-            printk("Page present at virtual address 0x%x\n", virt);
-            return PAGE_NOT_AQUIRED;
-        }
-        
-        // Set the page table entry
-        pt->pages[pt_idx] = (frame & 0xFFFFF000) | flags;
-
-        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
-
-        totalPages++;
-
-        ClearBit(frame / PAGE_SIZE);
-
-        //printk("Allocated page at 0x%x\n", frame);
-        //printk("Page virtual address: 0x%x\n", virt);
-
-        return PAGE_AQUIRED;
-    }else{
-        // Allocate a new page table...
-        //printk("Page directory entry not present for virtual address 0x%x\n", virt);
-        return PAGE_NOT_AQUIRED;
-    }
-}
-
-extern uintptr_t heapEnd;
-
-// Free a page at the specified virtual address, avoiding kernel memory
-// Takes the virtual address so that the page can be freed regardless of the physical address (better for getting memory near the kernel)
-PAGE_RESULT user_pfree(virtaddr_t virt){
-    if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= heapEnd)){
-        return INVALID_FRAME; // Not page-aligned or requested address was inside the kernel
-    }
-    uint32_t pd_idx = PD_INDEX(virt);
-    uint32_t pt_idx = PT_INDEX(virt);
-
-    // Check if page directory entry is present
-    if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
-        physaddr_t table = currentPageDir[pd_idx] & 0xFFFFF000;
-        page_table_t* pt = (page_table_t*)table;
-        if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
-            pt->pages[pt_idx] = 0;
-            totalPages--;
-        }
-
-        SetBit(virt / PAGE_SIZE);
-
-        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
-    }
-
-    return PAGE_FREED;
-}
-
-PAGE_RESULT pfree(virtaddr_t virt){
-    if(virt % PAGE_SIZE != 0 || (virt >= (uintptr_t)&__kernel_start && virt <= (uintptr_t)&__kernel_end)){
-        return INVALID_FRAME; // Not page-aligned or requested address was inside the kernel
-    }
-    uint32_t pd_idx = PD_INDEX(virt);
-    uint32_t pt_idx = PT_INDEX(virt);
-
-    // Check if page directory entry is present
-    if(currentPageDir[pd_idx] & PDE_FLAG_PRESENT){
-        physaddr_t table = currentPageDir[pd_idx] & 0xFFFFF000;
-        page_table_t* pt = (page_table_t*)table;
-        if(pt->pages[pt_idx] & PTE_FLAG_PRESENT){
-            pt->pages[pt_idx] = 0;
-            totalPages--;
-        }
-
-        SetBit(virt / PAGE_SIZE);
-
-        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
-    }
-
-    return PAGE_FREED;
-}
-
-// Allocate a page at the specified physical and virtual address
-PAGE_RESULT physpalloc(physaddr_t phys, virtaddr_t virt, uint32_t flags) {
-    uint32_t pdi = PD_INDEX(virt);
-    uint32_t pti = PT_INDEX(virt);
-
-    // Check if page directory entry is present
-    if(currentPageDir[pdi] & PDE_FLAG_PRESENT) {
-        physaddr_t table = currentPageDir[pdi] & 0xFFFFF000;
-        page_table_t* pt = (page_table_t*)table;
-        pt->pages[pti] = (phys & 0xFFFFF000) | flags;
-
-        ClearBit(phys / PAGE_SIZE);
-
-        asm volatile("invlpg (%0)" :: "r" (virt) : "memory");
-
-        totalPages++;
-
-        return STANDARD_SUCCESS;
-    }else{
-        return STANDARD_FAILURE;
-    }
-}
-
-void ConstructPageDirectory(pde_t* pageDirectory, page_table_t* pageTables){
-    memset(pageDirectory, 0, sizeof(pde_t) * 1024);
-    memset(pageTables, 0, sizeof(page_table_t) * 1024);
-
-    for(int i = 0; i < 1024; i++){
-        pageDirectory[i] = (uint32_t)(((physaddr_t)&pageTables[i]) | (PDE_FLAG_PRESENT | PDE_FLAG_RW));
-    }
-}
-
-void PageKernel(size_t memSize){
-    totalMemSize = memSize;
-    ConstructPageDirectory(currentPageDir, currentPageTables);
-    // Identity map the kernel to its physical address (The kernel's start address should already be aligned)
-    for(size_t i = (uint32_t)&__kernel_start; i < ((uint32_t)&__kernel_end) + PAGE_SIZE; i += PAGE_SIZE){
-        int result = physpalloc(i, i, PTE_FLAG_PRESENT | PTE_FLAG_RW);
-
-        if(result == -1){
-            printk("KERNEL PANIC: Failed to map kernel page at 0x%x\n", i);
-            STOP
-        }
-    }
-
-    // Identity map the VGA framebuffer to its physical address
-    size_t vgaPages = (1024 * 256) / PAGE_SIZE;
-    if(vgaPages * PAGE_SIZE < 1024 * 256){
-        vgaPages++;
-    }
-
-    // Get the first free page of memory after the kernel (Add a page of padding)
-    uintptr_t firstVgaPage = (((uintptr_t)&__kernel_end) + PAGE_SIZE) & 0xFFFFF000;
-    uint32_t offset = 0;
-
-    for(size_t i = 0xA0000; i < 0xA0000 + vgaPages * PAGE_SIZE; i += PAGE_SIZE){
-        // Allocate the VGA pages as write-through pages that user-mode can access
-        int result = physpalloc(i, firstVgaPage + offset, (PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_WRITE_THROUGH | PTE_FLAG_CACHE_DISABLED | PTE_FLAG_GLOBAL | PTE_FLAG_USER));
-
-        if(result == -1){
-            printk("KERNEL PANIC: Failed to map VGA page at 0x%x\n", i);
-            STOP
-        }
-
-        offset += PAGE_SIZE;
-    }
-
-    // Remap ACPI tables
-    heapStart = firstVgaPage + offset + PAGE_SIZE;
-    virtaddr_t acpiStart = heapStart;
-    size_t acpiPages = 0;
-    if(acpiInfo.exists){
-        // Remap RSDP
-        physaddr_t rsdpAddr = (physaddr_t)acpiInfo.rsdp.rsdpV1;
-        // Align the rsdp address to page boundaries and get the offset from alignment
-        physaddr_t rsdpAligned = (rsdpAddr & 0xFFFFF000);
-        uint32_t rsdpOffset = rsdpAddr - rsdpAligned;
-        
-        virtaddr_t rsdpVirt = acpiStart + acpiPages * PAGE_SIZE;
-        for(size_t i = 0; i < sizeof(RSDP_V2_t); i += PAGE_SIZE){
-            int result = physpalloc(rsdpAligned + i, rsdpVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-            if(result == -1){
-                printk("KERNEL PANIC: Failed to map RSDP page at 0x%x\n", rsdpAligned + i);
-                STOP
+        if(!(pageDir->tables[pdIndex] & PDE_PRESENT)){
+            pageTable = (struct Page_Table*)PopFrame();
+            if(pageTable == PAGE_NULL){
+                // The frame can be safely discarded here as it was invalid anyway
+                return NO_MORE_MEMORY;
             }
-            acpiPages++;
+            ClearBit((physaddr_t)pageTable / PAGE_SIZE);
+            memset(pageTable, 0, sizeof(struct Page_Table));
+            pageDir->tables[pdIndex] = PDE_ADDR_MASK((physaddr_t)pageTable) | DEFAULT_KERNEL_PDE_FLAGS;
         }
-        // Update the RSDP pointer with the virtual address + offset
+
+        pageTable = (struct Page_Table*)(PDE_ADDR_MASK(pageDir->tables[pdIndex]));
+        
+        // Paging is not enabled yet, so painstakingly map the kernel to the page directory
+        pageTable->pages[ptIndex] = PAGE_ADDR_MASK(i) | DEFAULT_KERNEL_PAGE_FLAGS | PAGE_NOREMAP;
+        ClearBit(i / PAGE_SIZE);
+        mappedPages++;
+    }
+
+    // Reload the frame stack
+    FlushFrameStack();
+    MapFrameStack();
+
+    // Get the size of the RSDT and FADT tables so I don't have to map them before enabling paging
+    size_t rsdtSize = acpiInfo.rsdt.rsdt->header.length;
+    size_t fadtSize = acpiInfo.fadt->header.length;
+
+    // The kernel should now be mapped, and now it's time to enable paging and use the regular paging functions to page the rest of physical RAM.
+    LoadPageDirectory(pageDir);
+    EnablePaging();
+
+    // Paging is now enabled! The regular paging functions can now be used.
+
+    // Get the next free address after the kernel with a page of padding
+    virtaddr_t next_free_addr = ALIGNUP((virtaddr_t)kernel_end, PAGE_SIZE) + PAGE_SIZE;
+
+    // Remap the VGA framebuffer
+    size_t vgaPages = ALIGNUP(1024 * 256, PAGE_SIZE) / PAGE_SIZE;
+    virtaddr_t newVgaAddr = next_free_addr;
+
+    for(physaddr_t i = 0xA0000; i < 0xA0000 + (vgaPages * PAGE_SIZE); i += PAGE_SIZE){
+        if(physpalloc(next_free_addr, i, DEFAULT_KERNEL_PAGE_FLAGS) != PAGE_OK){
+            // Since we haven't remapped the VGA framebuffer yet, all we can do is halt the system.
+            STOP;
+        }
+        next_free_addr += PAGE_SIZE;
+    }
+
+    // Add a page of padding to keep the VGA framebuffer isolated
+    next_free_addr += PAGE_SIZE;
+
+    RemapVGA(newVgaAddr);
+
+    printk("Remapping ACPI...\n");
+
+    // Remap the ACPI tables
+    if(acpiInfo.exists){
+        // Remap the RSDP
+        physaddr_t rsdpAddr = (physaddr_t)acpiInfo.rsdp.rsdpV1;
+        physaddr_t rsdpAligned = PAGE_ADDR_MASK(rsdpAddr);
+        size_t rsdpOffset = rsdpAddr - rsdpAligned;
+        virtaddr_t rsdpVirt = next_free_addr;
+
+        for(size_t i = 0; i < sizeof(RSDP_V2_t); i += PAGE_SIZE){
+            if(physpalloc(next_free_addr, i + rsdpAligned, DEFAULT_KERNEL_PAGE_FLAGS | PAGE_SHARED) != PAGE_OK){
+                return GENERIC_ERROR;
+            }
+            next_free_addr += PAGE_SIZE;
+        }
+
         acpiInfo.rsdp.rsdpV2 = (RSDP_V2_t*)(rsdpVirt + rsdpOffset);
 
         // Remap the RSDT
         physaddr_t rsdtAddr = (physaddr_t)acpiInfo.rsdt.rsdt;
-        physaddr_t rsdtAligned = (rsdtAddr & 0xFFFFF000);
-        uint32_t rsdtOffset = rsdtAddr - rsdtAligned;
-        
-        virtaddr_t rsdtVirt = acpiStart + acpiPages * PAGE_SIZE;
-        for(size_t i = 0; i < acpiInfo.rsdt.rsdt->header.length; i += PAGE_SIZE){
-            int result = physpalloc(rsdtAligned + i, rsdtVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-            if(result == -1){
-                printk("KERNEL PANIC: Failed to map RSDT page at 0x%x\n", rsdtAligned + i);
-                STOP
+        physaddr_t rsdtAligned = PAGE_ADDR_MASK(rsdtAddr);
+        size_t rsdtOffset = rsdtAddr - rsdtAligned;
+        virtaddr_t rsdtVirt = next_free_addr;
+
+        for(size_t i = 0; i < rsdtSize; i += PAGE_SIZE){
+            if(physpalloc(next_free_addr, i + rsdtAligned, DEFAULT_KERNEL_PAGE_FLAGS | PAGE_SHARED) != PAGE_OK){
+                return GENERIC_ERROR;
             }
-            acpiPages++;
+            next_free_addr += PAGE_SIZE;
         }
-        // Update the RSDT pointer with the virtual address + offset
+
         acpiInfo.rsdt.rsdt = (RSDT_t*)(rsdtVirt + rsdtOffset);
 
         // Remap the FADT
         physaddr_t fadtAddr = (physaddr_t)acpiInfo.fadt;
-        physaddr_t fadtAligned = (fadtAddr & 0xFFFFF000);
-        uint32_t fadtOffset = fadtAddr - fadtAligned;
-        
-        virtaddr_t fadtVirt = acpiStart + acpiPages * PAGE_SIZE;
-        for(size_t i = 0; i < acpiInfo.fadt->header.length; i += PAGE_SIZE){
-            int result = physpalloc(fadtAligned + i, fadtVirt + i, PTE_FLAG_PRESENT | PTE_FLAG_RW | PTE_FLAG_USER);
-            if(result == -1){
-                printk("KERNEL PANIC: Failed to map FADT page at 0x%x\n", fadtAligned + i);
-                STOP
+        physaddr_t fadtAligned = PAGE_ADDR_MASK(fadtAddr);
+        size_t fadtOffset = fadtAddr - fadtAligned;
+        virtaddr_t fadtVirt = next_free_addr;
+
+        for(size_t i = 0; i < fadtSize; i += PAGE_SIZE){
+            if(physpalloc(next_free_addr, i + fadtAligned, DEFAULT_KERNEL_PAGE_FLAGS | PAGE_SHARED) != PAGE_OK){
+                return GENERIC_ERROR;
             }
-            acpiPages++;
+            next_free_addr += PAGE_SIZE;
         }
-        // Update the FADT pointer with the virtual address + offset
+
         acpiInfo.fadt = (FADT_t*)(fadtVirt + fadtOffset);
     }
 
-    heapStart += acpiPages * PAGE_SIZE;
+    // NOTE: Will likely need to remap more ACPI tables in the future. For now, this should be fine.
 
-    // Add a page of padding to prevent underflows into the framebuffer
-    heapStart += PAGE_SIZE;
+    printk("ACPI remapped!\n");
 
-    printk("Allocating heap pages...\n");
+    // Add a page of padding between the ACPI tables and the heap
+    next_free_addr += PAGE_SIZE;
 
-    if(heapEnd == 0){
-        // Map the first page of the heap
-        if(palloc(heapStart, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-            printk("KERNEL PANIC: Failed to allocate heap start page at 0x%x\n", heapStart);
-            STOP
-        }
-    }else{
-        // Map the heap pages
-        for(size_t i = heapStart; i < heapEnd; i += PAGE_SIZE){
-            if(palloc(i, PTE_FLAG_PRESENT | PTE_FLAG_RW) == -1){
-                printk("KERNEL PANIC: Failed to allocate heap page at 0x%x\n", i);
-                STOP
-            }
-        }
+    printk("Paging the heap...\n");
+    // Map the heap
+    heapStart = next_free_addr;
+    heapEnd = USER_MEM_START;                   // Currently using lower half kernel. I'll need to remember to change this to USER_MEM_END when I go higher-half.
+
+    if(palloc(heapStart, DEFAULT_KERNEL_PAGE_FLAGS) != PAGE_OK){
+        return GENERIC_ERROR;
     }
 
-    // Map MMIO and other things...
-
-    // Enable paging
-    asm volatile("mov %0, %%cr3" :: "r" (currentPageDir));
-    uint32_t cr0;
-    asm volatile("mov %%cr0, %0" : "=r" (cr0));
-    cr0 = 0x80000001;
-    asm volatile("mov %0, %%cr0" :: "r" (cr0));
-
-    RemapVGA(firstVgaPage);                                                 // Move the VGA framebuffer pointer to the new location
-}
-
-// New page directory allocation/deallocation
-
-pde_t* AllocatePageDirectory() {
-    pde_t* pageDir = (pde_t*)aligned_halloc(sizeof(pde_t) * 1024, PAGE_SIZE);
-    if (!pageDir) return NULL;
-    memset(pageDir, 0, sizeof(pde_t) * 1024);
-
-    printk("Allocating page directory at 0x%x\n", pageDir);
-    printk("Number of PDEs to copy: %u\n", ((totalMemSize - (uintptr_t)&__kernel_start) / PAGE_SIZE) / 1024);
-
-    // Allocate the page tables for under the kernel's start address
-    for(size_t i = 0; i < PD_INDEX((uintptr_t)&__kernel_start); i++){
-        page_table_t* pageTable = (page_table_t*)aligned_halloc(sizeof(page_table_t), PAGE_SIZE);
-        if (!pageTable) {
-            FreePageDirectory(pageDir);
-            return NULL;
-        }
-        memset(pageTable, 0, sizeof(page_table_t));
-        pageDir[i] = (((uintptr_t)(pageTable)) & 0xFFFFF000) | PDE_FLAG_PRESENT | PDE_FLAG_RW | PDE_FLAG_USER; // Set the present, writable and user flags
+    printk("Sanity ckecking the page tables...\n");
+    if(!SanityCheck()){
+        printk("CRITICAL ERROR: PAGE TABLE SANITY CHECK FAILED!\n");
+        STOP
     }
 
-    // Clone kernel space from existing directory (e.g., higher-half entries)
-    for (size_t i = PD_INDEX((uintptr_t)&__kernel_start); i < PD_INDEX(totalMemSize - (uintptr_t)&__kernel_start); i++) {
-        pageDir[i] = kernelPageDirectory[i]; // Copy the physical address of the page table
-    }
+    printk("Sanity check passed!\n");
 
-    return pageDir;
-}
-
-void SetPageDirectory(pde_t* pageDir){
-    currentPageDir = pageDir;
-    asm volatile("mov %0, %%cr3" :: "r" (pageDir));
-}
-
-void FreePageDirectory(pde_t* pageDir){
-    // Free the page tables
-    for(size_t i = 0; i < 1024; i++){
-        page_table_t* pageTable = (page_table_t*)(pageDir[i] & 0xFFFFF000);
-        aligned_hfree(pageTable);
-    }
-    aligned_hfree(pageDir);
+    return PAGE_OK;
 }

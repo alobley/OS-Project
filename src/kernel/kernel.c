@@ -39,7 +39,7 @@ size_t memSizeMiB = 0;                  // Local variable for total memory size 
 //
 // This is my reminder to update the GRUB menu entry when I update this
 //
-version_t kernelVersion = {0, 11, 0};
+version_t kernelVersion = {0, 12, 0};
 
 // A copy of the multiboot info structure (so that we don't have to mess with paging)
 multiboot_info_t mbootCopy;
@@ -129,12 +129,16 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
         STOP
     }
 
+    // Parse the memory map and map it to a bitmap for easier page frame allocation/deallocation
+    printk("Parsing memory map...\n");
+    MapBitmap(mbootInfo->mmap_addr, mbootInfo->mmap_length);
+
     // The result variable that initialization functions will return with
     int result = 0;
 
     // Initialization - first stage
 
-    CreateGDT();            // Create the GDT
+    CreateGDT();            // Create the permanent GDT
 
     // Get the memory size in bytes and MiB and save those values
     memSize = ((mbootInfo->mem_upper + mbootInfo->mem_lower) + 1024) * 1024;
@@ -158,13 +162,14 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Initialization - second stage
 
-    // Parse the memory map and map it to a bitmap for easier page frame allocation/deallocation
-    printk("Parsing memory map...\n");
-    MapBitmap(memSize, mbootInfo->mmap_addr, mbootInfo->mmap_length / sizeof(mmap_entry_t));
-
     // Initialize the page allocator and page the kernel
     printk("Paging memory...\n");
-    PageKernel(memSize);
+    if(PageKernel(memSize) != PAGE_OK){
+        printk("KERNEL PANIC: PAGING WAS NOT ENABLED!\n");
+        STOP
+    }
+
+    printk("Used (paged) memory: %u MiB\n", ((mappedPages * PAGE_SIZE) / 1024) / 1024);
 
     // Initialize the heap allocator
     printk("Initializing heap allocator...\n");
@@ -173,21 +178,20 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     // Do a debug syscall to test the syscall interface
     do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
 
-    uint32_t usedMem = totalPages * PAGE_SIZE;                  // Calculate the current amount of memory used by the system (this will change - maybe add a timer handler to update it?)
-    printk("Used memory: %d MiB\n", usedMem / 1024 / 1024);     // Print the amount of used memory in MiB
+    //uint32_t usedMem = totalPages * PAGE_SIZE;                  // Calculate the current amount of memory used by the system (this will change - maybe add a timer handler to update it?)
+    //printk("Used memory: %d MiB\n", usedMem / 1024 / 1024);     // Print the amount of used memory in MiB
 
     // Stress test the memory allocator
     printk("Stress testing the heap allocator...\n");
     for(int i = 1; i < 100; i++){
         // Allocate an increasingly large amount of memory
+        //printk("Allocating %u bytes\n", PAGE_SIZE * i);
         uint8_t* test = halloc(PAGE_SIZE * i);
         if(test == NULL){
             // Memory allocation failed
             printk("KERNEL PANIC: Heap allocation error!\n");
             STOP
         }
-    
-        //printk("Allocating %u bytes\n", PAGE_SIZE * i);
     
         memset(test, 1, (PAGE_SIZE * i));
     
@@ -285,7 +289,7 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
-    kernelPCB->pageDirectory = (physaddr_t)currentPageDir;          // The physical and virtual address of the page directory are the same
+    //kernelPCB->pageDirectory = (physaddr_t)currentPageDir;          // The physical and virtual address of the page directory are the same
     kernelPCB->stackBase = (uintptr_t)&stack_begin;                 // Set the stack base to the top of the stack
     kernelPCB->stackTop = (uintptr_t)&stack;                        // Set the stack top to the bottom of the stack
     kernelPCB->heapBase = heapStart;                                // Set the heap base to the start of the heap
@@ -421,6 +425,8 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     }
 
     close(devRes.fd);
+
+    // Configure the VGA hardware
 
     printk("Boot complete. Starting shell...\n");
 

@@ -1,5 +1,6 @@
 #include <console.h>
 #include <stdbool.h>
+#include <system.h>
 
 /* TODO:
  * - Impmement an STDOUT, which can then be accessed by terminal applications? (Should the kernel do that instead?)
@@ -36,6 +37,11 @@ HOT void MoveCursor(uint16_t x, uint16_t y){
 
     // Make sure the cursor is visible
     *(uint16_t*)((VGA_ADDRESS + (offset * 2)) + 1) = VGA_WHITE_ON_BLACK;
+}
+
+// Set the maximum mode for the VGA (highest width and height)
+int VgaSetMaxMode(){
+    return STANDARD_SUCCESS;
 }
 
 // Scroll the screen up one line (software-based implementation)
