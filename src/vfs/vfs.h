@@ -32,7 +32,7 @@ typedef struct VFS_Node {
     datetime_t created;                         // Date and time the file or directory was created
     datetime_t modified;                        // Date and time the file or directory was last modified
     datetime_t accessed;                        // Date and time the file or directory was last accessed
-    device_id_t device;                         // The device ID of the block device this node's filesystem resides on
+    device_id_t deviceID;                       // The device ID of the block device this node's filesystem resides on
     bool read;                                  // This directory has been read from the disk (if mounted).
     mountpoint_t* mountPoint;                   // Pointer to the mount point (if any)
     mutex_t lock;                               // Mutex for synchronization
@@ -49,7 +49,8 @@ typedef struct VFS_Node {
 #define NODE_FLAG_IPC (1 << 6)                  // This node is being used for IPC
 #define NODE_FLAG_MOUNTED (1 << 7)              // This VFS node has been mounted
 #define NODE_FLAG_NOTREAD (1 << 8)              // A node has not been read into memory if it is mounted (be it file data or a directory)
-#define NODE_RESERVED (1 << 9)
+#define NODE_FLAG_RESERVED (1 << 9)
+#define NODE_FLAG_SYMLINK (1 << 10)             // This node is a symbolic link
 
 #define PIPE_BUFFER_SIZE 4080
 typedef struct IPC_Pipe {
@@ -117,11 +118,9 @@ char* JoinPath(const char* base, const char* path);
 mountpoint_t* GetMountedFsFromPath(char* path);
 mountpoint_t* GetMountedFsFromNode(vfs_node_t* node);
 
-// After calling a mount function in a driver, this function copies the read nodes to kernel memory
-int MountFS(vfs_node_t* rootDir, char* mountPath);
-
 fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags);
 int DestroyFileContext(file_table_t* table, fd_t fd);
+fd_t ReplaceFileContext(vfs_node_t* node, file_table_t* table, fd_t oldfd, fd_t newfd);
 fd_t AllocateFileDescriptor(file_table_t* ft);
 void FreeFileDescriptor(fd_t file, file_table_t* table);
 

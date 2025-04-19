@@ -4,6 +4,7 @@
 #include <console.h>
 #include <vfs.h>
 #include <gdt.h>
+#include <time.h>
 
 // REMINDER: I need to update the TTY subsystem and kernel-integrated drivers to comply with the new multitasking and I/O system
 
@@ -202,17 +203,51 @@ void UnscheduleProcess(pcb_t* process){
 
 pcb_t* GetNextProcess(pcb_t* process){
     struct Process_List* node = process->schedulerNode->next;
-    if(process->schedulerNode->next == NULL){
-        if(scheduledProcesses == process->schedulerNode){
-            // There's only one process scheduled
-            return process;
-        }else{
-            // Go back to the start of the scheduled process list
-            return scheduledProcesses->this;
-        }
-    }else{
-        return process->schedulerNode->next->this;
+    if(node == NULL){
+        // If there are no other processes scheduled, then we need to go back to the start of the list
+        node = scheduledProcesses;
     }
+    
+    if(node == NULL){
+        // If there are no processes scheduled, then we need to return NULL
+        return NULL;
+    }
+
+    // Get the next process in the list
+    pcb_t* nextProcess = node->next->this;
+
+    bool fullPass = false;
+    pcb_t* startProcess = nextProcess;
+    while(nextProcess->state != RUNNING){
+        if(nextProcess->state == SLEEPING){
+            // If the process is sleeping, we need to check if it has timed out
+            if(nextProcess->sleepUntil < GetTicks()){
+                // The process is still sleeping, so we need to skip it
+                nextProcess = node->next->this;
+            }else{
+                // The process has timed out, so we can wake it up
+                nextProcess->state = RUNNING;
+                return nextProcess;
+            }
+        }
+
+        if(node->next == NULL || node->next->this == NULL){
+            // If the next process is NULL, then we need to go back to the start of the list
+            nextProcess = scheduledProcesses->this;
+        }
+        nextProcess = node->next->this;
+        if(nextProcess == startProcess){
+            // If we have gone through the whole list and there were no active programs, then we need to return NULL
+            fullPass = true;
+            if(process->state == RUNNING){
+                // If the process is running, then we can just switch back to it
+                return process;
+            }
+            return NULL;
+        }
+    }
+    // Otherwise, return the next process
+    return nextProcess;
 }
 
 pcb_t* CreateProcess(const char* processName, uint64_t timeSlice, struct Resource_Limits limits, uid_t user, gid_t group, pid_t processGroup, pid_t sid, vfs_node_t* workingDirectory, pcb_t* parent){
@@ -341,6 +376,28 @@ pcb_t* CreateProcess(const char* processName, uint64_t timeSlice, struct Resourc
     return newProcess;
 }
 
+pcb_t* DuplicateProcess(pcb_t* this){
+    // TODO: implement
+    return NULL;
+}
+
+int LoadExecute(pcb_t* process, vfs_node_t* data){
+    // TODO: implement
+    return STANDARD_FAILURE;
+}
+
+// NOTE: This must unpage the current process and load the new process
+int ReplaceProcess(char* newName, void* data, pcb_t* pcb, struct registers* regs){
+    // TODO: implement
+    return STANDARD_FAILURE;
+}
+
+// NOTE: I'll need to implement searching through the list of waiting processes and setting them to running
+int DestroyProcess(pcb_t* process){
+    // TODO: implement
+    return STANDARD_FAILURE;
+}
+
 // Queue a process into a process queue
 int EnqueueProcess(mutex_t* lock, pcb_t* requester){
     struct Queue_Node* node = halloc(sizeof(struct Queue_Node));
@@ -420,6 +477,10 @@ pcb_t* GetProcessByPID(pid_t pid){
     return NULL;
 }
 
+int InsertSignals(pcb_t* process, unsigned int signal){
+    return STANDARD_FAILURE;
+}
+
 int MPeek(mutex_t* lock){
     return Atomic_Test(lock->locked);
 }
@@ -465,7 +526,21 @@ void SpinUnlock(spinlock_t* lock){
 }
 
 // This shall only be called upon an interrupt. Both fields are required.
-void ContextSwitch(struct Registers* regs, pcb_t* next){
+int ContextSwitch(struct Registers* regs, pcb_t* next){
+    if(next == NULL){
+        // Find another process to switch to instead
+        uint64_t timeout = GetTicks() + 5000;             // 5 second timeout
+        while(next == NULL){
+            next = GetNextProcess(currentProcess);
+            if(GetTicks() >= timeout){
+                // We timed out waiting for a process to switch to
+                printk("KERNEL PANIC: No processes to switch to!\n");
+                // Load init or something, maybe try to locate deadlocks...
+                STOP
+            }
+        }
+    }
+
     // Disable interrupts
     cli
 
@@ -489,6 +564,7 @@ void ContextSwitch(struct Registers* regs, pcb_t* next){
 
     // Re-enable interrupts and return
     sti
+    return STANDARD_SUCCESS;
 }
 
 /// @brief Add a new memory region to a process

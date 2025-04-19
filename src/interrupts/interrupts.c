@@ -10,8 +10,18 @@
 #include <elf.h>
 #include <gdt.h>
 
-// An array of PCBs that are responsible for interrupts
-pcb_t* interruptOwners[256];
+// A pointer to this struct will be returned to drivers upon request
+struct kernelapi api = {
+    .version = 1,
+    .halloc = halloc,
+    .hfree = hfree,
+    .rehalloc = rehalloc,
+    .mmap = physpalloc,
+    .VfsFindNode = VfsFindNode,
+    .VfsMakeNode = VfsMakeNode,
+    .VfsRemoveNode = VfsRemoveNode,
+    .printk = printk,
+};
 
 void teststub(){
     return;
@@ -142,6 +152,7 @@ static HOT void syscall_handler(struct Registers *regs){
             break;
         }
 
+        // Filesystem operations
         case SYS_WRITE:{
             // SYS_WRITE - write data to a file descriptor
             // EBX = fd
@@ -168,7 +179,7 @@ static HOT void syscall_handler(struct Registers *regs){
                     return;
                 }
 
-                if(node == NULL || node->data == NULL){
+                if(node == NULL){
                     // We somehow got a NULL file (they are read upon the first SYS_OPEN or contain device data)
                     regs->eax = SYSCALL_FAILURE;
                     return;
@@ -179,146 +190,74 @@ static HOT void syscall_handler(struct Registers *regs){
                     do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
                 }
 
+                if(node->data == NULL && (node->flags & NODE_FLAG_RESIZEABLE)){
+                    // This node is zero-sized, we need to allocate it
+                    node->data = halloc(regs->edx);
+                    if(node->data == NULL){
+                        // Failed to allocate memory
+                        MUnlock(&node->lock);
+                        regs->eax = SYSCALL_OUT_OF_MEMORY;
+                        return;
+                    }
+                    memset(node->data, 0, regs->edx);
+                    context->offset = 0;
+                    node->size = regs->edx;
+                }else if(node->data == NULL){
+                    // This node is zero-sized and not resizeable, we can't write to it
+                    MUnlock(&node->lock);
+                    regs->eax = SYSCALL_ACCESS_DENIED;
+                    return;
+                }
+
                 if(node->flags & NODE_FLAG_DEVICE){
                     device_t* device = node->device;
+                    driver_t* driver = device->driver;
 
-                    // Lock the device's mutex as well - although the VFS node's mutex was probably enough.
-                    while(MLock(&device->lock, currentProcess) == SEM_LOCKED){
+                    while(MLock(device->lock, currentProcess) == SEM_LOCKED){
                         do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
                     }
 
-                    void* ptr = halloc(regs->edx);
-                    if(ptr == NULL){
-                        regs->eax = SYSCALL_OUT_OF_MEMORY;
-                        MUnlock(&node->lock);
-                        return;
-                    }
-                    memset(ptr, 0, regs->edx);
-                    memcpy(ptr, (void*)regs->ecx, regs->edx);
-
-                    if(device == NULL || device->driver == NULL || device->ops.write == NULL){
-                        regs->eax = SYSCALL_INVALID_ARGUMENT;
-                        hfree(ptr);
-                        MUnlock(&node->lock);
-                        MUnlock(&device->lock);
-                        return;
-                    }
-
-                    if(device->kernel_buffer != NULL){
-                        // Just in case the last use of this was not freed
-                        hfree(device->kernel_buffer);
-                        device->kernel_buffer = NULL;
-                    }
-
-                    // The driver is busy and somehow we made it here
-                    if(device->driver->owner->using != NULL){
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        MUnlock(&device->lock);
-                        MUnlock(&node->lock);
-                        regs->eax = SYSCALL_ACCESS_DENIED;
-                        return;
-                    }
-
-                    device->kernel_buffer = ptr;                                    // Set a pointer for deallocation when the driver yields
-                    device->driver->owner->using = device;
-
-                    if(device->driver->in_kernel){
-                        // The driver is part of the kernel, do a simple function call
-                        regs->eax = device->ops.write(ptr, regs->edx);
-                        memcpy((void*)regs->ecx, ptr, regs->edx);
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        device->driver->owner->using = NULL;
-                        MUnlock(&device->lock);
-                        MUnlock(&node->lock);
-                        return;
-                    }
-
-                    size_t size = regs->edx;
-                    device_id_t deviceID = device->id;
-                    pcb_t* caller = currentProcess;
-                    device->caller = caller;
-                    currentProcess->state = WAITING;
-                    
-                    // Switch to the driver for the device - will return when the original process is switched back to.
-                    ContextSwitch(regs, device->driver->owner);
-
-                    currentProcess = GetCurrentProcess();
-
-                    // Allow for easy re-retrieval later
                     currentProcess->using = device;
 
-                    // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
-                    // because this is where the region from previous uses is freed.
-                    int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
-                    if(result == STANDARD_FAILURE){
-                        ContextSwitch(regs, caller);                    // Switch back to the caller
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        device->driver->owner->using = NULL;
-                        caller->state = RUNNING;
-                        device->caller = NULL;
+                    regs->eax = device->ops.write(device->id, (void*)regs->ecx, regs->edx, context->offset);
+                    if(regs->eax < 0){
+                        // Error writing to the device
                         regs->eax = SYSCALL_FAILURE;
-                        return;
-                    }else if(result == EMERGENCY_NO_MEMORY){
-                        ContextSwitch(regs, caller);                    // Return to the caller
-                        UnregisterDriver(device->driver);               // Remove the offending driver
-                        DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
-                        hfree(ptr);
-                        device->caller = NULL;
-                        device->kernel_buffer = NULL;
-                        device->driver->owner->using = NULL;
-                        caller->state = RUNNING;
-
-                        regs->eax = SYSCALL_OUT_OF_MEMORY;
-                        return;
                     }
 
-                    void* userptr = currentProcess->regions[currentProcess->numRegions - 1]->start;
-                    memcpy(ptr, userptr, regs->edx);
+                    MUnlock(&device->lock);
+                    MUnlock(&node->lock);
 
-                    // We don't need the kernel buffer anymore
-                    hfree(ptr);
-
-                    // Reset the driver's stack (the stack will just grow larger and larger every time if I don't)
-                    regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
-
-                    // Push the arguments in reverse order onto the user-mode stack - write(ptr, size)
-                    UserPush(regs->user_esp, size);
-                    UserPush(regs->user_esp, userptr);
-                    regs->eip = device->ops.write;
-
-                    // The driver will be expected to put a return code or the number of bytes read into EAX before yielding again (the C API will abstract this)
-
-                    // The process can be retrieved again from the owner of the device's mutex lock, and the PCB of the driver contains a pointer to the device being used
+                    currentProcess->using = NULL;
 
                     break;
-                }
-
-                if(context->offset + regs->edx <= node->size && !(node->flags & NODE_FLAG_RO)){
-                    // The remaining space in the file is large enough to write the new data and the file is not read only
-                    memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
-                    context->offset += regs->edx;
-                    regs->eax = regs->edx;
-                }else if((node->flags & NODE_FLAG_RESIZEABLE) && !(node->flags & NODE_FLAG_RO)){
-                    // The size to write goes beyond the bounds of the file but it's resizeable
-                    node->data = rehalloc(node->data, context->offset + regs->edx);
-                    memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
-                    node->size = context->offset + regs->edx;
-                    context->offset += regs->edx;
-                    regs->eax = regs->edx;
-                }else if(!(node->flags & NODE_FLAG_RO)){
-                    // Not resizeable and too small, just write as much as we can
-                    memcpy(node->data + context->offset, (void*)regs->ecx, node->size - context->offset);
-                    regs->eax = node->size - context->offset;
                 }else{
-                    // File is read-only
-                    regs->eax = SYSCALL_ACCESS_DENIED;
+                    if(context->offset + regs->edx <= node->size && !(node->flags & NODE_FLAG_RO)){
+                        // The remaining space in the file is large enough to write the new data and the file is not read only
+                        memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
+                        context->offset += regs->edx;
+                        regs->eax = regs->edx;
+                    }else if((node->flags & NODE_FLAG_RESIZEABLE) && !(node->flags & NODE_FLAG_RO)){
+                        // The size to write goes beyond the bounds of the file but it's resizeable
+                        node->data = rehalloc(node->data, context->offset + regs->edx);
+                        memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
+                        node->size = context->offset + regs->edx;
+                        context->offset += regs->edx;
+                        regs->eax = regs->edx;
+                    }else if(!(node->flags & NODE_FLAG_RO)){
+                        // Not resizeable and too small, just write as much as we can
+                        memcpy(node->data + context->offset, (void*)regs->ecx, node->size - context->offset);
+                        regs->eax = node->size - context->offset;
+                    }else{
+                        // File is read-only
+                        regs->eax = SYSCALL_ACCESS_DENIED;
+                    }
                 }
 
                 // Unlock the node
                 MUnlock(&node->lock);
+
+                // Update polls for this fd...
             }else{
                 // Invalid fd or unopened file somehow got aquired
                 regs->eax = SYSCALL_INVALID_ARGUMENT;
@@ -364,115 +303,23 @@ static HOT void syscall_handler(struct Registers *regs){
 
                 if(node->flags & NODE_FLAG_DEVICE){
                     device_t* device = node->device;
+                    driver_t* driver = device->driver;
 
                     while(MLock(device->lock, currentProcess) == SEM_LOCKED){
                         do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
                     }
 
-                    // The kernel buffer that will be copied to
-                    void* ptr = halloc(regs->edx);
-                    if(ptr == NULL){
-                        regs->eax = SYSCALL_OUT_OF_MEMORY;
-                        return;
-                    }
-                    memset(ptr, 0, regs->edx);
-                    memcpy(ptr, (void*)regs->ecx, regs->edx);
-
-                    if(device == NULL || device->driver == NULL || device->ops.read == NULL || (node->flags & NODE_FLAG_RO)){
-                        regs->eax = SYSCALL_INVALID_ARGUMENT;
-                        MUnlock(&node->lock);
-                        MUnlock(&device->lock);
-                        return;
-                    }
-
-                    if(device->kernel_buffer != NULL){
-                        // Just in case the last use of this was not freed
-                        hfree(device->kernel_buffer);
-                        device->kernel_buffer = NULL;
-                    }
-
-                    // The driver is busy and we somehow made it here
-                    if(device->driver->owner->using != NULL){
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        MUnlock(&device->lock);
-                        MUnlock(&node->lock);
-                        regs->eax = SYSCALL_ACCESS_DENIED;
-                        return;
-                    }
-
-                    device->kernel_buffer = ptr;                                    // Set a pointer for deallocation when the driver yields
-
-                    if(device->driver->in_kernel){
-                        // The driver is part of the kernel, do a simple function call
-                        regs->eax = device->ops.read(ptr, regs->edx);
-                        memcpy((void*)regs->ecx, ptr, regs->edx);
-                        hfree(ptr);
-                        device->driver->owner->using = NULL;
-                        device->kernel_buffer = NULL;
-                        MUnlock(&device->lock);
-                        MUnlock(&node->lock);
-                        return;
-                    }
-
-                    size_t size = regs->edx;
-                    device_id_t deviceID = device->id;
-                    pcb_t* caller = currentProcess;
-                    currentProcess->state = WAITING;
-                    device->caller = caller;
-                    
-                    // Switch to the driver for the device - will return when the original process is switched back to.
-                    ContextSwitch(regs, device->driver->owner);
-
-                    currentProcess = GetCurrentProcess();
-
-                    // Allow for easy re-retrieval later
                     currentProcess->using = device;
 
-                    // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
-                    // because this is where the region from previous uses is freed.
-                    int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
-                    if(result == STANDARD_FAILURE){
-                        MUnlock(&node->lock);
-                        MUnlock(&device->lock);
-                        ContextSwitch(regs, caller);                    // Switch back to the caller
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        device->driver->owner->using = NULL;
-                        device->caller = NULL;
-                        caller->state = RUNNING;
+                    device->ops.read(device->id, (void*)regs->ecx, regs->edx, context->offset);
+                    if(regs->eax < 0){
+                        // Error reading from the device
                         regs->eax = SYSCALL_FAILURE;
-                        return;
-                    }else if(result == EMERGENCY_NO_MEMORY){
-                        ContextSwitch(regs, caller);                    // Return to the caller
-                        UnregisterDriver(device->driver);               // Remove the offending driver
-                        DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
-                        MUnlock(&node->lock);
-                        MUnlock(&device->lock);
-                        hfree(ptr);
-                        device->kernel_buffer = NULL;
-                        device->driver->owner->using = NULL;
-                        device->caller = NULL;
-                        caller->state = RUNNING;
-                        regs->eax = SYSCALL_OUT_OF_MEMORY;
-                        return;
                     }
+                    MUnlock(&device->lock);
+                    MUnlock(&node->lock);
 
-                    void* userptr = currentProcess->regions[currentProcess->numRegions - 1]->start;
-                    memcpy(ptr, userptr, regs->edx);
-
-                    // We don't need the kernel buffer anymore
-                    hfree(ptr);
-
-                    // Push the arguments in reverse order onto the user-mode stack - read(ptr, size)
-                    regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
-                    UserPush(regs->user_esp, size);
-                    UserPush(regs->user_esp, userptr);
-                    regs->eip = device->ops.read;
-
-                    // The driver will be expected to put a return code into EAX before yielding again (the C API will abstract this)
-
-                    // The process can be retrieved again from the owner of the device's mutex lock, and the PCB of the driver contains a pointer to the device being used
+                    currentProcess->using = NULL;
 
                     break;
                 }
@@ -555,6 +402,7 @@ static HOT void syscall_handler(struct Registers *regs){
             fd_t result = CreateFileContext(node, currentProcess->fileTable, regs->ecx);
             if(result == EMERGENCY_NO_MEMORY){
                 // Process was compromized on a no memory error
+                currentProcess->state = ZOMBIE;
                 ContextSwitch(regs, GetNextProcess());          // Switch to next process
                 DestroyProcess(currentProcess);                 // Cannibalize the caller on memory error
                 if(nodeMade){
@@ -572,80 +420,26 @@ static HOT void syscall_handler(struct Registers *regs){
             node->refCount++;
             regs->eax = result;
 
-            if(node->data == NULL && node->mountPoint != NULL && !nodeMade && !(node->flags & NODE_FLAG_DIRECTORY) && !(node->flags & NODE_FLAG_DEVICE)){
+            if(node->data == NULL && node->mountPoint != NULL && !nodeMade && !(node->flags & NODE_FLAG_DIRECTORY) && !(node->flags & NODE_FLAG_DEVICE) && node->read == false){
                 // Switch to the driver and load the data
                 device_t* device = node->mountPoint->fsDevice;
                 driver_t* driver = node->mountPoint->fsDriver;
 
+                currentProcess->using = device;
+
                 while(MLock(&device->lock, currentProcess) == SEM_LOCKED){
                     do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
                 }
-                pcb_t* caller = currentProcess;
-                caller->state = WAITING;
-                device->caller = caller;
+                
+                device->ops.read(device->id, node->data, node->size);
+                node->read = true;
 
-                if(driver->owner->using != NULL){
-                    // Driver is busy and we somehow made it here
-                    regs->eax = SYSCALL_FAILURE;
-                    caller->state = RUNNING;
-                    return;
-                }
+                MUnlock(&device->lock);
 
-                // The driver is expected to have accurately assigned the file size
-                device->kernel_buffer = halloc(node->size);
-                if(device->kernel_buffer == NULL){
-                    regs->eax = SYSCALL_OUT_OF_MEMORY;
-                    caller->state = RUNNING;
-                    return;
-                }
-
-                if(device->driver->in_kernel){
-                    // The driver is part of the kernel, do a simple function call
-                    regs->eax = device->ops.read(device->kernel_buffer, regs->edx);
-                    memcpy((void*)regs->ecx, device->kernel_buffer, regs->edx);
-                    hfree(device->kernel_buffer);
-                    device->driver->owner->using = NULL;
-                    device->kernel_buffer = NULL;
-                    device->caller = NULL;
-                    MUnlock(&device->lock);
-                    caller->state = RUNNING;
-                    return;
-                }
-
-                ContextSwitch(regs, node->mountPoint->fsDriver->owner);
-                currentProcess = GetCurrentProcess();
-
-                // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
-                // because this is where the region from previous uses is freed.
-                int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
-                if(result == STANDARD_FAILURE){
-                    ContextSwitch(regs, caller);                    // Switch back to the caller
-                    device->caller = NULL;
-                    MUnlock(&device->lock);
-                    regs->eax = SYSCALL_FAILURE;
-                    caller->state = RUNNING;
-                    return;
-                }else if(result == EMERGENCY_NO_MEMORY){
-                    ContextSwitch(regs, caller);                    // Return to the caller
-                    device->caller = NULL;
-                    MUnlock(&device->lock);
-                    UnregisterDriver(device->driver);               // Remove the offending driver
-                    DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
-                    caller->state = RUNNING;
-                    regs->eax = SYSCALL_OUT_OF_MEMORY;
-                    return;
-                }
-
-                device->driver->owner->using = device;
-
-                // Reset the driver's stack (the stack will just grow larger and larger every time if I don't)
-                regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
-
-                // Push the values onto the driver's stack
-                UserPush(regs->user_esp, node->size);
-                UserPush(regs->user_esp, currentProcess->regions[currentProcess->numRegions - 1]->start);
-                regs->eip = device->ops.read;
+                currentProcess->using = NULL;
             }
+
+            MUnlock(&node->lock);
 
             return;
         }
@@ -661,8 +455,20 @@ static HOT void syscall_handler(struct Registers *regs){
                 return;
             }
 
+            vfs_node_t* node = table->openFiles[regs->ebx]->node;
+            if(node == NULL){
+                // Invalid file descriptor
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(node->flags & NODE_FLAG_DEVICE){
+                currentProcess->using = NULL;
+            }
+
             // Luckily this was was extremely simple - nearly all the required logic is in this function
             DestroyFileContext(table, regs->ebx);
+            
             regs->eax = SYSCALL_SUCCESS;
             break;
         }
@@ -726,13 +532,38 @@ static HOT void syscall_handler(struct Registers *regs){
             // SYS_FSYNC - Write a file's data to disk
             // EBX = fd
 
-            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            if(currentProcess->fileTable->arrSize < regs->ebx){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(currentProcess->fileTable->openFiles[regs->ebx] == NULL || currentProcess->fileTable->openFiles[regs->ebx]->node == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            file_context_t* context = currentProcess->fileTable->openFiles[regs->ebx];
+            if(context == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            fs_driver_t* driver = context->node->mountPoint->fsDriver;
+            if(driver == NULL || driver->fsync == NULL){
+                // No driver or fsync function, can't sync
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = driver->fsync(context->node);
             break;
         }
 
         case SYS_SYNC:{
-            // SYS_SYNC - Write the buffers of all files to the disk
+            // SYS_SYNC - Write the buffers of all files (if in a mounted filesystem) to the disk
             // No arguments(?)
+
+            // Will need to search for mountpoints. Maybe I need a mountpoint registry? Or maybe I can find all filesystem drivers and fsync them?
 
             regs->eax = SYSCALL_NOT_IMPLEMENTED;
             break;
@@ -819,6 +650,8 @@ static HOT void syscall_handler(struct Registers *regs){
             // EBX = Path
             // ECX = struct stat*
 
+            // This should be implemented ASAP
+
             regs->eax = SYSCALL_NOT_IMPLEMENTED;
             break;
         }
@@ -834,7 +667,1608 @@ static HOT void syscall_handler(struct Registers *regs){
             break;
         }
 
-        // And 94 more... oh man.
+        case SYS_GETDENTS:{
+            // SYS_GETDENTS - Get directory entries from a given fd
+            // EBX = fd
+            // ECX = struct dirent*
+            // EDX = size of the buffer
+
+            // Returns: (ssize_t) bytes read - negative on error
+
+            // I need to implement this one too ASAP
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_CHMOD:{
+            // SYS_CHMOD - Change the permissions of a file
+            // EBX = Path
+            // ECX = mode
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_CHOWN:{
+            // SYS_CHOWN - Change the owner of a file
+            // EBX = Path
+            // ECX = uid_t
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SYMLINK:{
+            // SYS_SYMLINK - Create a symbolic link
+            // EBX = Path
+            // ECX = Target
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_UNLINK:{
+            // SYS_UNLINK - Remove a file
+            // EBX = Path
+
+            // Returns: Success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+
+            if(node == NULL || (!(node->permissions & S_IWOTH) && node->owner != currentProcess->user && currentProcess->user != ROOT_UID)){
+                // File not found or invalid permissions
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+            }
+
+            if(node->mountPoint != NULL){
+                // This node has a mountpoint, so delete the original node
+                if(node->mountPoint->fsDriver->delete != NULL){
+                    node->mountPoint->fsDriver->delete((char*)regs->ebx);
+                }
+            }
+
+            VfsRemoveNode(node);
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_MKDIR:{
+            // SYS_MKDIR - Create a directory
+            // EBX = Path
+            // ECX = Mode
+
+            // Returns: Success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsMakeNode(strrchr((char*)regs->ebx, '/') + 1, NODE_FLAG_DIRECTORY, 0, regs->ecx, currentProcess->user, NULL);
+            if(node == NULL){
+                regs->eax = SYSCALL_OUT_OF_MEMORY;
+                return;
+            }
+            *strrchr((char*)regs->ebx, '/') = '\0';
+            VfsAddChild(VfsFindNode((char*)regs->ebx), node);
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_RMDIR:{
+            // SYS_RMDIR - Remove a directory
+            // EBX = Path
+
+            // Returns: Success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+
+            if(node == NULL || (!(node->permissions & S_IWOTH) && node->owner != currentProcess->user && currentProcess->user != ROOT_UID)){
+                // File not found or invalid permissions
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                // After this, it will be destroyed, so no reason to unlock it
+                do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+            }
+
+            if(node->mountPoint != NULL){
+                // This node has a mountpoint, so delete the original node
+                if(node->mountPoint->fsDriver->delete != NULL){
+                    node->mountPoint->fsDriver->delete((char*)regs->ebx);
+                }
+            }
+
+            VfsRemoveNode(node);
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_RENAME:{
+            // SYS_RENAME - Rename a file
+            // EBX = Path
+            // ECX = New name
+
+            // Returns: Success or failure
+
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+
+            if(node == NULL || (!(node->permissions & S_IWOTH) && node->owner != currentProcess->user && currentProcess->user != ROOT_UID)){
+                // File not found or invalid permissions
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+            }
+
+            if(node->mountPoint != NULL){
+                // This node has a mountpoint, so delete the original node
+                if(node->mountPoint->fsDriver->delete != NULL){
+                    node->mountPoint->fsDriver->delete((char*)regs->ebx);
+                }
+            }
+
+            char* newname = strdup((char*)regs->ecx);
+            if(newname == NULL){
+                // Failed to allocate memory
+                MUnlock(&node->lock);
+                regs->eax = SYSCALL_OUT_OF_MEMORY;
+                return;
+            }
+
+            hfree(node->name);
+            node->name = newname;
+
+            MUnlock(&node->lock);
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_GETCWD:{
+            // SYS_GETCWD - Get the current working directory
+            // EBX = Path buffer
+            // ECX = Size of the buffer
+
+            // Returns: Success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(currentProcess->workingDirectory == NULL){
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            char* fullPath = GetFullPath(currentProcess->workingDirectory);
+            if(fullPath == NULL){
+                // Failed to get the full path
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+            memcpy((char*)regs->ebx, fullPath, regs->ecx);
+            hfree(fullPath);
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_CHDIR:{
+            // SYS_CHDIR - Change the current working directory
+            // EBX = Path
+            // ECX = Length of the string
+
+            // Returns: Success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            char* dir = (char*)regs->ebx;
+            if(strlen(dir) > regs->ecx || strlen(dir) == 0){
+                // Invalid length
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* current = currentProcess->workingDirectory;
+            if(current == NULL || !(current->flags & NODE_FLAG_DIRECTORY)){
+                // No or invalid current working directory
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            if(strcmp(dir, "..") == 0 && current->parent != NULL){
+                hfree(currentProcess->workingDirectory);
+                currentProcess->workingDirectory = GetFullPath(current->parent);
+                regs->eax = SYSCALL_SUCCESS;
+                break;
+            }else if(strcmp(dir, ".") == 0){
+                regs->eax = SYSCALL_SUCCESS;
+                break;
+            }
+
+            char* currentPath = GetFullPath(current);
+            if(currentPath == NULL){
+                // Failed to get the full path
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            char* newPath = JoinPath(currentPath, dir);
+            if(newPath == NULL){
+                // Failed to join the path
+                hfree(currentPath);
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+            vfs_node_t* newDir = VfsFindNode(newPath);
+            if(newDir == NULL || !(newDir->flags & NODE_FLAG_DIRECTORY)){
+                // Invalid directory
+                hfree(currentPath);
+                hfree(newPath);
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+            }else{
+                hfree(newPath);
+                hfree(currentPath);
+                currentProcess->workingDirectory = newDir;
+                regs->eax = SYSCALL_SUCCESS;
+            }
+
+            break;
+        }
+
+        case SYS_MOUNT:{
+            // SYS_MOUNT - Mount a filesystem
+            // EBX = Mount path
+            // ECX = Device path
+
+            // Returns: Success or failure (you'll know if it worked)
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END || strlen((char*)regs->ebx) == 0){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+            if(regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END || strlen((char*)regs->ecx) == 0){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+            if(node == NULL || !(node->flags & NODE_FLAG_DIRECTORY)){
+                // Invalid directory
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            device_t* partition = VfsFindNode((char*)regs->ecx)->device;
+            if(partition == NULL){
+                // Invalid device
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            fs_driver_t* driver = FindFsDriver(partition);
+            if(driver == NULL || driver->mount == NULL){
+                // No driver found
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            if(driver->mount(partition->id, (char*)regs->ebx) != 0){
+                // Failed to mount the filesystem
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_UMOUNT:{
+            // SYS_UMOUNT - Unmount a filesystem
+            // EBX = Mount path
+
+            // Returns: success or failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END || strlen((char*)regs->ebx) == 0){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+            if(node == NULL || !(node->flags & NODE_FLAG_DIRECTORY)){
+                // Invalid directory
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            fs_driver_t* driver = FindFsDriver(node);
+            if(driver == NULL || driver->unmount == NULL){
+                // No driver found
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            if(driver->unmount(node) != 0){
+                // Failed to unmount the filesystem
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_DUP:{
+            // SYS_DUP - Duplicate a file descriptor
+            // EBX = fd
+
+            // Returns: New fd on success, otherwise failure
+
+            if(currentProcess->fileTable->numOpenFiles < regs->ebx){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            file_context_t* context = currentProcess->fileTable->openFiles[regs->ebx];
+            if(context == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            fd_t result = CreateFileContext(context->node, currentProcess->fileTable, context->flags);
+            if(result == EMERGENCY_NO_MEMORY){
+                // Process was compromized on a no memory error
+                ContextSwitch(regs, GetNextProcess());          // Switch to next process
+                DestroyProcess(currentProcess);                 // Destroy the running process
+                return;
+            }else if(result != STANDARD_SUCCESS){
+                regs->eax = SYSCALL_OUT_OF_MEMORY;
+                return;
+            }
+
+            regs->eax = result;
+            break;
+        }
+
+        case SYS_DUP2:{
+            // SYS_DUP2 - Duplicate a file descriptor to a specific fd
+            // EBX = fd
+            // ECX = new fd
+
+            // Returns: New fd on success, otherwise failure
+
+            if(currentProcess->fileTable->numOpenFiles < regs->ebx || currentProcess->fileTable->numOpenFiles < regs->ecx){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            file_context_t* context = currentProcess->fileTable->openFiles[regs->ebx];
+            if(context == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = context->node;
+            if(node == NULL){
+                // Invalid file descriptor
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            ReplaceFileContext(currentProcess->fileTable, regs->ecx, context);
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_FCNTL:{
+            // SYS_FCNTL - Manipulate a file descriptor
+            // EBX = fd
+            // ECX = Flags
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_IOCTL:{
+            // SYS_IOCTL - Perform an IOCTL operation on a file descriptor (devices only)
+            // EBX = fd
+            // ECX = Command
+            // EDX = Argument
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_POLL:{
+            // SYS_POLL - Wait for a set of file descriptors to be ready
+            // EBX = fd
+            // ECX = Timeout
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        // Process management
+        case SYS_EXIT:{
+            // SYS_EXIT - Exit the current process
+            // EBX = Exit code
+
+            // Returns: Nothing
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot exit
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            currentProcess->exitCode = regs->ebx;
+            currentProcess->state = ZOMBIE;
+
+            while(currentProcess->waiting != NULL){
+                // Send to all waiting processes that the process has finished
+                currentProcess->waiting->this->context.eax = currentProcess->exitCode;
+                currentProcess->waiting->this->state = RUNNING;
+                struct Process_List* next = currentProcess->waiting->this->next;
+                hfree(currentProcess->waiting);
+                currentProcess->waiting = next;
+            }
+
+            UnscheduleProcess(currentProcess);                      // Remove the process from the scheduler
+            RemoveProcessFromQueue(currentProcess->waitingFor);     // Remove the process from the waiting queue
+
+            DestroyProcess(currentProcess);
+            ContextSwitch(regs, GetNextProcess());                  // Switch to next process
+            break;
+        }
+
+        case SYS_FORK:{
+            // SYS_FORK - Fork the current process
+            // No arguments(?)
+
+            // Returns: Child PID on success, otherwise failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot fork
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            pcb_t* child = DuplicateProcess(currentProcess);
+            if(child == NULL){
+                regs->eax = SYSCALL_OUT_OF_MEMORY;
+                return;
+            }
+            ScheduleProcess(child);                         // Add the child to the scheduler
+
+            child->context.eax = 0;                         // Set the child's return value to 0
+
+            regs->eax = child->pid;
+            break;
+        }
+
+        case SYS_EXEC:{
+            // SYS_EXEC - Execute a new program
+            // EBX = Path
+            // ECX = Arguments
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot exec
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            char* path = (char*)regs->ebx;
+            if(strlen(path) == 0){
+                // Invalid length
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            vfs_node_t* node = VfsFindNode(path);
+            if(node == NULL || (!(node->permissions & S_IXOTH) && currentProcess->user != ROOT_UID && currentProcess->user != node->owner) || (node->flags & NODE_FLAG_DIRECTORY) || (node->flags & NODE_FLAG_DEVICE)){
+                // Invalid executable
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(node->owner != currentProcess->effectiveUser && (node->permissions & S_IROTH) == 0){
+                // Invalid permissions!
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            char* name = strrchr(path, '/');
+            if(name == NULL){
+                name = path;
+            }else{
+                *name = '\0';
+                name++;
+            }
+            if(ReplaceProcess(name, node->data, currentProcess, (char*)regs->ecx, regs) != STANDARD_SUCCESS){
+                // Failed to replace the process
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            // The process is now replaced, so we don't need to do anything else. It's already scheduled too because the PCB's address didn't change, and the registers were handled in the function.
+
+            break;
+        }
+
+        case SYS_EXECVE:{
+            // SYS_EXECVE - Execute a new program with a specific environment
+            // EBX = Path
+            // ECX = Arguments
+            // EDX = Environment
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_WAIT_PID:{
+            // SYS_WAIT_PID - Wait for a process to finish
+            // EBX = PID
+
+            // Returns: Exit code of the process, or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot wait
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx > MAX_PID){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            pcb_t* child = GetProcessByPID(regs->ebx);
+            if(child == NULL){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            // Wait for the child to finish
+            currentProcess->state = WAITING;
+            do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+
+            // Everything else is handled in SYS_EXIT
+
+            break;
+        }
+
+        case SYS_GET_PID:{
+            // SYS_GET_PID - Get the PID of the current process
+            // No arguments
+
+            // Luckily this is extremely simple - just return the PID of the current process
+            regs->eax = currentProcess->pid;
+            break;
+        }
+
+        case SYS_GET_PPID:{
+            // SYS_GET_PPID - Get the PID of the parent process
+            // No arguments
+
+            // Returns: Parent PID
+
+            if(currentProcess->parent == NULL){
+                regs->eax = 0;
+            }else{
+                regs->eax = currentProcess->parent->pid;
+            }
+            break;
+        }
+
+        case SYS_KILL:{
+            // SYS_KILL - Kill a process
+            // EBX = PID
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot kill
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx > 65535){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            pcb_t* target = GetProcessByPID(regs->ebx);
+            if(target == NULL){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(target == currentProcess){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(target->parent != currentProcess){
+                // You cannot kill a process that is not your child
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(target->state == ZOMBIE){
+                // Process is already dead
+                regs->eax = SYSCALL_SUCCESS;
+                return;
+            }
+
+            if(InsertSignals(target, SIGTERM) != STANDARD_SUCCESS){
+                // Failed to insert the signal
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_YIELD:{
+            // SYS_YIELD - Yield the current process
+            // No arguments
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot yield
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            ContextSwitch(regs, GetNextProcess());          // Switch to next process
+            break;
+        }
+
+        case SYS_GETRLIMIT:{
+            // SYS_GETRLIMIT - Get the resource limits of the current process
+            // EBX = Resource limit
+            // ECX = struct rlimit*
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SETRLIMIT:{
+            // SYS_SETRLIMIT - Set the resource limits of the current process
+            // EBX = Resource limit
+            // ECX = struct rlimit*
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+        
+        case SYS_GETUID:{
+            // SYS_GETUID - Get the UID of the current process
+            // No arguments
+
+            // Returns: UID
+
+            regs->eax = currentProcess->user;
+            break;
+        }
+
+        case SYS_GETGID:{
+            // SYS_GETGID - Get the GID of the current process
+            // No arguments
+
+            // Returns: GID
+
+            regs->eax = currentProcess->group;
+            break;
+        }
+
+
+        // Inter-Process Communication
+        case SYS_PIPE:{
+            // SYS_PIPE - Create a pipe
+            // EBX = Pipe
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SHMGET:{
+            // SYS_SHMGET - Get a shared memory segment
+            // EBX = Key
+            // ECX = Size
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SHMAT:{
+            // SYS_SHMAT - Attach a shared memory segment
+            // EBX = Key
+            // ECX = Address
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SHMDT:{
+            // SYS_SHMDT - Detach a shared memory segment
+            // EBX = Key
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_MSGGET:{
+            // SYS_MSGGET - Get a message queue
+            // EBX = Key
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_MSGSND:{
+            // SYS_MSGSND - Send a message to a queue
+            // EBX = Key
+            // ECX = Message
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_MSGRCV:{
+            // SYS_MSGRCV - Receive a message from a queue
+            // EBX = Key
+            // ECX = Message
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SETSID:{
+            // SYS_SETSID - Set the session ID of the current process
+            // No arguments
+
+            // Returns: nothing
+
+            // Let's keep this simple
+            regs->eax = currentProcess->pid;
+            break;
+        }
+
+        case SYS_GETSID:{
+            // SYS_GETSID - Get the session ID of the current process
+            // No arguments
+
+            // Returns: the session ID of the current process
+
+            regs->eax = currentProcess->sessionId;
+            break;
+        }
+
+        
+        // Time management
+        case SYS_SLEEP:{
+            // SYS_SLEEP - Sleep for a given amount of time
+            // EBX = Time in milliseconds (low 32)
+            // ECX = Time in milliseconds (high 32)
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot sleep
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 && regs->ecx == 0){
+                // Invalid time
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            uint64_t time = ((uint64_t)regs->ecx << 32) | (uint64_t)regs->ebx;
+            if(time == 0){
+                // Invalid time
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            currentProcess->state = SLEEPING;
+            currentProcess->sleepUntil = GetTicks() + time;
+            do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+
+            regs->eax = SYSCALL_SUCCESS;
+
+            break;
+        }
+
+        case SYS_GET_TIME:{
+            // SYS_GET_TIME - Get the current time
+            // EBX = pointer to the datetime_t struct
+
+            // Returns: the time
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx >= USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            datetime_t* time = (datetime_t*)regs->ebx;
+            memcpy(time, &currentTime, sizeof(datetime_t));
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+
+        // Networking
+        case SYS_SOCKET:{
+            // SYS_SOCKET - Create a socket
+            // EBX = Domain
+            // ECX = Type
+            // EDX = Protocol
+
+            // Returns: Socket descriptor
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_BIND:{
+            // SYS_BIND - Bind a socket to an address
+            // EBX = Socket descriptor
+            // ECX = Address
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_LISTEN:{
+            // SYS_LISTEN - Listen for incoming connections
+            // EBX = Socket descriptor
+            // ECX = Backlog
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_ACCEPT:{
+            // SYS_ACCEPT - Accept an incoming connection
+            // EBX = Socket descriptor
+            // ECX = Address
+
+            // Returns: Socket descriptor
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_CONNECT:{
+            // SYS_CONNECT - Connect to a remote socket
+            // EBX = Socket descriptor
+            // ECX = Address
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SENDTO:{
+            // SYS_SEND - Send data to a socket
+            // EBX = Socket descriptor
+            // ECX = Buffer
+            // EDX = Length
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_RECVFROM:{
+            // SYS_RECV - Receive data from a socket
+            // EBX = Socket descriptor
+            // ECX = Buffer
+            // EDX = Length
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+        
+        case SYS_SETSOCKOPT:{
+            // SYS_SETSOCKOPT - Set socket options
+            // EBX = Socket descriptor
+            // ECX = Level
+            // EDX = Option name
+            // EAX = Option value
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_GETSOCKOPT:{
+            // SYS_GETSOCKOPT - Get socket options
+            // EBX = Socket descriptor
+            // ECX = Level
+            // EDX = Option name
+            // EAX = Option value
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+
+        // Memory management
+        case SYS_MMAP:{
+            // SYS_MMAP - Map a file into memory
+            // EBX = File descriptor
+            // ECX = Address
+            // EDX = Length
+
+            // Returns: Address of the mapped file
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_MUNMAP:{
+            // SYS_MUNMAP - Unmap a file from memory
+            // EBX = Address
+            // ECX = Length
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_BRK:{
+            // SYS_BRK - Set the program break
+            // EBX = Address
+
+            // Returns: Success or failure
+
+            // I need some code for extending process heaps here, preferrably soon. Malloc is helpful.
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_MPROTECT:{
+            // SYS_MPROTECT - Set memory protection
+            // EBX = Address
+            // ECX = Length
+            // EDX = Protection flags
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SENDSIG:{
+            // SYS_SENDSIG - Send a signal to a process
+            // EBX = PID
+            // ECX = Signal
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot send signals
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx > MAX_PID){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            pcb_t* target = GetProcessByPID(regs->ebx);
+            if(target == NULL){
+                // Invalid PID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(InsertSignals(target, regs->ecx) != STANDARD_SUCCESS){
+                // Failed to insert the signal
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_SIGACTION:{
+            // SYS_SIGACTION - Set the action for a signal
+            // EBX = Signal (expects the bitmask and only one bit)
+            // ECX = Action
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot set signal actions
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0){
+                // Invalid signal
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            currentProcess->signalInfo.handlers[__builtin_ctz(regs->ebx)] = (void*)regs->ecx;
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_SIGPROCMASK:{
+            // SYS_SIGPROCMASK - Set the signal mask
+            // EBX = Signal mask (bitfield)
+
+            // Returns: Success or failure
+
+            if(currentProcess == kernelPCB){
+                // Kernel process cannot set signal masks
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0){
+                // Invalid signal mask
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            currentProcess->signalInfo.masked = regs->ebx;
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_ALARM:{
+            // SYS_ALARM - Set an alarm that a process will have to handle
+            // EBX = Time in seconds
+
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+
+        // Priveliged/Driver system calls
+        case SYS_MODULE_LOAD:{
+            // SYS_MODULE_LOAD - Load a kernel module
+            // EBX = Path
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only priveliged processes can load modules
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            char* path = (char*)regs->ebx;
+            if(strlen(path) == 0){
+                // Invalid length
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(LoadModule(path) != STANDARD_SUCCESS){
+                // Failed to load the module
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_MODULE_UNLOAD:{
+            // SYS_MODULE_UNLOAD - Unload a kernel module
+            // EBX = Path
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only priveliged processes can unload modules
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            char* path = (char*)regs->ebx;
+            if(strlen(path) == 0){
+                // Invalid length
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(UnloadModule(path) != STANDARD_SUCCESS){
+                // Failed to unload the module
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_MODULE_QUERY:{
+            // SYS_MODULE_QUERY - Query a kernel module
+            // EBX = Path
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only priveliged processes can query modules
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_REGISTER_DEVICE:{
+            // SYS_REGISTER_DEVICE - Register a device driver
+            // EBX = Pointer to device struct
+            // ECX = pointer to device name
+            // EDX = permissions
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can register devices
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            char* path = (char*)regs->ebx;
+            if(strlen(path) == 0){
+                // Invalid length
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(RegisterDevice(path) != STANDARD_SUCCESS){
+                // Failed to register the device
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_UNREGISTER_DEVICE:{
+            // SYS_UNREGISTER_DEVICE - Unregister a device driver
+            // EBX = Pointer to device struct
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can unregister devices
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(UnregisterDevice((device_t*)regs->ebx) != STANDARD_SUCCESS){
+                // Failed to unregister the device
+                regs->eax = SYSCALL_FAILURE;
+                return;
+            }
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_AQUIRE_DEVICE:{
+            // SYS_AQUIRE_DEVICE - Aquire an existing device to modify
+            // EBX = Pointer to device struct
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can aquire devices
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_REQUEST_IRQ:{
+            // SYS_REQUEST_IRQ - Request an IRQ
+            // EBX = IRQ number
+            // ECX = Handler
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can request IRQs
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_RELEASE_IRQ:{
+            // SYS_RELEASE_IRQ - Release an IRQ
+            // EBX = IRQ number
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can release IRQs
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_GET_API:{
+            // SYS_GET_API - Get the kernel API struct for pointers to kernel functions
+
+            // Returns: Success or failure
+
+            if(currentProcess->context.cs != GDT_RING0_SEGMENT_POINTER(GDT_KERNEL_CODE)){
+                // Only drivers and the kernel can get the API version
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = &api;
+            break;
+        }
+
+        case SYS_SETUID:{
+            // SYS_SETUID - Set the UID of the current process
+            // EBX = UID
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can set the UID
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx > MAX_UID){
+                // Invalid UID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            currentProcess->user = regs->ebx;
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_SETGID:{
+            // SYS_SETGID - Set the GID of the current process
+            // EBX = GID
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can set the GID
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(regs->ebx == 0 || regs->ebx > 65535){
+                // Invalid GID
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            currentProcess->group = regs->ebx;
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_SETGROUPS:{
+            // SYS_SETGROUPS - Set the groups of the current process
+            // EBX = Groups
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can set the groups
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_GETGROUPS:{
+            // SYS_GETGROUPS - Get the groups of the current process
+            // EBX = Groups
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can get the groups
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SET_TIME:{
+            // SYS_SET_TIME - Set the current time
+            // EBX = pointer to the datetime_t struct
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can get the groups
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if((regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx >= USER_MEM_END) && currentProcess != kernelPCB){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            datetime_t* time = (datetime_t*)regs->ebx;
+            memcpy(&currentTime, time, sizeof(datetime_t));
+
+            regs->eax = SYSCALL_SUCCESS;
+            break;
+        }
+
+        case SYS_SHUTDOWN:{
+            // SYS_SHUTDOWN - Shutdown the system
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can shutdown the system
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            AcpiShutdown();
+
+            break;
+        }
+
+        case SYS_REBOOT:{
+            // SYS_REBOOT - Reboot the system
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can reboot the system
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            reboot_system();
+
+            break;
+        }
+
+        case SYS_UNAME:{
+            // SYS_UNAME - Get system information
+            // EBX contains the pointer to the uname struct to copy the info into
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can get the groups
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if((regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx >= USER_MEM_END) && currentProcess != kernelPCB){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            struct uname* info = (struct uname*)regs->ebx;
+            info->uptime = GetTicks() / 1000; // Convert to seconds
+            info->totalMemory = totalMemSize;
+            info->usedMemory = mappedPages * PAGE_SIZE;
+            info->freeMemory = (totalMemSize - (mappedPages * PAGE_SIZE));
+            info->numProcesses = numProcesses;
+            memcpy(&info->kernelVersion, &kernelVersion, sizeof(version_t));
+            memcpy(info->kernelRelease, kernelRelease, strlen(kernelRelease) + 1);
+            info->acpiSupported = acpiInfo.exists;
+            uint32_t eax = 0;
+            uint32_t others[4] = {0};
+            cpuid(eax, others[0], others[1], others[2]);
+            memcpy(info->cpuID, others, sizeof(others));
+            regs->eax = STANDARD_SUCCESS;
+            break;
+        }
+
+        case SYS_CHROOT:{
+            // SYS_CHROOT - Change the root directory of the current process
+            // EBX = Path
+            
+            // Returns: Success or failure
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_KLOG_READ:{
+            // SYS_KLOG_READ - Read the kernel log
+            // EBX = Pointer to buffer
+            // ECX = Size of buffer
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can read the kernel log
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if((regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx >= USER_MEM_END) && currentProcess != kernelPCB){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            // Printk doesn't use a buffer yet unfortunately
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_KLOG_FLUSH:{
+            // SYS_KLOG_FLUSH - Flush the kernel log
+            // EBX = Pointer to buffer
+            // ECX = Size of buffer
+
+            // Returns: Success or failure
+
+            if(currentProcess->user != ROOT_UID){
+                // Only root can flush the kernel log
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if((regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx >= USER_MEM_END) && currentProcess != kernelPCB){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            // Printk doesn't use a buffer yet unfortunately
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        // That's all of them.
 
         default:{
             // Invalid system call!
@@ -842,6 +2276,7 @@ static HOT void syscall_handler(struct Registers *regs){
             break;
         }
     }
+    currentProcess->inSyscall = false;
 }
 
 static void (*stubs[NUM_ISRS])(struct Registers*) = {

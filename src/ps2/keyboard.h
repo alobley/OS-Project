@@ -131,7 +131,12 @@ enum Keys {
     F12 = 0x58
 };
 
-typedef void (*KeyboardCallback)(struct ievent event);
+typedef struct KeyboardEvent {
+    unsigned char scanCode;
+    char ascii;
+    _Bool keyUp;
+} KeyboardEvent_t;
+typedef void (*KeyboardCallback)(KeyboardEvent_t event);
 
 // Struct for the OS to determine the PS/2 hardware
 typedef struct PS2Info {

@@ -8,6 +8,7 @@
 
 extern uintptr_t heapStart;
 extern uintptr_t heapEnd;
+extern uintptr_t heapTerm;
 
 // Allocate a block of memory on the heap of the specified size
 void* halloc(size_t size);

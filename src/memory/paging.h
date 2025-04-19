@@ -163,7 +163,7 @@ page_result_t palloc(virtaddr_t address, unsigned int flags);
 /// @param old The old (page-aligned) virtual address
 /// @param new The new (page-aligned) virtual address
 /// @return Success or error code
-page_result_t RemapPage(virtaddr_t old, virtaddr_t new)
+page_result_t RemapPage(virtaddr_t old, virtaddr_t new);
 
 /// @brief Allocate a page based on a given physical address
 /// @param virt The virtual address of the page to allocate

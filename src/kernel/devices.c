@@ -74,11 +74,11 @@ void DestroyDeviceRegistry(){
 }
 
 /// @brief Takes a pointer to a device that a driver has constructed, copies it, initializes it, and adds it to the VFS.
-/// @param userDevice The device created by the driver
+/// @param device The device created by the driver
 /// @param path The (absolute) path the device should be located in. Must be in /dev.
 /// @param permissions The permissions of the new device
 /// @return Success or error code
-dresult_t RegisterDevice(device_t* userDevice, char* path, int permissions){
+dresult_t RegisterDevice(device_t* device, char* path, int permissions){
     if(strncmp(path, "/dev", 4) != 0){
         // Devices are only allowed in the /dev directory!
         return DRIVER_ACCESS_DENIED;
@@ -93,20 +93,8 @@ dresult_t RegisterDevice(device_t* userDevice, char* path, int permissions){
         return DRIVER_ACCESS_DENIED;
     }
 
-    if(userDevice == NULL || path == NULL || permissions == 0){
+    if(device == NULL || path == NULL || permissions == 0){
         return DRIVER_INVALID_ARGUMENT;
-    }
-
-    device_t* device = halloc(sizeof(device_t));
-    if(device == NULL){
-        return DRIVER_FAILURE;
-    }
-    memcpy(device, userDevice);
-
-    device->name = strcpy(userDevice->name);
-    if(device->name == NULL){
-        hfree(device);
-        return DRIVER_FAILURE;
     }
 
     device->id = AllocateDeviceID();
@@ -186,80 +174,58 @@ void DestroyDriverRegistry(){
     memset(&driverRegistry, 0, sizeof(driver_registry_t));
 }
 
-/// @brief Register a driver with the system
+/// @brief Register a driver with the system (does load it)
 /// @warning Make sure the kernel calls the driver's init function!
-/// @param userDriver A pointer to the struct in the driver's virtual memory space
+/// @param driver A pointer to the driver struct that the driver has created
 /// @param inKernel Whether or not the driver is directly part of the kernel's binary (those drivers will call this function directly)
 /// @return Success or error code
-dresult_t RegisterDriver(driver_t* userDriver, bool inKernel){
-    if(userDriver == NULL || userDriver->probe == NULL){
+dresult_t RegisterDriver(driver_t* driver, bool inKernel){
+    if(driver == NULL || driver->probe == NULL){
         // The driver structure must be properly initialized by the driver!
         return DRIVER_INVALID_ARGUMENT;
     }
-
-    userDriver->in_kernel = inKernel;
 
     if(driverRegistry.numDrivers >= REGISTRY_BITMAP_SIZE * 32){
         return DRIVER_REGISTRY_FULL;
     }
 
-    driver_t* toRegister = NULL;
-
-    if(userDriver->type & DEVICE_TYPE_FILESYSTEM){
-        // Special case for filesystem drivers
-        fs_driver_t* driver = halloc(sizeof(fs_driver_t));
-        if(driver == NULL){
-            return DRIVER_FAILURE;
-        }
-        memset(driver, 0, sizeof(fs_driver_t));
-        memcpy(driver, (fs_driver_t*)userDriver);
-
-        driver->driver.name = strdup(userDriver->name);
-        if(driver->driver.name == NULL){
-            return DRIVER_FAILURE;
-        }
-
-        toRegister = &driver->driver;
-    }else{
-        driver_t* driver = halloc(sizeof(driver_t));
-        if(driver == NULL){
-            return DRIVER_FAILURE;
-        }
-        memset(driver, 0, sizeof(driver_t));
-        memcpy(driver, userDriver, sizeof(driver_t));
-
-        driver->name = strdup(userDriver->name);
-        if(driver->name == NULL){
-            return DRIVER_FAILURE;
-        }
-
-        toRegister = driver;
-    }
-
-    // Set the driver field in the PCB and the owner field in the driver to the driver struct and the driver's PCB, respectively.
-    GetCurrentProcess()->driver = toRegister;
-    toRegister->owner = GetCurrentProcess();
-
     // Add the driver to the driver registry
-    index_t arrIndex = FindIndex(driverRegistry.bitmap, REGISTRY_BITMAP_SIZE);
-    toRegister->index = arrIndex;
+    modid_t arrIndex = FindIndex(driverRegistry.bitmap, REGISTRY_BITMAP_SIZE);
+    toRegister->id = arrIndex;
     if(driverRegistry.drvArrSize > arrIndex){
         driverRegistry.drivers = rehalloc(driverRegistry.drivers, driverRegistry.drvArrSize * 2);
         driverRegistry.drvArrSize *= 2;
     }
     ClearBitmapBit(driverRegistry.bitmap, arrIndex);
-    driverRegistry.drivers[arrIndex] = toRegister;
+    driverRegistry.drivers[arrIndex] = driver;
     driverRegistry.numDrivers++;
+
+    if(inKernel){
+        driver->inKernel = true;
+        return DRIVER_SUCCESS;
+    } else {
+        driver->inKernel = false;
+    }
+
+    // Call a driver load function...
 
     return DRIVER_SUCCESS;
 }
 
+/// @brief Unregister a driver from the system (does unload it)
+/// @param driver The driver to unregister
 void UnregisterDriver(driver_t* driver){
+    driver->deinit();
     SetBitmapBit(driverRegistry.bitmap, driver->index);
     driverRegistry.drivers[driver->index] = NULL;
     hfree(driver->name);
     hfree(driver);
     driverRegistry.numDrivers--;
+
+    if(driver->inKernel){
+        return;
+    }
+    // Call a driver unload function...
 }
 
 // Find a driver compatible with the given device
@@ -280,6 +246,21 @@ dresult_t FindDriver(device_t* device){
     return DRIVER_FAILURE;
 }
 
+fs_driver_t* FindFsDriver(device_t* device){
+    index_t numSkipped = 0;
+    for(index_t i = 0; i < driverRegistry.drvArrSize / 4; i++){
+        if(driverRegistry.drivers[i] != NULL){
+            if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS && numSkipped >= skip && (driverRegistry.drivers[i]->type & DEVICE_TYPE_FILESYSTEM)){
+                // This only works for ring 0 drivers. I'll need to context switch to user-space drivers...
+                return driverRegistry.drivers[i];
+            }else if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS && (driverRegistry.drivers[i]->type & DEVICE_TYPE_FILESYSTEM)){
+                numSkipped++;
+            }
+        }
+    }
+    return NULL;
+}
+
 /// @brief Obtain a pointer to a device based on its device ID
 /// @param device The device ID to locate
 /// @return Pointer to the device with the corresponding ID, or NULL if none.
@@ -289,4 +270,19 @@ device_t* GetDeviceByID(device_id_t device){
         return NULL;
     }
     return deviceRegistry.devices[device];
+}
+
+uint32_t loadedModules = 0;
+void* moduleRegionStart = NULL;
+
+int LoadModule(driver_t* driver, void* data){
+    // Load a module from the given path
+    // This is a placeholder for now, but it should be implemented in the future
+    return STANDARD_FAILURE;
+}
+
+void UnloadModule(driver_t* driver){
+    // Unload a module
+    // This is a placeholder for now, but it should be implemented in the future
+    return;
 }

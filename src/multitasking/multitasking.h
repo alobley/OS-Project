@@ -168,8 +168,6 @@ typedef struct Process_Control_Block {
 
     struct Process_List* schedulerNode;     // The node in the scheduled process list that this process owns
 
-    driver_t* driver;                       // If this process has registered itself as a driver, when it's killed the kernel can deinitialize it through this pointer.
-
     // If the process is sleeping, this contains the time it will stop sleeping.
     uint64_t sleepUntil;
     
@@ -319,7 +317,7 @@ pcb_t* CreateProcess(const char* processName, uint64_t timeSlice, struct Resourc
 /// @param data The data containing the new ELF executable
 /// @param pcb The PCB to modify
 /// @return Success or error code
-int ReplaceProcess(char* newName, void* data, pcb_t* pcb);
+int ReplaceProcess(char* newName, void* data, pcb_t* pcb, struct Registers* regs);
 
 /// @brief Create an exact copy of a given process
 /// @param this The process to duplicate
@@ -329,8 +327,8 @@ pcb_t* DuplicateProcess(pcb_t* this);
 // Destroy a process
 int DestroyProcess(pcb_t* process);
 
-// Emergencies only. Force-quit a process by any means neccecarry. Do not allow any more of its code to execute.
-// WARNING: Could cause undefined behavior, memory leaks, orphaned interrupts (in the case of drivers), or other issues.
+// Emergencies only. Force-quit a process by any means necessary. Do not allow any more of its code to execute.
+// WARNING: Could cause undefined behavior, memory leaks, or other issues.
 int ObliterateProcess(pcb_t* maliciousProcess);
 
 // Context switch to a new process
@@ -363,11 +361,11 @@ int ScheduleProcess(pcb_t* process);
 // Stop a program's execution
 void UnscheduleProcess(pcb_t* process);
 
-// Load and execute a new program
+// Load and execute a new program (kernel only, user processes should use exec/execfd)
 int LoadExecute(pcb_t* process, vfs_node_t* data);
 
 // Insert the signal handlers into the given process's call stack (EIP = first one, ESP = second, ESP + 4 = original EIP, for example)
-int InsertSignals(pcb_t* process);
+int InsertSignals(pcb_t* process, unsigned int signal);
 
 // This is actually a timer handler(?) that preemptively schedules processes
 void Scheduler(struct Registers* state);

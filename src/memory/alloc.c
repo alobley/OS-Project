@@ -10,6 +10,8 @@ uintptr_t heapStart = 0;
 
 uintptr_t heapEnd = 0;
 
+uintptr_t heapTerm = 0;
+
 // Define a doubly-linked list of memory blocks
 typedef struct MemoryBlock {
     uint32_t magic;
@@ -35,6 +37,7 @@ void InitializeAllocator(void){
     firstBlock->prev = NULL;
     firstBlock->magic = MEMBLOCK_MAGIC;
     heapEnd = heapStart + PAGE_SIZE;
+    heapTerm = USER_MEM_START;          // The end of the heap is the start of user memory (If I ever go higfher-half, this will need to be changed)
 
     for(int i = 0; i < 500; i++){
         // Helps detect bad RAM
@@ -155,7 +158,7 @@ MALLOC void* halloc(size_t size){
             size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
             
             // Check if we would exceed memory limits
-            if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
+            if(heapEnd + (pagesToAdd * PAGE_SIZE) > heapTerm || 
                heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
                 SpinUnlock(&heapLock);
                 return NULL;
@@ -205,7 +208,7 @@ MALLOC void* halloc(size_t size){
     //printk("Extending heap by %u bytes and creating new block\n", size);
 
     // We've reached the end of the list and didn't find a suitable block
-    if(heapEnd >= USER_MEM_START || heapEnd + size + HEADER_SIZE <= heapEnd){
+    if(heapEnd >= heapTerm || heapEnd + size + HEADER_SIZE <= heapEnd){
         SpinUnlock(&heapLock);
         return NULL;
     }
@@ -218,7 +221,7 @@ MALLOC void* halloc(size_t size){
     size_t pagesToAdd = (totalNeeded + (PAGE_SIZE - 1)) / PAGE_SIZE;
     
     // Check if we would exceed memory limits
-    if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
+    if(heapEnd + (pagesToAdd * PAGE_SIZE) > heapTerm || 
        heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
         SpinUnlock(&heapLock);
         return NULL;

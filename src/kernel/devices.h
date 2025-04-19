@@ -8,6 +8,8 @@
 
 typedef struct Device device_t;
 
+typedef unsigned short modid_t;         // Module ID for kernel modules
+
 // Result of a driver operation
 typedef int dresult_t;
 #define DRIVER_REGISTRY_FULL -3
@@ -19,8 +21,8 @@ typedef int dresult_t;
 
 typedef dresult_t (*init_handle_t)(void);
 typedef dresult_t (*deinit_handle_t)(void);
-typedef dresult_t (*read_handle_t)(void* buf, size_t len);
-typedef dresult_t (*write_handle_t)(void* buf, size_t len);
+typedef dresult_t (*read_handle_t)(void* buf, size_t len, size_t offset);               // Offset is within the given buffer
+typedef dresult_t (*write_handle_t)(void* buf, size_t len, size_t offset);              // Offset is the offset of the device
 typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg);
 typedef dresult_t (*irq_handle_t)(int num);
 typedef dresult_t (*poll_t)(struct file* file, short* revents);
@@ -65,16 +67,19 @@ enum Device_Type {
     // More...
 };
 
-typedef struct Driver {
-    char* name;                     // Name of the driver
+typedef struct Kernel_Module {
+    const char* name;               // Name of the driver
     unsigned int class;             // Bitfield containing the class of device this driver supports
     unsigned int type;              // Bitfield containing the type of device this driver supports
-    pcb_t* owner;                   // The owner of this driver
     init_handle_t init;             // Initialization function
     deinit_handle_t deinit;         // De-initialization function
     probe_t probe;                  // Lets the kernel probe this driver to support a specific device
-    bool in_kernel;                 // Driver is in kernel space and therefore does not need a context switch
-    index_t index;                  // This driver's index in the driver registry
+    modid_t id;                     // This module's ID
+    bool busy;                      // Whether this driver is busy or not (set by the driver to prevent the kernel from calling its functions while it's working)
+    bool inKernel;                  // Whether this driver is part of the kernel binary or not
+    size_t driverSize;              // Size of the driver in memory  
+    virtaddr_t startAddr;           // The start address of the driver in memory
+    virtaddr_t endAddr;             // The end address of the driver in memory
 } driver_t;
 
 // Device driver specific to filesystems. No other drivers will have special treatment. Read/write functions still work with file reading/writing.
@@ -82,7 +87,10 @@ typedef struct FS_Driver {
     driver_t driver;
     vfs_node_t* (*readdir)(device_id_t device, char* path);     // Read a directory from a given filesystem  (path relative to the filesystem's root)
     dresult_t (*closedir)(device_id_t device, char* path);      // Clear a directory previously read from a filesystem (path relative to the filesystem's root)
-    vfs_node_t* (*mount)(device_id_t device);                   // The kernel will mount it at the given path, the driver just needs to provide the VFS nodes.
+    dresult_t (*sync)(device_id_t device);                      // Sync the filesystem to the disk
+    dresult_t (*fsync)(char* path);                             // Sync one file to the disk
+    dresult_t (*delete)(char* path);                            // Delete a file from the filesystem
+    dresult_t (*mount)(device_id_t device, char* path);         // The driver must mount the filesystem at the given path
     dresult_t (*unmount)(device_id_t device);                   // Unmount the directiories from the given filesystem device
 } fs_driver_t;
 
@@ -90,18 +98,15 @@ typedef struct Device {
     char* name;                     // Name of the device
     unsigned int class;             // Bitfield for the class of device this is
     unsigned int type;              // Bitfield for the type of device this is
-    void* driver_data;              // Allows the driver to attach its own context (used only in the driver or through IPC so it's generally safe to keep the pointer)
-    void* kernel_buffer;            // Kernel buffer in the driver for read/write operations to deallocate pointers
     device_ops_t ops;               // Per-device operations
     device_id_t id;                 // The device ID of this device
     device_id_t parent;             // The device ID of a parent device, if any
     driver_t* driver;               // The driver responsible for this device
     mutex_t lock;                   // Mutex for exclusive access
     vfs_node_t* node;               // The VFS node of this driver
-    pcb_t* caller;                  // The process currently using this device
+    pid_t caller;                   // The process currently using this device
 } device_t;
 
-// Might return this through IPC or something
 typedef struct Framebuffer {
     void* address;                  // The address of the framebuffer
     size_t size;                    // Size in bytes
@@ -120,7 +125,7 @@ typedef struct Framebuffer {
 typedef struct Mount_Point {
     device_t* blockDevice;                                      // The block device this filesystem is contained on
     device_t* fsDevice;                                         // The filesystem device used by this node
-    driver_t* fsDriver;                                         // The filesystem driver for this mount point
+    fs_driver_t* fsDriver;                                      // The filesystem driver for this mount point
     vfs_node_t* mountRoot;                                      // The VFS node where the filesystem is mounted
 } mountpoint_t;
 
@@ -141,6 +146,25 @@ typedef struct Driver_Registry {
 } driver_registry_t;
 #define REGISTRY_BITMAP_SIZE (65536 / 32)
 #define DEFAULT_REGISTRY_ARRAY_SIZE (128 * 4)                   // Start off with 128 devices and go from there
+
+#define KERNEL_API_VERSION 1
+
+// The kernel API for drivers
+struct kernelapi {
+    unsigned int version;                                                           // The version of the kernel API
+    void* (*halloc)(size_t size);                                                   // Allocate memory from the kernel heap
+    void (*hfree)(void* ptr);                                                       // Free memory from the kernel heap  
+    void* (*rehalloc)(void* ptr, size_t size);                                      // Reallocate memory from the kernel heap
+    page_result_t (*mmap)(virtaddr_t virt, physaddr_t phys, unsigned int flags);    // This "mmap" is actually physpalloc
+    struct vfs_node* (*VfsFindNode)(char* path);                                    // Find a VFS node by its path
+    struct vfs_node* (*VfsMakeNode)(char* name, unsigned int flags, size_t size, unsigned int permissions, uid_t owner, void* data); // Create a VFS node (does not add it to the VFS tree)
+    int (*VfsRemoveNode)(struct vfs_node* node);                                    // Remove a VFS node
+    int (*VfsAddChild)(struct vfs_node* parent, struct vfs_node* child);            // Add a child to a VFS node
+    device_t* (*GetDevice)(device_id_t device);                                     // Get a device by its ID   
+
+    // IN/OUT and string functions should be implemented in the driver (the kernel's versions are static inlines)
+    void (*printk)(const char* str, ...);
+};
 
 // Bitmap manipulation
 index_t FindIndex(uint32_t* bitmap, size_t bitmapSize);
@@ -168,9 +192,14 @@ void UnregisterDriver(driver_t* driver);
 /// @return Success or error code
 dresult_t FindDriver(device_t* device);
 
+fs_driver_t* FindFsDriver(device_t* device);
+
 /// @brief Get a device by its unique device ID
 /// @param device The device ID to get
 /// @return Pointer to the device, or NULL if none
 device_t* GetDeviceByID(device_id_t device);
+
+int LoadModule(driver_t* driver, void* data);
+void UnloadModule(driver_t* driver);
 
 #endif // DEVICES_H

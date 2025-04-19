@@ -144,31 +144,16 @@ struct framebuffer {
 
 typedef int fd_t;
 
-typedef struct {
-    FILESTATUS status;          // Result of the open operation
-    fd_t fd;                    // File descriptor
-} file_result;
-
-struct sysinfo {
-    unsigned int totalMemory;             // Total memory in bytes
-    unsigned int usedMemory;              // Used memory in bytes
-    unsigned int freeMemory;              // Free memory in bytes
-    unsigned long long uptime;            // Uptime in seconds
-    int numProcesses;                     // Number of processes
-    version_t kernelVersion;              // Kernel version string
-    char kernelRelease[64];               // Kernel release string
-    char cpuID[16];                       // CPU ID string
-    _Bool acpiSupported;                  // Whether ACPI is supported
-};
-
-struct p_info {
-    pid_t pid;                            // Process ID
-    pid_t ppid;                           // Parent process ID
-    char name[16];                        // Process name
-    unsigned int state;                   // Process state (running, sleeping, etc.)
-    unsigned int memoryUsage;             // Memory usage in bytes
-    unsigned int heapStart;               // Start address of the heap
-    unsigned int heapSize;                // Size of the heap in bytes
+struct uname {
+    unsigned int totalMemory;                   // Total memory in bytes
+    unsigned int usedMemory;                    // Used memory in bytes
+    unsigned int freeMemory;                    // Free memory in bytes
+    unsigned long long uptime;                  // Uptime in seconds
+    int numProcesses;                           // Number of processes
+    version_t kernelVersion;                    // Kernel version information
+    char kernelRelease[64];                     // Kernel release string
+    char cpuOEM[16];                            // CPU ID string
+    _Bool acpiSupported;                        // Whether ACPI is supported
 };
 
 // TODO: Make a complete set of system call wrappers and helper functions to put here

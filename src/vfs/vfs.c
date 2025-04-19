@@ -297,6 +297,30 @@ fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags
     return context->fd;
 }
 
+fd_t ReplaceFileContext(vfs_node_t* node, file_table_t* table, fd_t oldfd, fd_t newfd){
+    if(newfd > DEFAULT_MAX_FDS || table->openFiles[newfd] != NULL || table->numOpenFiles < oldfd || table->openFiles[oldfd] == NULL){
+        return STANDARD_FAILURE;
+    }
+
+    file_context_t* context = table->openFiles[oldfd];
+    if(context == NULL){
+        return STANDARD_FAILURE;
+    }
+    if(table->arrSize < newfd){
+        table->openFiles = rehalloc(table->openFiles, table->numOpenFiles * sizeof(file_context_t*));
+        if(table->openFiles == NULL){
+            return EMERGENCY_NO_MEMORY;
+        }
+        table->arrSize++;
+    }
+    context->node = node;
+    table->openFiles[oldfd] = NULL;
+    context->fd = newfd;
+    table->openFiles[newfd] = context;
+    table->openFiles[context->fd] = context;
+    return context->fd;
+}
+
 int DestroyFileContext(file_table_t* table, fd_t fd){
     table->numOpenFiles--;
     file_context_t* context = table->openFiles[fd];
