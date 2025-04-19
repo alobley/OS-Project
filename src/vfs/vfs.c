@@ -2,11 +2,6 @@
 #include <alloc.h>
 #include <console.h>
 
-// TODO:
-// - Add mutex checking in the VFS
-// - Implement file reading and writing
-// - Overhaul file descriptors and create a proper file descriptor list
-
 vfs_node_t* root = NULL;
 
 // This is gonna have to move
@@ -61,7 +56,7 @@ char* GetFullPath(vfs_node_t* node) {
     return fullPath;
 }
 
-vfs_node_t* VfsMakeNode(char* name, bool isDirectory, bool readOnly, bool writeOnly, bool isResizeable, size_t size, unsigned int permissions, uid owner, void* data){
+vfs_node_t* VfsMakeNode(char* name, unsigned int flags, size_t size, unsigned int permissions, uid_t owner, void* data){
     vfs_node_t* node = (vfs_node_t*)halloc(sizeof(vfs_node_t));
     memset(node, 0, sizeof(vfs_node_t));
     node->name = strdup(name);
@@ -69,7 +64,7 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, bool readOnly, bool writeO
         hfree(node);
         return NULL;
     }
-    node->isDirectory = isDirectory;
+    node->flags = flags;
     node->size = size;
     node->parent = NULL;
     node->next = NULL;
@@ -78,11 +73,7 @@ vfs_node_t* VfsMakeNode(char* name, bool isDirectory, bool readOnly, bool writeO
     node->created = currentTime;
     node->modified = currentTime;
     node->accessed = currentTime;
-    node->lock = MUTEX_INIT;
     node->data = data;                   // This is a union, so it's safe to do this
-    node->isResizeable = isResizeable;
-    node->readOnly = readOnly;
-    node->writeOnly = writeOnly;
     
     return node;
 }
@@ -108,7 +99,8 @@ vfs_node_t* VfsFindNode(char* path) {
     char* token = strtok(pathCopy, "/");
     
     while (token != NULL) {
-        if (!current->isDirectory) {
+        if (!(current->flags & NODE_FLAG_DIRECTORY)) {
+            // This would account for a kernel bug, since root should be a directory
             hfree(pathCopy);
             return NULL;
         }
@@ -145,7 +137,7 @@ int VfsAddChild(vfs_node_t* parent, vfs_node_t* child) {
     }
 
     // Parent must be a directory
-    if (!parent->isDirectory) {
+    if (!(parent->flags & NODE_FLAG_DIRECTORY)) {
         return STANDARD_FAILURE;
     }
 
@@ -182,7 +174,7 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     if(parent == NULL || child == NULL){
         return STANDARD_FAILURE;
     }
-    if(parent->isDirectory){
+    if(parent->flags & NODE_FLAG_DIRECTORY){
         vfs_node_t* current = parent->firstChild;
         vfs_node_t* prev = NULL;
         while(current != NULL){
@@ -204,41 +196,40 @@ int VfsRemoveChild(vfs_node_t* parent, vfs_node_t* child){
     return STANDARD_FAILURE;
 }
 
-int VfsAddDevice(device_t* device, char* name, char* path){
-    vfs_node_t* node = VfsMakeNode(name, false, false, false, false, 0, 0755, ROOT_UID, device);
+vfs_node_t* VfsAddDevice(device_t* device, char* name, char* path, int permissions){
+    vfs_node_t* node = VfsMakeNode(name, NODE_FLAG_DEVICE, 0, permissions, ROOT_UID, device);
     if(node == NULL){
-        return STANDARD_FAILURE;
+        return NULL;
     }
-    node->isDevice = true;
     VfsAddChild(VfsFindNode(path), node);
 
     device->path = halloc(strlen(path) + strlen(name) + 2);
     if(device->path == NULL){
         hfree(node->name);
         hfree(node);
-        return STANDARD_FAILURE;
+        return NULL;
     }
     memset(device->path, 0, strlen(path) + strlen(name) + 2);
     strcpy(device->path, path);
     strcat(device->path, "/");
     strcat(device->path, name);
-    return STANDARD_SUCCESS;
+    node->device = device;
+    return node;
 }
 
 int VfsRemoveNode(vfs_node_t* node){
     if(node == NULL){
         return STANDARD_FAILURE;
     }
-    if(node->parent != NULL){
-        VfsRemoveChild(node->parent, node);
-    }
-    if(node->isDirectory){
+    if(node->flags & NODE_FLAG_DIRECTORY){
         while(node->firstChild != NULL){
+            // This will be recursively called if there are children of children
             VfsRemoveChild(node, node->firstChild);
         }
     }
-    hfree(node->name);
-    hfree(node);
+    if(node->parent != NULL){
+        VfsRemoveChild(node->parent, node);
+    }
     return STANDARD_SUCCESS;
 }
 
@@ -265,74 +256,55 @@ char* JoinPath(const char* base, const char* path) {
     return result;
 }
 
-file_context_t* CreateFileContext(vfs_node_t* node){
+// Set a bit in the FD bitmap and return its index
+fd_t AllocateFileDescriptor(file_table_t* ft){
+    for(size_t i = 0; i < sizeof(uint32_t) * 2048; i++){
+        if(ft->bitmap[i] != 0xFFFFFFFF){
+            for(size_t j = 0; j < 32; j++){
+                if(!(ft->bitmap[i] & (1 << j))){
+                    ft->bitmap[i] |= 1 << j;
+                    return i * 32 + j;
+                }
+            }
+        }
+    }
+
+    return -1;
+}
+
+void FreeFileDescriptor(fd_t file, file_table_t* table){
+    table->bitmap[file / 32] &= ~(1 << (file % 32));
+}
+
+fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags){
     file_context_t* context = (file_context_t*)halloc(sizeof(file_context_t));
     if(context == NULL){
-        return NULL;
+        return STANDARD_FAILURE;
     }
     memset(context, 0, sizeof(file_context_t));
     context->node = node;
-    context->refCount = 1; // Initially, one reference
-    context->used = true;
-    context->fd = 0;
-    return context;
+    node->refCount++;
+    context->fd = AllocateFileDescriptor(table);
+    table->numOpenFiles++;
+    if(table->arrSize < context->fd){
+        table->openFiles = rehalloc(table->openFiles, table->numOpenFiles * sizeof(file_context_t*));
+        if(table->openFiles == NULL){
+            return EMERGENCY_NO_MEMORY;
+        }
+        table->arrSize++;
+    }
+    table->openFiles[context->fd] = context;
+    return context->fd;
 }
 
-file_list_node_t* CreateListNode(file_context_t* context){
-    file_list_node_t* node = (file_list_node_t*)halloc(sizeof(file_list_node_t));
-    if(node == NULL){
-        return NULL;
-    }
-    memset(node, 0, sizeof(file_list_node_t));
-    node->context = context;
-    node->next = NULL;
-    return node;
-}
-
-file_list_t* CreateFileList(){
-    file_list_t* list = (file_list_t*)halloc(sizeof(file_list_t));
-    if(list == NULL){
-        return NULL;
-    }
-
-    // Create stdin
-    file_list_node_t* node = CreateListNode(CreateFileContext(VfsFindNode("/dev/stdin")));
-    if(node == NULL){
-        hfree(list);
-        return NULL;
-    }
-    node->context->fd = STDIN_FILENO;
-    node->context->used = true;
-    node->context->refCount = 1;
-    list->root = node;
-
-    // Create stdout
-    node->next = CreateListNode(CreateFileContext(VfsFindNode("/dev/stdout")));
-    if(node->next == NULL){
-        hfree(node);
-        hfree(list);
-        return NULL;
-    }
-    node = node->next;
-    node->context->fd = STDOUT_FILENO;
-    node->context->used = true;
-    node->context->refCount = 1;
-
-    // Create stderr
-    node->next = CreateListNode(CreateFileContext(VfsFindNode("/dev/stderr")));
-    if(node->next == NULL){
-        hfree(node);
-        hfree(list);
-        return NULL;
-    }
-    node = node->next;
-    node->context->fd = STDERR_FILENO;
-    node->context->used = true;
-    node->context->refCount = 1;
-    node->next = NULL;
-
-    list->size = 3;
-    return list;
+int DestroyFileContext(file_table_t* table, fd_t fd){
+    table->numOpenFiles--;
+    file_context_t* context = table->openFiles[fd];
+    table->openFiles[fd] == NULL;
+    FreeFileDescriptor(fd, table);
+    context->node->refCount--;
+    hfree(context);
+    return STANDARD_SUCCESS;
 }
 
 void VfsDetachMountpoint(vfs_node_t* mountNode) {
@@ -344,7 +316,7 @@ void VfsDetachMountpoint(vfs_node_t* mountNode) {
     vfs_node_t* child = mountNode->firstChild;
     while (child) {
         child->mountPoint = NULL;
-        if (child->isDirectory) {
+        if(child->flags & NODE_FLAG_DIRECTORY) {
             VfsDetachMountpoint(child);
         }
         child = child->next;
@@ -353,125 +325,6 @@ void VfsDetachMountpoint(vfs_node_t* mountNode) {
     // Don't free the mountpoint - let the filesystem driver do that
     mountNode->mountPoint = NULL;
 }
-
-// Returns a file descriptor
-int AddFileToList(file_list_t* list, file_context_t* context){
-    if(list == NULL || context == NULL){
-        return INVALID_FD;
-    }
-    
-    int lastFd = INVALID_FD;
-    // Before creating a node, try to find an unused node
-    file_list_node_t* current = list->root;
-    file_list_node_t* last = NULL; // Keep track of the last node
-    
-    while(current != NULL){
-        lastFd = current->context->fd;
-        if(current->context == NULL){
-            current->context = context;
-            current->context->used = true;
-            current->context->refCount = 1;
-            return current->context->fd;
-        }
-        last = current; // Update the last node
-        current = current->next;
-    }
-
-    // If no unused node was found, create a new one
-    file_list_node_t* newNode = CreateListNode(context);
-    if(newNode == NULL){
-        return INVALID_FD;
-    }
-    newNode->context->fd = lastFd + 1;
-    newNode->context->used = true;
-    newNode->context->refCount = 1;
-    
-    // Handle case where list is empty
-    if(last == NULL) {
-        list->root = newNode;
-    } else {
-        last->next = newNode;
-    }
-    
-    list->size++;
-    //printk("New file descriptor: %d\n", newNode->context->fd);
-    return newNode->context->fd;
-}
-
-int RemoveFileFromList(file_list_t* list, int fd){
-    if(list == NULL || fd < 0){
-        return INVALID_FD;
-    }
-    file_list_node_t* current = list->root;
-    file_list_node_t* prev = NULL;
-
-    while(current != NULL){
-        if(current->context != NULL && current->context->fd == fd && current->context->refCount == 1){
-            if(prev == NULL){
-                list->root = current->next;
-            }else{
-                prev->next = current->next;
-            }
-            hfree(current->context);
-            hfree(current);
-            list->size--;
-            return STANDARD_SUCCESS;
-        }else{
-            if(current->context != NULL && current->context->fd == fd){
-                current->context->refCount--;
-                prev->next = current->next;
-                if(current->context->refCount == 0){
-                    hfree(current->context);
-                    hfree(current);
-                    list->size--;
-                }
-                hfree(current);
-                return STANDARD_SUCCESS;
-            }
-        }
-        prev = current;
-        current = current->next;
-    }
-    return INVALID_FD;
-}
-
-void DestroyFileList(file_list_t* list){
-    if(list == NULL){
-        return;
-    }
-    file_list_node_t* current = list->root;
-    while(current != NULL){
-        file_list_node_t* next = current->next;
-        hfree(current);
-        current = next;
-    }
-    hfree(list);
-}
-
-file_context_t* FindFile(file_list_t* list, int fd){
-    // Since the file descriptors are added in numerical order, we can just iterate through the list
-    file_list_node_t* current = list->root;
-    if(current == NULL){
-        printk("Current was NULL!\n");
-        return NULL;
-    }
-    // Check if the file descriptor is valid
-    //printk("Searching for file descriptor %d\n", fd);
-    for(size_t i = 0; i < list->size; i++){
-        //printk("File descriptor %d\n", current->context->fd);
-        if(current->context != NULL && current->context->fd == fd){
-            return current->context;
-        }
-        current = current->next;
-    }
-
-    //printk("File descriptor not found!\n");
-    return NULL;
-}
-
-// Function to search for a free file descriptor...
-
-// Function to create a new file and read its data based on its mountpoint (if any)...
 
 // Create the bare minimum needed for a functional VFS on boot
 int InitializeVfs(multiboot_info_t* mbootInfo) {
@@ -492,7 +345,7 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
     rootMount->next = NULL;
     rootMount->mountPoint = NULL;
 
-    root = VfsMakeNode("/", true, false, false, true, 2, 0755, ROOT_UID, NULL);
+    root = VfsMakeNode("/", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(root == NULL){
         return STANDARD_FAILURE;
     }
@@ -502,7 +355,7 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
     int status = 0;
 
     // Make the /dev directory
-    vfs_node_t* dev = VfsMakeNode("dev", true, false, false, true, 0, 0755, ROOT_UID, NULL);
+    vfs_node_t* dev = VfsMakeNode("dev", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(dev == NULL){
         return STANDARD_FAILURE;
     }
@@ -512,7 +365,7 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
     }
 
     // Make the /initrd directory
-    vfs_node_t* initrd = VfsMakeNode("initrd", true, false, false, true, 0, 0755, ROOT_UID, NULL);
+    vfs_node_t* initrd = VfsMakeNode("initrd", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(initrd == NULL){
         return STANDARD_FAILURE;
     }
@@ -522,7 +375,7 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
     }
 
     // Make the /mnt directory
-    vfs_node_t* mnt = VfsMakeNode("mnt", true, false, false, true, 0, 0755, ROOT_UID, NULL);
+    vfs_node_t* mnt = VfsMakeNode("mnt", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(mnt == NULL){
         return STANDARD_FAILURE;
     }
@@ -531,7 +384,7 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
         return STANDARD_FAILURE;
     }
 
-    vfs_node_t* rootmnt = VfsMakeNode("root", true, false, false, true, 0, 0755, ROOT_UID, NULL);
+    vfs_node_t* rootmnt = VfsMakeNode("root", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(rootmnt == NULL){
         return STANDARD_FAILURE;
     }

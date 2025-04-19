@@ -131,6 +131,8 @@ enum Keys {
     F12 = 0x58
 };
 
+typedef void (*KeyboardCallback)(struct ievent event);
+
 // Struct for the OS to determine the PS/2 hardware
 typedef struct PS2Info {
     bool mouseExists;

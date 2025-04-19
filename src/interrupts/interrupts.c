@@ -9,7 +9,9 @@
 #include <acpi.h>
 #include <elf.h>
 #include <gdt.h>
-#include <syscalls.h>
+
+// An array of PCBs that are responsible for interrupts
+pcb_t* interruptOwners[256];
 
 void teststub(){
     return;
@@ -122,698 +124,721 @@ static void regdump(struct Registers* regs){
     printk("CR4: 0x%x\n", cr4);
 }
 
-bool CheckPrivelige(){
-    if(GetCurrentProcess() == NULL){
-        // Is part of the kernel
-        return true;
-    }
-    return GetCurrentProcess()->owner == ROOT_UID;
+uid_t CheckPrivelige(){
+    pcb_t* process = GetCurrentProcess();
+    return process->user;
 }
 
-// System call handler
-// This is what is processed when you perform an ABI call (int 0x30). Work in progress.
-// NOTES: 
-// - The keyboard handler needs to be updated for multitasking in the future
-// - Page directory creation and heap allocation needs to be done for individual tasks. How do tasks know where the heap is? Is it just the bss section?
-// - Need a scheduler (just single-tasking as things stand)
-// - For better multitasking, fork() needs to be implemented and exec() needs to be updated
-// - The syscall handler needs to be updated to handle the new syscall ABI
-// - Should move all the syscalls to other functions to reduce this file's size (2,000 lines is a little big)
+/// @brief The Dedication OS system call handler. This function is called upon int 0x30.
+/// @param regs The CPU state of the calling program
+/// @return Depends on the system call, can be sizes, pointers, file descriptors, or success/error codes
 static HOT void syscall_handler(struct Registers *regs){
-    sti
-    int result;
-    if(!CheckPrivelige() && regs->eax >= SYS_MODULE_LOAD){
-        // Better to check once at the beginning rather than checking every time
-        // Why not just return DRIVER_ACCESS_DENIED?
-        //printk("Unpriveliged Application requesting system resources. Killing process.\n");
-        // Log the error
-        
-        // Kill the process
-        exit(SYSCALL_FAULT_DETECTED);
-        return;
-    }
+    pcb_t* currentProcess = GetCurrentProcess();
+    currentProcess->inSyscall = true;
     switch(regs->eax){
-        case SYS_DBG: {
-            // SYS_DBG
-            printk("Syscall Debug!\n");
-            regs->eax = 0xFEEDBEEF;
+        case SYS_DBG:{
+            printk("Syscall debug!\n");
+            regs->eax = 0xDEADBEEF;
             break;
         }
-        case SYS_INSTALL_KBD_HANDLE: {
-            // SYS_INSTALL_KBD_HANDLE
-            // EBX contains the pointer to the callback function
-            // Installs a keyboard callback on the first keyboard in the system. For more keyboards developers will have to open the keyboard device and install a callback.
-            kb_handle_install(regs);
 
-            break;
-        }
-        case SYS_REMOVE_KBD_HANDLE: {
-            // SYS_REMOVE_KBD_HANDLE
-            // EBX contains the pointer to the callback function
-            // Removes a keyboard callback
-            kb_handle_remove(regs);
-
-            break;
-        }
         case SYS_WRITE:{
-            // SYS_WRITE
-            // EBX contains the file descriptor
-            // ECX contains the pointer to the data to write
-            // EDX contains the number of bytes to write
-            // EAX contains the result
-            // Write data to a file descriptor
-            sys_write(regs);
+            // SYS_WRITE - write data to a file descriptor
+            // EBX = fd
+            // ECX = Pointer to the data buffer
+            // EDX = Size of the data buffer in bytes
 
-            break;
-        }
-        case SYS_READ:{
-            // SYS_READ
-            // EBX contains the file descriptor
-            // ECX contains the pointer to the buffer to read into (found using the open syscall)
-            // EDX contains the number of bytes to read
-            // Read data from a file descriptor
-            sys_read(regs);
+            // Returns: (ssize_t) bytes written
 
-            break;
-        }
-        case SYS_OPEN: {
-            // SYS_OPEN
-            // Open a file from the VFS
-            // EBX contains the pointer to the path of the file
-            // ECX contains the flags to open the file with
-            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
-            if(node == NULL || node->isDirectory){
-                // If the node is not found or is a directory, return an error
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            MutexLock(&node->lock);
-            volatile pcb_t* currentProcess = GetCurrentProcess();
-            file_context_t* context = CreateFileContext(node);
-            if(context == NULL){
-                // If the context is not created, return an error
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            AddFileToList(currentProcess->fileList, context);
+            // TODO: change this to page remapping or something so the kernel doesn't have to relay data (that's super inefficient and a security risk)
 
-            regs->eax = STANDARD_SUCCESS;
-            regs->ebx = context->fd; // Return the file descriptor
-
-            // EAX will contain the result
-            // EBX will contain the file descriptor
-            break;
-        }
-        case SYS_CLOSE: {
-            // SYS_CLOSE
-            // Close a file
-            // EBX contains the file descriptor to close
-            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
-            if(context == NULL){
-                // If the context is not found, return an error
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            // Remove the file from the list
-            if(RemoveFileFromList(GetCurrentProcess()->fileList, context->fd) == INVALID_FD){
-                // If the file is not removed, return an error
-                regs->eax = FILE_NOT_FOUND;
-                break;
-            }
-            // Free the context
-            if(context->refCount == 0){
-                // If the reference count is 1, free the context
-                hfree(context);
+            if(regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
             }
 
-            regs->eax = SYSCALL_SUCCESS;
-            regs->ebx = 0; // Just in case
-            
-            break;
-        }
-        case SYS_SEEK:
-            // SYS_SEEK
-            // EBX contains the file descriptor
-            // ECX contains the offset to seek to
-            // EDX contains the whence (0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END)
-            // Seek to a position in a file
-            // Will return the new offset or 0xFFFFFFFF (-1) if the seek failed
-            file_context_t* context = FindFile(GetCurrentProcess()->fileList, regs->ebx);
-            if(context == NULL){
-                regs->eax = FILE_INVALID_OFFSET;
-                break;
-            }
-            switch(regs->edx){
-                case SEEK_SET:
-                    if(regs->ecx > context->node->size){
-                        regs->eax = FILE_INVALID_OFFSET;
-                    }
-                    context->node->offset = regs->ecx;
-                    regs->eax = context->node->offset;
-                    break;
-                case SEEK_CUR:
-                    if(context->node->offset += regs->ecx > context->node->size){
-                        regs->eax = FILE_INVALID_OFFSET;
-                    }else{
-                        context->node->offset += regs->ecx;
-                        context->node->offset;
-                    }
-                    break;
-                case SEEK_END:
-                    context->node->offset = context->node->size;
-                    regs->eax = context->node->offset;
-                    break;
-            }
-            break;
-        case SYS_ISTAT: {
-            // SYS_STAT
-            // EBX contains a pointer to the directory
-            // ECX is the number of the node to read (its position in the directory)
-            // EDX is a pointer to the buffer to read into
-            // Read node information from the given directory (or the current directory if none given)
-            sys_istat(regs);
+            if(currentProcess->fileTable->openFiles[regs->ebx] != NULL && currentProcess->fileTable->openFiles[regs->ebx]->node->data != NULL){
+                file_table_t* table = currentProcess->fileTable;
+                file_context_t* context = table->openFiles[regs->ebx];
+                vfs_node_t* node = context->node;
 
-            break;
-        }
-        case SYS_INSTALL_TIMER_HANDLE:{
-            // SYS_INSTALL_TIMER_HANDLE
-            // EBX contains the pointer to the callback function
-            // ECX contains the interval in milliseconds
-            // Installs a timer callback on the system timer
-            AddTimerCallback((timer_callback_t)regs->ebx, (uint64_t)regs->ecx);
-            regs->eax = SYSCALL_SUCCESS;
-            regs->ebx = 0; // Just in case
-
-            break;
-        }
-        case SYS_REMOVE_TIMER_HANDLE:{
-            // SYS_REMOVE_TIMER_HANDLE
-            // EBX contains the pointer to the callback function
-            // Removes a timer callback on the system timer
-            RemoveTimerCallback((timer_callback_t)regs->ebx);
-
-            break;
-        }
-        case SYS_EXIT: {
-            // SYS_EXIT
-            // EBX contains the exit code
-            // Exit a process and return to parent
-
-            //cli
-        
-            volatile pcb_t* currentProcess = GetCurrentProcess();
-            
-            // Get the parent process
-            volatile pcb_t* parentProcess = currentProcess->parent;
-            if (parentProcess == NULL) {
-                printk("KERNEL PANIC: NO PARENT PROCESS!\n");
-                regdump(regs);
-                STOP
-            }
-            
-            // Store exit code in parent's EAX register
-            parentProcess->regs->eax = regs->ebx;
-            
-            // Destroy the current process BEFORE switching to prevent memory leaks
-            // Unpage the old process's memory and stack
-
-            //printk("Exiting process\n");
-            
-            // Read the file data from the VFS and unpage the memory
-            //printk("Searching for file %s\n", currentProcess->executablePath);
-            vfs_node_t* file = VfsFindNode(currentProcess->executablePath);
-            if(file == NULL){
-                printk("Error: failed to find file\n");
-                regs->eax = SYSCALL_TASKING_FAILURE;
-                break;
-            }
-
-            //printk("Freeing executable path\n");
-            hfree(currentProcess->executablePath);
-
-            // Unpage the memory by reading the ELF
-            Elf32_Ehdr* elfHeader = (Elf32_Ehdr*)file->data;
-            Elf32_Phdr* programHeader = (Elf32_Phdr*)((uintptr_t)elfHeader + elfHeader->programHeaderOffset);
-            for(uint32_t i = 0; i < elfHeader->programHeaderEntryCount; i++){
-                if(programHeader[i].type == PT_LOAD){
-                    // Unmap the memory
-                    virtaddr_t alignedAddress = programHeader[i].virtualAddress & 0xFFFFF000;
-                    for(size_t j = 0; j < programHeader[i].memorySize; j += PAGE_SIZE){
-                        // Unmap the page
-                        //printk("Unpaging page at 0x%x\n", alignedAddress + j);
-                        pfree(alignedAddress + j);
-                    }
-                }
-            }
-
-            // Unpage the stack
-            for(size_t i = 0; i < 2; i ++){
-                // Unmap the page
-                //printk("Unpaging stack page at 0x%x\n", currentProcess->stackBase + i);
-                pfree(currentProcess->stackBase + (i * PAGE_SIZE));
-            }
-
-            //printk("Freeing file data\n");
-            hfree(file->data);
-
-            //printk("Destroying process\n");
-            DestroyProcess(currentProcess);
-
-            // Switch to the parent process first (important to do this before changing registers)
-            SetCurrentProcess(parentProcess);
-
-            //printk("All done!\n");
-            
-            // Now copy the saved parent registers to regs
-            //*regs = *parentProcess->regs;
-            memcpy(regs, parentProcess->regs, sizeof(struct Registers));
-            
-            break;
-        }
-        case SYS_FORK:
-            // SYS_FORK
-            // Fork a process
-            // Create a new PCB and copy everything about the process except the page directory
-            // Allocate a new page directory for the new process
-            // Switch to the new PCB
-            // Return the PID of the new process to the parent
-            // Return 0 to the child
-            break;
-        case SYS_EXEC:{
-            // SYS_EXEC
-            // EBX contains the pointer to the path of the executable
-            // ECX contains the pointer to the arguments
-            // EDX contains the pointer to the environment variables
-            // ESI contains the number of arguments
-            // Execute a new process (replaces current process)
-            // Load the next process
-            // Keep the PCB of the caller but modify it and replace it with what the new process needs
-
-            sys_exec(regs);
-
-            break;
-        }
-        case SYS_WAIT_PID:
-            // SYS_WAIT
-            // EBX contains the PID to wait for
-            // Wait for a process to exit
-            // Set the calling process to waiting
-            // When the child exits, return the exit code
-            break;
-        case SYS_GET_PID:
-            // SYS_GET_PID
-            // Get the PID of the current process
-            regs->eax = (uint32_t)GetCurrentProcess()->pid;
-            break;
-        case SYS_GET_PPID:
-            // SYS_GET_PPID
-            // Get the PID of the parent process
-            regs->eax = (uint32_t)GetCurrentProcess()->parent->pid;
-            break;
-        case SYS_GETCWD:
-            // SYS_GETCWD
-            // Gets own process PCB
-            // EBX contains the buffer to write the PCB to.
-            // ECX contains the length of the buffer (could be a security risk - a malicious application can simply make this too big. But this is a getter and not a setter.)
-
-            // How can I get the length I need? Do I just have to deal with this?
-            if(regs->ebx == 0 || regs->ecx == 0){
-                regs->eax = STANDARD_FAILURE;
-            }else{
-                if(regs->ecx >= strlen(GetCurrentProcess()->workingDirectory)){
-                    strcpy((char*)regs->ebx, GetCurrentProcess()->workingDirectory);
-                    regs->eax = STANDARD_SUCCESS;
-                }else{
-                    // Buffer is too small
-                    regs->eax = STANDARD_FAILURE;
-                }
-            }
-            break;
-        case SYS_CHDIR:
-            // SYS_CHDIR
-            // Change the current working directory
-            // EBX contains the pointer to the new directory
-            // Change the current working directory of the process
-
-            volatile pcb_t* currentProcess = GetCurrentProcess();
-            char* dir = (char*)regs->ebx;
-            if(dir == NULL || strlen(dir) == 0){
-                // No directory specified
-                regs->eax = SYSCALL_FAILURE;
-                break;
-            }
-
-            vfs_node_t* current = VfsFindNode(currentProcess->workingDirectory);
-            if(current == NULL){
-                regs->eax = SYSCALL_FAILURE;
-                break;
-            }
-            if(!current->isDirectory){
-                regs->eax = SYSCALL_FAILURE;
-                break;
-            }
-            
-            if(strcmp(dir, "..") == 0 && current->parent != NULL){
-                hfree(currentProcess->workingDirectory);
-                currentProcess->workingDirectory = GetFullPath(current->parent);
-                regs->eax = SYSCALL_SUCCESS;
-                break;
-            }else if(strcmp(dir, ".") == 0){
-                regs->eax = SYSCALL_SUCCESS;
-                break;
-            }
-            
-            char* fullPath = JoinPath(currentProcess->workingDirectory, dir);
-            vfs_node_t* newDir = VfsFindNode(fullPath);
-            if(newDir != NULL && newDir->isDirectory){
-                hfree(currentProcess->workingDirectory);
-                currentProcess->workingDirectory = GetFullPath(newDir);
-                hfree(fullPath);
-                regs->eax = SYSCALL_SUCCESS;
-            }else{
-                hfree(fullPath);
-                regs->eax = SYSCALL_FAILURE;
-            }
-            break;
-        case SYS_SLEEP:
-            // SYS_SLEEP
-            // EBX contains the low 32 bits of the amount of time to sleep in milliseconds
-            // ECX contains the high 32 bits of the amount of time to sleep in milliseconds
-            // Sleep for a certain amount of time
-
-            // The sleep function will need to be implemented in the scheduler. Busy waiting can be fine because the scheduler will preemptively multitask to something else
-            busysleep((uint64_t)regs->ebx | ((uint64_t)regs->ecx << 32));
-            break;
-        case SYS_GET_TIME:
-            // SYS_GET_TIME
-            // Get the time struct from the kernel
-            // EBX contains the pointer to the time struct to copy the time into
-            if(regs->ebx != 0){
-                memcpy((datetime_t*)regs->ebx, &currentTime, sizeof(datetime_t));
-                regs->eax = STANDARD_SUCCESS;
-            }else{
-                regs->eax = STANDARD_FAILURE;
-            }
-            break;
-        case SYS_KILL:
-            // SYS_KILL
-            // EBX: contains the PID of the process to kill (must either be executed by root or the owner of the process)
-            // Kill a process
-
-            // Find the process by its PID
-            // Kill the calling process
-            break;
-        case SYS_YIELD:
-            // SYS_YIELD
-            // Context switching (The kernel can also call this to preemptively multitask)
-
-            // Yield the CPU
-            SwitchProcess(false, regs);
-            break;
-        case SYS_PIPE:
-            // Create a new file for reading and another one for writing but don't add it to the VFS or write it to the disk. It's specifically for inter-process communication.
-            break;
-        case SYS_DUP2:
-            // SYS_DUP2
-            // Replace and duplicate a file descriptor
-            // EBX contains the old file descriptor
-            // ECX contains the new file descriptor
-            // Replace the old file descriptor with the new one
-            break;
-        case SYS_MMAP:
-            // SYS_MMAP
-            // Map memory pages to a given virtual address (should this and munmap be priveliged?)
-            // EBX contains the pointer to the virtual address to map to
-            // ECX contains the size of the memory to map
-            // EDX contains the flags (read, write, execute)
-
-            // Make sure to check that the memory to page is allowed to be used by the process, is not already paged, and is page-aligned
-
-            // DON'T FORGET TO OR EAX WITH THE ALLOWED FLAGS - THIS IS A SECURITY CONCERN
-            break;
-        case SYS_MUNMAP:
-            // SYS_MUNMAP
-            // Unmap memory pages from a given virtual address - thus allowing the system more free memory to use
-            // EBX contains the pointer to the virtual address to unmap from
-            // ECX contains the size of the memory to unmap
-
-            // Make sure the passed address to unmap is paged and page-aligned (pretty sure pfree already does that - need to check)
-            break;
-        case SYS_BRK:
-            // SYS_BRK
-            // Change the heap size
-            // EBX contains the new size of the heap
-            // Note: new heap allocations should be a multiple of PAGE_SIZE
-
-
-            // Change the heap size of the process by paging some memory to the area
-            break;
-        case SYS_MPROTECT:
-            // SYS_MPROTECT
-            // Change the protection of memory pages
-            // EBX contains the pointer to the virtual address to change the protection of
-            // ECX contains the size of the memory to change the protection of
-            // EDX contains the new protection flags (read, write, execute)
-
-            // Make sure the passed address to change is paged and page-aligned and also is allowed to be changed by this process (don't want to change up the kernel's memory)
-            break;
-        case SYS_REGDUMP:
-            // SYS_REGDUMP
-            // Dump the CPU's registers to the console for debugging reasons
-            regdump(regs);
-            break;
-        case SYS_SYSINFO:
-            // SYS_SYSINFO
-            // EBX contains the pointer to the sysinfo struct to copy the info into
-            // Get system information
-            if(regs->ebx == 0){
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-            struct sysinfo* info = (struct sysinfo*)regs->ebx;
-            info->uptime = GetTicks() / 1000; // Convert to seconds
-            info->totalMemory = totalMemSize;
-            info->usedMemory = mappedPages * PAGE_SIZE;
-            info->freeMemory = (totalMemSize - (mappedPages * PAGE_SIZE));
-            info->numProcesses = 0; // TODO: Implement this
-            memcpy(&info->kernelVersion, &kernelVersion, sizeof(version_t));
-            memcpy(info->kernelRelease, kernelRelease, strlen(kernelRelease) + 1);
-            info->acpiSupported = acpiInfo.exists;
-            uint32_t eax = 0;
-            uint32_t others[4] = {0};
-            cpuid(eax, others[0], others[1], others[2]);
-            memcpy(info->cpuID, others, sizeof(others));
-            regs->eax = STANDARD_SUCCESS;
-            break;
-        
-
-
-        // Priveliged system calls for drivers and kernel modules (privelige check required, will check PCB)
-        // Note - these will always be the highest system calls.
-        // Microkernel for now? Is it easier? What about speed?
-        case SYS_MODULE_LOAD:
-            // EBX contains a pointer to the driver struct
-            // ECX contains a pointer to the device the driver is aquiring
-
-            if(regs->ebx == 0){
-                // NULL pointer passed
-                regs->eax = DRIVER_FAILURE;
-                break;
-            }
-
-            // Get the driver's PCB and set the proper flags
-            volatile pcb_t* driverPCB = GetCurrentProcess();
-            if(driverPCB != kernelPCB){
-                driverPCB->state = DRIVER;
-                driverPCB->timeSlice = 0; // No time slice for drivers
-            }
-
-            regs->eax = RegisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
-
-            break;
-        case SYS_MODULE_UNLOAD:
-            // SYS_MODULE_UNLOAD
-            // Remove a driver and delete its entry in the device registry
-            // EBX contains a pointer to the driver struct
-            // ECX contains a pointer to the device the driver is in charge of
-            if((driver_t*)regs->ebx == NULL || ((driver_t*)regs->ebx)->driverProcess != GetCurrentProcess()){
-                // NULL pointer passed or the driver is not the current process (a driver can only unload itself)
-                regs->eax = DRIVER_FAILURE;
-                break;
-            }
-            regs->eax = UnregisterDriver((driver_t*)regs->ebx, (device_t*)regs->ecx);
-            break;
-        case SYS_ADD_VFS_DEV:
-            // SYS_ADD_VFS_DEV
-            // Add a device entry to the VFS
-            // EBX contains a pointer to the device to add to the VFS
-            // ECX contains the device name
-            // EDX contains the path to add the device to (i.e. /dev)
-            if(strncmp((char*)regs->edx, "/dev", 4) == 0){
-                // Add the device to the VFS
-                int result = VfsAddDevice((device_t*)regs->ebx, (char*)regs->ecx, (char*)regs->edx);
-                regs->eax = result;
-            }else{
-                printk("Error: a path outside of /dev is against the rules!\n");
-                regs->eax = STANDARD_FAILURE;
-            }
-            break;
-        case SYS_MODULE_QUERY:
-            // SYS_MODULE_QUERY
-            // Probe a kernel module
-            // This is important for drivers that add new devices that can use other drivers. A disk driver, for example, may need a filesystem driver to read from the disk.
-            // EBX contains a pointer to the driver struct
-            // ECX contains a pointer to the device that we are querying
-
-            if((driver_t*)regs->ebx == NULL){
-                // NULL pointer passed
-                regs->eax = STANDARD_FAILURE;
-                break;
-            }
-
-            regs->eax = ((driver_t*)regs->ebx)->probe((device_t*)regs->ecx);
-            break;
-        case SYS_FIND_MODULE:
-            // SYS_FIND_MODULE
-            // Find a module by its supported devices
-            // EBX contains the pointer to the device to find the driver for
-            // ECX contains the type of device to find support for
-            regs->eax = (uintptr_t)FindDriver((device_t*)regs->ebx, (DEVICE_TYPE)regs->ecx);
-
-            break;
-        case SYS_REGISTER_DEVICE:
-            // SYS_REGISTER_DEVICE
-            // EBX contains a pointer to the device to register
-            regs->eax = RegisterDevice((device_t*)regs->ebx);
-
-            // Check the module type and load it
-            // Do what is neccecary for the type of module (device, filesystem, etc.)
-            break;
-        case SYS_UNREGISTER_DEVICE:
-            // SYS_UNREGISTER_DEVICE
-            // EBX contains a pointer to the struct containing the device data
-            regs->eax = UnregisterDevice((device_t*)regs->ebx);
-
-            // The driver is responsible for its own memory management
-            break;
-        case SYS_GET_DEVICE:
-            // SYS_GET_DEVICE
-            // EBX contains a pointer to the path of the device to get
-            regs->eax = (uintptr_t)GetDeviceFromVfs((char*)regs->ebx);
-            break;
-        case SYS_REQUEST_IRQ:
-            // SYS_REQUEST_IRQ
-            // EBX contains the IRQ number to request
-            // ECX contains a pointer to the handler function
-            regs->eax = InstallIRQ(regs->ebx, (void(*)(struct Registers*))regs->ecx);
-            break;
-        case SYS_RELEASE_IRQ:
-            // SYS_RELEASE_IRQ
-            // EBX contains the IRQ number to release
-            
-            // Disable the IRQ in the PIC
-            // Is there a way to check owned IRQs or should drivers just be absolutely certain they're setting the right IRQ?
-            regs->eax = RemoveIRQ(regs->ebx);
-            break;
-        case SYS_DRIVER_MMAP:{
-            // SYS_DRIVER_MMAP
-            // EBX contains the physical address to map
-            // ECX contains the virtual address to map to
-            // EDX contains the flags (read, write, execute
-            // ESI contains the size of the region to map
-
-            int result = 0;
-            for(size_t i = 0; i < (size_t)regs->esi; i += PAGE_SIZE){
-                result = physpalloc((physaddr_t)(regs->ebx + i), (virtaddr_t)(regs->ecx + i), regs->edx);
-                if(result != STANDARD_SUCCESS){
-                    break;
-                }
-            }
-
-            regs->eax = result;
-
-            // Page a memory region for a driver to access
-            // Make sure already mapped regions are not overwritten (palloc already has this functionality)
-            break;
-        }
-        case SYS_DRIVER_MUNMAP:{
-            // SYS_DRIVER_MUNMAP
-            // EBX contains the virtual address to unmap
-            // ECX contains the size of the region to unmap
-            int result = 0;
-            for(size_t i = 0; i < (size_t)regs->ecx; i += PAGE_SIZE){
-                result = user_pfree((virtaddr_t)(regs->ebx + i));
-                if(result != STANDARD_SUCCESS){
-                    break;
-                }
-            }
-
-            regs->eax = result;
-
-            // Unmap/Unpage a memory region for a driver to access
-            break;
-        }
-        case SYS_IO_PORT_READ:{
-            // SYS_IO_PORT_READ
-            // EBX contains the port to read from
-            // ECX contains the size of the read (1, 2, or 4 bytes)
-
-            switch(regs->ecx){
-                case 8:
-                    regs->eax = inb(regs->ebx);
-                    break;
-                case 16:
-                    regs->eax = inw(regs->ebx);
-                    break;
-                case 32:
-                    regs->eax = inl(regs->ebx);
-                    break;
-                default:
-                    regs->eax = DRIVER_INVALID_ARGUMENT;
-                    break;
-            }
-            break;
-        }
-        case SYS_IO_PORT_WRITE: {
-            // SYS_IO_PORT_WRITE
-            // EBX contains the port to write to
-            // ECX contains the size of the write (1, 2, or 4 bytes)
-            // EDX contains the value to write
-
-            switch(regs->ecx){
-                case 8:
-                    outb(regs->ebx, regs->edx);
-                    break;
-                case 16:
-                    outw(regs->ebx, regs->edx);
-                    break;
-                case 32:
-                    outl(regs->ebx, regs->edx);
-                    break;
-                default:
-                    regs->eax = DRIVER_INVALID_ARGUMENT;
+                if((node->flags & NODE_FLAG_RO) || (!(node->permissions & S_IROTH) && !(currentProcess->user == node->owner))  || (context->flags & O_RDONLY)){
+                    regs->eax = SYSCALL_ACCESS_DENIED;
                     return;
+                }
+
+                if(node == NULL || node->data == NULL){
+                    // We somehow got a NULL file (they are read upon the first SYS_OPEN or contain device data)
+                    regs->eax = SYSCALL_FAILURE;
+                    return;
+                }
+
+                // Lock the node (resizing can clobber pointers and device use should be done one process at a time)
+                while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                    do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+                }
+
+                if(node->flags & NODE_FLAG_DEVICE){
+                    device_t* device = node->device;
+
+                    // Lock the device's mutex as well - although the VFS node's mutex was probably enough.
+                    while(MLock(&device->lock, currentProcess) == SEM_LOCKED){
+                        do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+                    }
+
+                    void* ptr = halloc(regs->edx);
+                    if(ptr == NULL){
+                        regs->eax = SYSCALL_OUT_OF_MEMORY;
+                        MUnlock(&node->lock);
+                        return;
+                    }
+                    memset(ptr, 0, regs->edx);
+                    memcpy(ptr, (void*)regs->ecx, regs->edx);
+
+                    if(device == NULL || device->driver == NULL || device->ops.write == NULL){
+                        regs->eax = SYSCALL_INVALID_ARGUMENT;
+                        hfree(ptr);
+                        MUnlock(&node->lock);
+                        MUnlock(&device->lock);
+                        return;
+                    }
+
+                    if(device->kernel_buffer != NULL){
+                        // Just in case the last use of this was not freed
+                        hfree(device->kernel_buffer);
+                        device->kernel_buffer = NULL;
+                    }
+
+                    // The driver is busy and somehow we made it here
+                    if(device->driver->owner->using != NULL){
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        MUnlock(&device->lock);
+                        MUnlock(&node->lock);
+                        regs->eax = SYSCALL_ACCESS_DENIED;
+                        return;
+                    }
+
+                    device->kernel_buffer = ptr;                                    // Set a pointer for deallocation when the driver yields
+                    device->driver->owner->using = device;
+
+                    if(device->driver->in_kernel){
+                        // The driver is part of the kernel, do a simple function call
+                        regs->eax = device->ops.write(ptr, regs->edx);
+                        memcpy((void*)regs->ecx, ptr, regs->edx);
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        device->driver->owner->using = NULL;
+                        MUnlock(&device->lock);
+                        MUnlock(&node->lock);
+                        return;
+                    }
+
+                    size_t size = regs->edx;
+                    device_id_t deviceID = device->id;
+                    pcb_t* caller = currentProcess;
+                    device->caller = caller;
+                    currentProcess->state = WAITING;
+                    
+                    // Switch to the driver for the device - will return when the original process is switched back to.
+                    ContextSwitch(regs, device->driver->owner);
+
+                    currentProcess = GetCurrentProcess();
+
+                    // Allow for easy re-retrieval later
+                    currentProcess->using = device;
+
+                    // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
+                    // because this is where the region from previous uses is freed.
+                    int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
+                    if(result == STANDARD_FAILURE){
+                        ContextSwitch(regs, caller);                    // Switch back to the caller
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        device->driver->owner->using = NULL;
+                        caller->state = RUNNING;
+                        device->caller = NULL;
+                        regs->eax = SYSCALL_FAILURE;
+                        return;
+                    }else if(result == EMERGENCY_NO_MEMORY){
+                        ContextSwitch(regs, caller);                    // Return to the caller
+                        UnregisterDriver(device->driver);               // Remove the offending driver
+                        DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
+                        hfree(ptr);
+                        device->caller = NULL;
+                        device->kernel_buffer = NULL;
+                        device->driver->owner->using = NULL;
+                        caller->state = RUNNING;
+
+                        regs->eax = SYSCALL_OUT_OF_MEMORY;
+                        return;
+                    }
+
+                    void* userptr = currentProcess->regions[currentProcess->numRegions - 1]->start;
+                    memcpy(ptr, userptr, regs->edx);
+
+                    // We don't need the kernel buffer anymore
+                    hfree(ptr);
+
+                    // Reset the driver's stack (the stack will just grow larger and larger every time if I don't)
+                    regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
+
+                    // Push the arguments in reverse order onto the user-mode stack - write(ptr, size)
+                    UserPush(regs->user_esp, size);
+                    UserPush(regs->user_esp, userptr);
+                    regs->eip = device->ops.write;
+
+                    // The driver will be expected to put a return code or the number of bytes read into EAX before yielding again (the C API will abstract this)
+
+                    // The process can be retrieved again from the owner of the device's mutex lock, and the PCB of the driver contains a pointer to the device being used
+
+                    break;
+                }
+
+                if(context->offset + regs->edx <= node->size && !(node->flags & NODE_FLAG_RO)){
+                    // The remaining space in the file is large enough to write the new data and the file is not read only
+                    memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
+                    context->offset += regs->edx;
+                    regs->eax = regs->edx;
+                }else if((node->flags & NODE_FLAG_RESIZEABLE) && !(node->flags & NODE_FLAG_RO)){
+                    // The size to write goes beyond the bounds of the file but it's resizeable
+                    node->data = rehalloc(node->data, context->offset + regs->edx);
+                    memcpy(node->data + context->offset, (void*)regs->ecx, regs->edx);
+                    node->size = context->offset + regs->edx;
+                    context->offset += regs->edx;
+                    regs->eax = regs->edx;
+                }else if(!(node->flags & NODE_FLAG_RO)){
+                    // Not resizeable and too small, just write as much as we can
+                    memcpy(node->data + context->offset, (void*)regs->ecx, node->size - context->offset);
+                    regs->eax = node->size - context->offset;
+                }else{
+                    // File is read-only
+                    regs->eax = SYSCALL_ACCESS_DENIED;
+                }
+
+                // Unlock the node
+                MUnlock(&node->lock);
+            }else{
+                // Invalid fd or unopened file somehow got aquired
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+            }
+            break;
+        }
+
+        case SYS_READ:{
+            // SYS_READ - read data from a file descriptor
+            // EBX = fd
+            // ECX = pointer to the data buffer
+            // EDX = size of the data buffer in bytes
+
+            // Returns: (ssize_t) bytes read - negative on error
+
+            // TODO: change this to page remapping or something so the kernel doesn't have to relay data
+
+            if(regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
             }
 
-            regs->eax = DRIVER_SUCCESS;
+            if(currentProcess->fileTable->openFiles[regs->ebx] != NULL && currentProcess->fileTable->openFiles[regs->ebx]->node->data != NULL){
+                file_table_t* table = currentProcess->fileTable;
+                file_context_t* context = table->openFiles[regs->ebx];
+                vfs_node_t* node = context->node;
+
+                if(node == NULL || node->data == NULL){
+                    regs->eax = SYSCALL_FAILURE;
+                    return;
+                }
+
+                if((node->flags & NODE_FLAG_WO) || (!(node->permissions & S_IROTH) && !(currentProcess->user == node->owner)) || (context->flags & O_WRONLY)){
+                    // Node is write-only or caller doesn't have the right permissions
+                    regs->eax = SYSCALL_ACCESS_DENIED;
+                    return;
+                }
+
+                while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                    do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+                }
+
+                if(node->flags & NODE_FLAG_DEVICE){
+                    device_t* device = node->device;
+
+                    while(MLock(device->lock, currentProcess) == SEM_LOCKED){
+                        do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+                    }
+
+                    // The kernel buffer that will be copied to
+                    void* ptr = halloc(regs->edx);
+                    if(ptr == NULL){
+                        regs->eax = SYSCALL_OUT_OF_MEMORY;
+                        return;
+                    }
+                    memset(ptr, 0, regs->edx);
+                    memcpy(ptr, (void*)regs->ecx, regs->edx);
+
+                    if(device == NULL || device->driver == NULL || device->ops.read == NULL || (node->flags & NODE_FLAG_RO)){
+                        regs->eax = SYSCALL_INVALID_ARGUMENT;
+                        MUnlock(&node->lock);
+                        MUnlock(&device->lock);
+                        return;
+                    }
+
+                    if(device->kernel_buffer != NULL){
+                        // Just in case the last use of this was not freed
+                        hfree(device->kernel_buffer);
+                        device->kernel_buffer = NULL;
+                    }
+
+                    // The driver is busy and we somehow made it here
+                    if(device->driver->owner->using != NULL){
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        MUnlock(&device->lock);
+                        MUnlock(&node->lock);
+                        regs->eax = SYSCALL_ACCESS_DENIED;
+                        return;
+                    }
+
+                    device->kernel_buffer = ptr;                                    // Set a pointer for deallocation when the driver yields
+
+                    if(device->driver->in_kernel){
+                        // The driver is part of the kernel, do a simple function call
+                        regs->eax = device->ops.read(ptr, regs->edx);
+                        memcpy((void*)regs->ecx, ptr, regs->edx);
+                        hfree(ptr);
+                        device->driver->owner->using = NULL;
+                        device->kernel_buffer = NULL;
+                        MUnlock(&device->lock);
+                        MUnlock(&node->lock);
+                        return;
+                    }
+
+                    size_t size = regs->edx;
+                    device_id_t deviceID = device->id;
+                    pcb_t* caller = currentProcess;
+                    currentProcess->state = WAITING;
+                    device->caller = caller;
+                    
+                    // Switch to the driver for the device - will return when the original process is switched back to.
+                    ContextSwitch(regs, device->driver->owner);
+
+                    currentProcess = GetCurrentProcess();
+
+                    // Allow for easy re-retrieval later
+                    currentProcess->using = device;
+
+                    // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
+                    // because this is where the region from previous uses is freed.
+                    int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
+                    if(result == STANDARD_FAILURE){
+                        MUnlock(&node->lock);
+                        MUnlock(&device->lock);
+                        ContextSwitch(regs, caller);                    // Switch back to the caller
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        device->driver->owner->using = NULL;
+                        device->caller = NULL;
+                        caller->state = RUNNING;
+                        regs->eax = SYSCALL_FAILURE;
+                        return;
+                    }else if(result == EMERGENCY_NO_MEMORY){
+                        ContextSwitch(regs, caller);                    // Return to the caller
+                        UnregisterDriver(device->driver);               // Remove the offending driver
+                        DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
+                        MUnlock(&node->lock);
+                        MUnlock(&device->lock);
+                        hfree(ptr);
+                        device->kernel_buffer = NULL;
+                        device->driver->owner->using = NULL;
+                        device->caller = NULL;
+                        caller->state = RUNNING;
+                        regs->eax = SYSCALL_OUT_OF_MEMORY;
+                        return;
+                    }
+
+                    void* userptr = currentProcess->regions[currentProcess->numRegions - 1]->start;
+                    memcpy(ptr, userptr, regs->edx);
+
+                    // We don't need the kernel buffer anymore
+                    hfree(ptr);
+
+                    // Push the arguments in reverse order onto the user-mode stack - read(ptr, size)
+                    regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
+                    UserPush(regs->user_esp, size);
+                    UserPush(regs->user_esp, userptr);
+                    regs->eip = device->ops.read;
+
+                    // The driver will be expected to put a return code into EAX before yielding again (the C API will abstract this)
+
+                    // The process can be retrieved again from the owner of the device's mutex lock, and the PCB of the driver contains a pointer to the device being used
+
+                    break;
+                }
+
+                if(context->offset + regs->edx <= node->size && !(node->flags & NODE_FLAG_WO)){
+                    // The remaining space in the file is large enough to read the given amount of data and the file is not write only
+                    memcpy((void*)regs->ecx, node->data + context->offset, regs->edx);
+                    context->offset += regs->edx;
+                    regs->eax = regs->edx;
+                }else if(!(node->flags & NODE_FLAG_WO)){
+                    // Read until the end of the file
+                    memcpy((void*)regs->ecx, node->data + context->offset, node->size - context->offset);
+                    context->offset = node->size;
+                    regs->eax = node->size - context->offset;
+                }else{
+                    // File is write-only or is not large enough for the read
+                    regs->eax = SYSCALL_ACCESS_DENIED;
+                }
+
+                MUnlock(&node->lock);
+            }else{
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+            }
+
             break;
         }
-        case SYS_SHUTDOWN:{
-            // SYS_SHUTDOWN
-            // Shutdown the system
-            AcpiShutdown();
-            regs->eax = STANDARD_FAILURE;
+
+        case SYS_OPEN:{
+            // SYS_OPEN - Open a file and return its file descriptor
+            // EBX = Path
+            // ECX = Flags
+            // EDX = Mode (if opening new)
+
+            // Returns file descriptor on success, otherwise failure
+
+            if(regs->ebx == 0 || regs->ebx < USER_MEM_START || regs->ebx > USER_MEM_END){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            bool nodeMade = false;
+            vfs_node_t* node = VfsFindNode((char*)regs->ebx);
+            if(node != NULL && node->data == NULL && (regs->ecx | O_CREAT)){
+                // Just start with a 100 byte buffer and make it resizeable
+                void* data = halloc(100);
+                if(data == NULL){
+                    regs->eax = SYSCALL_OUT_OF_MEMORY;
+                    return;
+                }
+                node = VfsMakeNode(strrchr((char*)regs->ebx, '/') + 1, regs->ecx | NODE_FLAG_RESIZEABLE, 100, regs->edx, currentProcess->user, data);
+                if(node == NULL){
+                    hfree(data);
+                    regs->eax = SYSCALL_OUT_OF_MEMORY;
+                    return;
+                }
+                *strrchr((char*)regs->ebx, '/') = '\0';
+                VfsAddChild(VfsFindNode((char*)regs->ebx), node);
+                nodeMade = true;
+            }else if(node == NULL){
+                // Not opening new and file not found
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(node->owner != currentProcess->effectiveUser && (node->permissions & (S_IROTH | S_IWOTH | S_IXOTH)) == 0){
+                // Invalid permissions!
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if((node->flags & regs->ecx) == 0){
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            // Only allow the supported flags
+            regs->ecx &= node->flags;
+
+            fd_t result = CreateFileContext(node, currentProcess->fileTable, regs->ecx);
+            if(result == EMERGENCY_NO_MEMORY){
+                // Process was compromized on a no memory error
+                ContextSwitch(regs, GetNextProcess());          // Switch to next process
+                DestroyProcess(currentProcess);                 // Cannibalize the caller on memory error
+                if(nodeMade){
+                    VfsRemoveNode(node);
+                }
+                return;
+            }else if(result != STANDARD_SUCCESS){
+                regs->eax = SYSCALL_OUT_OF_MEMORY;
+                if(nodeMade){
+                    VfsRemoveNode(node);
+                }
+                return;
+            }
+
+            node->refCount++;
+            regs->eax = result;
+
+            if(node->data == NULL && node->mountPoint != NULL && !nodeMade && !(node->flags & NODE_FLAG_DIRECTORY) && !(node->flags & NODE_FLAG_DEVICE)){
+                // Switch to the driver and load the data
+                device_t* device = node->mountPoint->fsDevice;
+                driver_t* driver = node->mountPoint->fsDriver;
+
+                while(MLock(&device->lock, currentProcess) == SEM_LOCKED){
+                    do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+                }
+                pcb_t* caller = currentProcess;
+                caller->state = WAITING;
+                device->caller = caller;
+
+                if(driver->owner->using != NULL){
+                    // Driver is busy and we somehow made it here
+                    regs->eax = SYSCALL_FAILURE;
+                    caller->state = RUNNING;
+                    return;
+                }
+
+                // The driver is expected to have accurately assigned the file size
+                device->kernel_buffer = halloc(node->size);
+                if(device->kernel_buffer == NULL){
+                    regs->eax = SYSCALL_OUT_OF_MEMORY;
+                    caller->state = RUNNING;
+                    return;
+                }
+
+                if(device->driver->in_kernel){
+                    // The driver is part of the kernel, do a simple function call
+                    regs->eax = device->ops.read(device->kernel_buffer, regs->edx);
+                    memcpy((void*)regs->ecx, device->kernel_buffer, regs->edx);
+                    hfree(device->kernel_buffer);
+                    device->driver->owner->using = NULL;
+                    device->kernel_buffer = NULL;
+                    device->caller = NULL;
+                    MUnlock(&device->lock);
+                    caller->state = RUNNING;
+                    return;
+                }
+
+                ContextSwitch(regs, node->mountPoint->fsDriver->owner);
+                currentProcess = GetCurrentProcess();
+
+                // Map the buffer into the driver's memory - destroying other kernel buffer regions is set to true 
+                // because this is where the region from previous uses is freed.
+                int result = AddMemoryRegion(currentProcess, regs->edx, PAGE_SIZE, MEMREGION_KERNELSHARE, NULL, NULL, true);
+                if(result == STANDARD_FAILURE){
+                    ContextSwitch(regs, caller);                    // Switch back to the caller
+                    device->caller = NULL;
+                    MUnlock(&device->lock);
+                    regs->eax = SYSCALL_FAILURE;
+                    caller->state = RUNNING;
+                    return;
+                }else if(result == EMERGENCY_NO_MEMORY){
+                    ContextSwitch(regs, caller);                    // Return to the caller
+                    device->caller = NULL;
+                    MUnlock(&device->lock);
+                    UnregisterDriver(device->driver);               // Remove the offending driver
+                    DestroyProcess(currentProcess);                 // The driver should not lead to a result like this
+                    caller->state = RUNNING;
+                    regs->eax = SYSCALL_OUT_OF_MEMORY;
+                    return;
+                }
+
+                device->driver->owner->using = device;
+
+                // Reset the driver's stack (the stack will just grow larger and larger every time if I don't)
+                regs->user_esp = (uintptr_t)currentProcess->regions[REGION_USER_STACK_INDEX]->end;
+
+                // Push the values onto the driver's stack
+                UserPush(regs->user_esp, node->size);
+                UserPush(regs->user_esp, currentProcess->regions[currentProcess->numRegions - 1]->start);
+                regs->eip = device->ops.read;
+            }
+
+            return;
+        }
+
+        case SYS_CLOSE:{
+            // SYS_CLOSE - Close a file descriptor
+            // EBX = fd
+
+            file_table_t* table = currentProcess->fileTable;
+
+            if(table == NULL || regs->ebx > table->arrSize){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            // Luckily this was was extremely simple - nearly all the required logic is in this function
+            DestroyFileContext(table, regs->ebx);
+            regs->eax = SYSCALL_SUCCESS;
             break;
         }
-        case SYS_REBOOT:{
-            // SYS_REBOOT
-            // Reboot the system
-            reboot_system();
-            regs->eax = STANDARD_FAILURE;
+
+        case SYS_SEEK:{
+            // SYS_SEEK - Seek to a position in a file's buffer
+            // EBX = fd
+            // ECX = Offset to seek to
+            // EDX = Whence (0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END)
+
+            // Returns: (ssize_t) new offset or negative value on failure
+
+            if(currentProcess->fileTable->arrSize < regs->ebx){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            file_context_t* context = currentProcess->fileTable->openFiles[regs->ebx];
+            if(context == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if((context->node->flags & NODE_FLAG_DEVICE) || (context->node->flags & NODE_FLAG_DIRECTORY)){
+                // Invalid read
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(regs->edx == SEEK_SET){
+                if(regs->ecx > context->node->size){
+                    regs->eax = SYSCALL_INVALID_ARGUMENT;
+                    return;
+                }
+                context->offset = regs->ecx;
+                regs->eax = context->offset;
+            }else if(regs->edx == SEEK_CUR){
+                if(context->offset + (ssize_t)regs->ecx > context->node->size){
+                    regs->eax = SYSCALL_INVALID_ARGUMENT;
+                    return;
+                }
+                context->offset += (ssize_t)regs->ecx;
+                regs->eax = context->offset;
+            }else if(regs->edx == SEEK_END){
+                // Offset to seek must be negative here
+                if(context->node->size + (ssize_t)regs->ecx < 0 || (ssize_t)regs->ecx > 0){
+                    // Too far back or positive seek value
+                    regs->eax = SYSCALL_INVALID_ARGUMENT;
+                    return;
+                }
+                context->offset = context->node->size;
+                context->offset += (ssize_t)regs->ecx;
+                regs->eax = context->offset;
+            }else{
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+            }
             break;
         }
-        default: {
-            printk("Unknown syscall: 0x%x\n", regs->eax);
+
+        case SYS_FSYNC:{
+            // SYS_FSYNC - Write a file's data to disk
+            // EBX = fd
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_SYNC:{
+            // SYS_SYNC - Write the buffers of all files to the disk
+            // No arguments(?)
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_TRUNCATE:{
+            // SYS_TRUNCATE - set the size of a file to something specific
+            // EBX = fd
+            // ECX = size
+
+            // Returns: (ssize_t) The new size of the file, or error if negative
+
+            file_table_t* table = currentProcess->fileTable;
+            if(regs->ebx > table->arrSize || table->openFiles[regs->ebx] == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            file_context_t* context = table->openFiles[regs->ebx];
+            vfs_node_t* node = context->node;
+
+            while(MLock(&node->lock, currentProcess) == SEM_LOCKED){
+                do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+            }
+
+            // Check the node's permissions to make sure that writing and resizing is allowed
+            if((node->flags & NODE_FLAG_RO) || (!(node->permissions & S_IROTH) && !(currentProcess->user == node->owner))  || (context->flags & O_RDONLY) || !(node->flags & NODE_FLAG_RESIZEABLE)){
+                regs->eax = SYSCALL_ACCESS_DENIED;
+                return;
+            }
+
+            if(node == NULL || node->data == NULL){
+                // This is likely the result of a kernel bug
+                regs->eax = SYSCALL_FAILURE;
+                MUnlock(&node->lock);
+                return;
+            }
+
+            if((node->flags & NODE_FLAG_DIRECTORY) || (node->flags & NODE_FLAG_DEVICE)){
+                // Can't truncate devices or directories!
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                MUnlock(&node->lock);
+                return;
+            }
+
+            // We can now resize the node
+            if(regs->ecx > 0){
+                void* newData = halloc(regs->ecx);
+                if(newData == NULL){
+                    regs->eax = SYSCALL_OUT_OF_MEMORY;
+                    MUnlock(&node->lock);
+                    return;
+                }
+                memset(newData, 0, regs->ecx);
+                size_t copySize = (node->size < regs->ecx) ? node->size : regs->ecx;
+                memcpy(newData, node->data, copySize);
+                hfree(node->data);
+                node->data = newData;
+            }else{
+                hfree(node->data);
+                node->data = halloc(1);             // To prevent attempts to read the file from disk
+                if(node->data == NULL){
+                    // Basically impossible, but I need to cover everything.
+                    MUnlock(&node->lock);
+                    regs->eax = SYSCALL_FAILURE;
+                    return;
+                }
+            }
+
+            if(context->offset > regs->ecx){
+                context->offset = regs->ecx;
+            }
+            
+            node->size = regs->ecx;
+
+            MUnlock(&node->lock);
+
+            regs->eax = regs->ecx;
+            break;
+        }
+
+        case SYS_STAT:{
+            // SYS_STAT - Get file metadata from a given path
+            // EBX = Path
+            // ECX = struct stat*
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SYS_FSTAT:{
+            // SYS_FSTAT - Get file metadata from a given fd
+            // EBX = fd
+            // ECX = struct stat*
+
+            // This one shouldn't be too bad to implement, it's important anyway
+
+            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            break;
+        }
+
+        // And 94 more... oh man.
+
+        default:{
+            // Invalid system call!
+            regs->eax = SYSCALL_NOT_FOUND;
             break;
         }
     }

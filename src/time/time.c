@@ -95,13 +95,13 @@ void SetTimer(int hz){
     outb(PIT_CHANNEL0, (divisor >> 8) & PIT_MASK);
 }
 
-static void TimerHandler(UNUSED struct Registers* regs){
+static void TimerHandler(struct Registers* regs){
     state.ticks++;
     volatile TimerCallbackEntry* entry = timerCallbacks;
     while(entry != NULL){
         entry->elapsed++;
         if(entry->elapsed >= entry->interval){
-            entry->callback();
+            entry->callback(regs);
             entry->elapsed = 0;
         }
         entry = entry->next;

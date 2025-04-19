@@ -69,9 +69,6 @@ multiboot_info_t mbootCopy;
  * - Shell in userland
 */
 
-// The kernel's process control block
-volatile pcb_t* kernelPCB = NULL;
-
 // Get the pointers for the stack from the assembly bootstrapping code
 extern uint8_t stack_begin;
 extern uint8_t stack;
@@ -206,19 +203,10 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Test the timer (removed for faster debugging - the timer works)
     //printk("Testing the timer...\n");
-    //sleep(1000);
+    // Test the PC speaker (removed because it is loud af)
+    //PCSP_Beep();
 
     // Initialization - third stage
-
-    // Initialize the device registry
-    printk("Creating device registry...\n");
-    if(CreateDeviceRegistry() != DRIVER_SUCCESS){
-        // If there was a failure, the system can't continue as drivers can't be loaded
-        printk("KERNEL PANIC: Failed to create device registry!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-    printk("Device registry created successfully!\n");
 
     // Initialize the virtual filesystem
     result = InitializeVfs(mbootInfo);
@@ -230,157 +218,43 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     }
     printk("VFS initialized successfully!\n");
 
-    // Test the PC speaker (removed because it is loud af)
-    //PCSP_Beep();
+    // Initialize the device and driver registries
+    printk("Creating system registries...\n");
+    if(CreateDeviceRegistry() != STANDARD_SUCCESS){
+        // If there was a failure, the system can't continue as drivers can't be loaded
+        printk("KERNEL PANIC: Failed to create device registry!\n");
+        STOP
+    }
+    if(CreateDriverRegistry() != STANDARD_SUCCESS){
+        printk("KERNEL PANIC: Failed to create driver registry!\n");
+        STOP
+    }
+    printk("System registries created successfully!\n");
 
 
-    // NOTE: The file contexts of files should remain constant. Only the file descriptors should change. However, that is for another time.
-    // Create STDIN at /dev/stdin
-    vfs_node_t* stdin = VfsMakeNode("stdin", false, false, false, false, 0, 0, ROOT_UID, NULL);
-    if(stdin == NULL){
-        printk("KERNEL PANIC: Failed to create stdin node!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-    result = VfsAddChild(VfsFindNode("/dev"), stdin);
-    if(result != STANDARD_SUCCESS){
-        printk("KERNEL PANIC: Failed to add stdin node to /dev!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-
-    // Create STDOUT at /dev/stdout
-    vfs_node_t* stdout = VfsMakeNode("stdout", false, false, false, false, 0, 0, ROOT_UID, NULL);
-    if(stdout == NULL){
-        printk("KERNEL PANIC: Failed to create stdout node!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-    result = VfsAddChild(VfsFindNode("/dev"), stdout);
-    if(result != STANDARD_SUCCESS){
-        printk("KERNEL PANIC: Failed to add stdout node to /dev!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-
-    // Create STDERR at /dev/stderr
-    vfs_node_t* stderr = VfsMakeNode("stderr", false, false, false, false, 0, 0, ROOT_UID, NULL);
-    if(stderr == NULL){
-        printk("KERNEL PANIC: Failed to create stderr node!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
-    result = VfsAddChild(VfsFindNode("/dev"), stderr);
-    if(result != STANDARD_SUCCESS){
-        printk("KERNEL PANIC: Failed to add stderr node to /dev!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
-        STOP
-    }
+    // Make STDIN, STDOUT, and STDERR (as devices)...
+    // I just recently completely overhauled half the system, so the old code no longer worked
     printk("STDIN, STDOUT, and STDERR created successfully!\n");
 
     //STOP
 
     // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     // Create the kernel's PCB
-    kernelPCB = CreateProcess(NULL, "syscore", GetFullPath(VfsFindNode(VFS_ROOT)), ROOT_UID, true, true, true, KERNEL, 0, NULL);
+    kernelPCB = CreateProcess("syscore", 0, RESOURCE_LIMITS(0, 0, 0, 0, 0, 0, 0, 0, 0), ROOT_UID, 0, 0, 0, VfsFindNode(VFS_ROOT), NULL);
     if(kernelPCB == NULL){
         // No PCB means no multitasking - the kernel can't run
         printk("KERNEL PANIC: Failed to create kernel PCB!\n");
         do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
-    //kernelPCB->pageDirectory = (physaddr_t)currentPageDir;          // The physical and virtual address of the page directory are the same
-    kernelPCB->stackBase = (uintptr_t)&stack_begin;                 // Set the stack base to the top of the stack
-    kernelPCB->stackTop = (uintptr_t)&stack;                        // Set the stack top to the bottom of the stack
-    kernelPCB->heapBase = heapStart;                                // Set the heap base to the start of the heap
-    kernelPCB->heapEnd = memSize;                                   // Set the heap end to the total memory size of the system (the kernel has access to everything after all) (change?)
+    SetCurrentProcess(kernelPCB);                                   // Set the current process to the kernel PCB
     printk("Kernel PCB created successfully!\n");
     SetCurrentProcess(kernelPCB);
 
     InitializeKeyboard();                                           // Initialize the keyboard driver
-    InitializeTTY();                                                // Initialize the TTY subsystem
+    //InitializeTTY();                                              // Initialize the TTY subsystem
+    
     InitializeAta();                                                // Initialize the built-in PATA driver (will likely be replaced by a module later in boot when the filesystem is mounted)
-
-    // Read from the first sector of the first disk to test the built-in PATA driver
-    device_t* ataDevice = GetDeviceFromVfs("/dev/pat0");            // Get the first ATA device from the VFS
-
-    // Allocate a buffer to read into
-    uint8_t* buffer = halloc(((blkdev_t*)ataDevice->deviceInfo)->sectorSize);
-    if(buffer == NULL){
-        printk("Failed to allocate memory for buffer!\n");
-        STOP
-    }
-    memset(buffer, 0, 512);                                         // Clear the buffer
-
-    // Search for non-removable devices
-    while(ataDevice != NULL){
-        if(ataDevice->type == DEVICE_TYPE_BLOCK && ((blkdev_t*)ataDevice->deviceInfo)->removable == false){
-            break;
-        }
-        ataDevice = ataDevice->next;
-    }
-
-    if(ataDevice == NULL){
-        printk("No ATA device found!\n");
-        STOP
-    }
-    if(((blkdev_t*)ataDevice->deviceInfo)->removable){
-        printk("ATA device is removable!\n");
-        STOP
-    }
-    printk("ATA device found: %s\n", ataDevice->devName);
-
-    // Get the sector to read from and the amount of sectors to read. These are stored in the buffer so that different commands can easily be sent to different devices.
-    uint64_t* buf = (uint64_t*)buffer;
-    buf[0] = 0;                                                     // Set the LBA to read
-    buf[1] = 1;                                                     // Set the sector count to 1
-    file_result devRes = open(ataDevice->path, 0);                  // Open the device for reading
-    if(read(devRes.fd, buf, ((blkdev_t*)ataDevice->deviceInfo)->sectorSize) != FILE_READ_SUCCESS){
-        printk("Failed to read from disk!\n");
-        STOP
-    }
-
-   // STOP
-
-    printk("Successfully read from disk!\n");
-
-    // Check if the disk is an MBR disk by checking the magic number in the first sector
-    mbr_t* mbr = (mbr_t*)buffer;
-    if(IsValidMBR(mbr)){
-        printk("Valid MBR found!\n");
-        printk("MBR Signature: 0x%x\n", mbr->signature);
-    }else{
-        printk("This disk may not be MBR!\n");
-    }
-
-    //STOP
-
-    // Free the buffer after use
-    hfree(buffer);
-
-    // Perform the actual check for all disks in the system to see if they have an MBR partition scheme
-    // Note - MBR partitions are not present on all disks. If so, the filesystem driver will have to implement it itself
-    while(ataDevice != NULL){
-        // Get the partitions, if any, from this disk
-        result = GetPartitionsFromMBR(ataDevice);
-        if(result != DRIVER_SUCCESS){
-            // If there were no partitions on the disk, print that and continue
-            printk("Could not detect partitions.\n");
-            //STOP
-        }else{
-            // If the partitions were successfully retrieved, they were added to the devices in the device tree
-            printk("Partitions successfully retrieved from MBR!\n");
-        }
-
-        // Go to the next ATA device and repeat
-        ataDevice = ataDevice->next;
-        while(ataDevice != NULL && ataDevice->type != DEVICE_TYPE_BLOCK){
-            ataDevice = ataDevice->next;
-            if(ataDevice == NULL){
-                break;
-            }
-        }
-    }
 
     printk("Initializing FAT driver...\n");
     //STOP
@@ -392,54 +266,19 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Initialization - fourth stage
 
-
-    // Assign the FAT driver by probing the disks
-    ataDevice = GetDeviceFromVfs("/dev/pat0");
-    
-    printk("Mounting filesystems...\n");
-    // Probe the drivers to find filesystem support for the disks
-    while(ataDevice != NULL){
-        printk("Looking for driver for device %s\n", ataDevice->devName);
-        driver_t* fsDriver = FindDriver(ataDevice, DEVICE_TYPE_FILESYSTEM);
-        // If the driver aquired the device, it is expected to have made a filesystem device
-        if(fsDriver == NULL){
-            printk("Driver not found for device %s\n", ataDevice->devName);
-        }else if(((blkdev_t*)ataDevice->deviceInfo)->removable == false){
-            // Just mount any found non-removable filesystem for now (this will always mount the LAST valid one)
-            if(((filesystem_t*)ataDevice->firstChild->deviceInfo)->mount(ataDevice->firstChild, "/root") == DRIVER_SUCCESS){
-                printk("Filesystem mounted successfully!\n");
-                break;
-            }else{
-                printk("Failed to mount filesystem!\n");
-            }
-        }
-
-        // Go to the next ATA device and repeat
-        ataDevice = ataDevice->next;
-        while(ataDevice != NULL || ataDevice->type != DEVICE_TYPE_BLOCK){
-            ataDevice = ataDevice->next;
-            if(ataDevice == NULL){
-                break;
-            }
-        }
-    }
-
-    close(devRes.fd);
-
-    // Configure the VGA hardware
-
-    printk("Boot complete. Starting shell...\n");
-
     // Load a users file and create the users...
 
     // Other final initialization steps...
 
     // Initialization complete - start the shell
 
-    SetCurrentProcess(kernelPCB);                               // Set the current process to the kernel PCB
+    printk("Boot complete. Starting shell...\n");
 
-    // Search for the shell in the root directory and execute it
-    exec("/root/SHELL.ELF", NULL, NULL, 0);
+    // Search for the shell in the root directory and execute it (Should I also try the chroot? It might be a good idea to use init as well...)
+    //pcb_t* shellPCB = Load("/root/SHELL.ELF", NULL, NULL, 0);
+    //ScheduleProcess(shellPCB);
+    // Do a SYS_YIELD
+    //do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
 
     shell();
 

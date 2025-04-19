@@ -20,6 +20,9 @@
 
 #define PIT_IRQ 0
 
+// Timer callbacks for use inside the kernel only
+typedef void (*timer_callback_t)(struct Registers*);
+
 extern datetime_t currentTime;
 
 void AddTimerCallback(timer_callback_t callback, uint64_t interval);

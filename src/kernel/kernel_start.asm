@@ -241,6 +241,7 @@ stack:
 global intstack_base
 global intstack
 align 16
+; This is temporary and will be replaced with a proper one allocated for user programs
 intstack_base:
     resb 0x1000
 intstack:

@@ -1,12 +1,21 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-// I would like to keep this but I should also make a unistd.h
-
-// Header file containing macros and functions for system calls and other system-level functions
-// This file is meant to be used both in the kernel and in userland
-
 #include <kernel.h>
+#define SYSTEM_API_VERSION 0
+
+#ifndef __size_t_defined
+#define __size_t_defined
+typedef unsigned int size_t;
+#endif
+
+#ifndef __ssize_t_defined
+#define __ssize_t_defined
+typedef signed int ssize_t;
+#endif
+
+// Internal uint8_t type to make variables more readable
+typedef unsigned char __uint8_t;
 
 #define ANSI_ESCAPE "\033[2J\033[H"
 
@@ -15,123 +24,129 @@
 #define STDERR_FILENO 2
 
 // More readable success and failure codes for functions
+#define OUT_OF_MEMORY -2
 #define STANDARD_FAILURE -1
 #define STANDARD_SUCCESS 0
 
 // System call returns
-#define SYSCALL_SUCCESS 0
-#define SYSCALL_FAILURE -1
-#define SYSCALL_ACCESS_DENIED -2
-#define SYSCALL_INVALID_ARGUMENT -3
-#define SYSCALL_NOT_FOUND -4
-#define SYSCALL_OUT_OF_MEMORY -5
-#define SYSCALL_TASKING_FAILURE -999              // Specifically for syscalls like exec
-#define SYSCALL_FAULT_DETECTED -1000
+#define SYSCALL_SUCCESS 0                           // System call returned without issue
+#define SYSCALL_FAILURE -1                          // System call failed for some reason
+#define SYSCALL_ACCESS_DENIED -2                    // Access denied upon a system call
+#define SYSCALL_INVALID_ARGUMENT -3                 // Invalid argument on a system call
+#define SYSCALL_NOT_FOUND -4                        // System call not found
+#define SYSCALL_OUT_OF_MEMORY -5                    // The system is out of memory!
+#define SYSCALL_NOT_IMPLEMENTED -6                  // This syscall isn't implemented yet
+#define SYSCALL_TASKING_FAILURE -999                // Specifically for syscalls like exec
+#define SYSCALL_FAULT_DETECTED -1000                // CPU fault detected upon a system call
 
-typedef struct Date_Time {
-    unsigned char second;
-    unsigned char minute;
-    unsigned char hour;
-    unsigned char day;
-    unsigned char month;
-    unsigned short year;
-} datetime_t;
+// These are equal to the internal flags of the VFS nodes (makes things easier)
+#define O_RDONLY (1 << 2)                           // File is read-only
+#define O_WRONLY (1 << 3)                           // File is write-only
+#define O_RDWR ((~(O_RDONLY)) | (~(O_WRONLY)))      // File is opened for reading and writing
+#define O_CREAT (1 << 9)                            // Create a new file
+#define O_TRUNC (1 << 10)                           // If the file exists and is open for writing, truncate it to zero.
+#define O_APPEND (1 << 11)                          // All writes shall be appended to the end of the file
+#define O_NONBLOCK (1 << 12)                        // Open the file in a non-blocking  way (hmmm... I may need to change some designs)
+#define O_SYNC (1 << 13)                            // Writes are all written to the disk before returning
+#define O_CLOEXEC (1 << 14)                         // File is closed upon exec
+#define O_NOFOLLOW (1 << 15)                        // Fail if the path is a symbolic link
 
-// Keyboard events located here (should probably be moved to a separate header file or something)
-typedef struct KeyboardEvent {
-    unsigned char scanCode;
-    char ascii;
-    _Bool keyUp;
-} KeyboardEvent_t;
+// File permissions
+#define S_IRUSR 0400
+#define S_IWUSR 0200
+#define S_IXUSR 0100
 
-typedef struct Version {
-    unsigned char major;
-    unsigned char minor;
-    unsigned char patch;
-} version_t;
+#define S_IRGRP 040
+#define S_IWGRP 020
+#define S_IXGRP 010
 
-typedef void (*timer_callback_t)(void);
+#define S_IROTH 04
+#define S_IWOTH 02
+#define S_IXOTH 01
 
 typedef int device_id_t;
 typedef unsigned short vendor_id_t;
 
-typedef enum {
-    DEVICE_TYPE_ROOTDEV,                        // Motherboards and daughterboards (essentially the root of the device tree) (needed?)
-    DEVICE_TYPE_BLOCK,                          // Block device (i.e. hard drive, SSD)
-    DEVICE_TYPE_CHAR,                           // Character device (i.e. keyboard, mouse, serial port)
-    DEVICE_TYPE_NETWORK,                        // Network device (i.e. Ethernet, Wi-Fi)
-    DEVICE_TYPE_INPUT,                          // Input device (i.e. keyboard, mouse)
-    DEVICE_TYPE_DISPLAY,                        // Display device (i.e. GPU, framebuffer)
-    DEVICE_TYPE_SOUND,                          // Sound device (i.e. sound card)
-    DEVICE_TYPE_USB,                            // USB device
-    DEVICE_TYPE_PCI,                            // PCI device
-    DEVICE_TYPE_PCIe,                           // PCIe device
-    DEVICE_TYPE_VIRTUAL,                        // Virtual device (i.e. a ramdisk)
-    DEVICE_TYPE_FILESYSTEM,                     // Filesystem device (i.e. a mounted filesystem)
-    DEVICE_TYPE_OTHER,                          // Other device type (not defined by the kernel and may not be supported)
-    DEVICE_TYPE_UNKNOWN,                        // Unknown device type
-} DEVICE_TYPE;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
 
-// A more compact device struct for userland applications
-typedef struct user_device {
-    device_id_t id;                             // Device ID
-    vendor_id_t vendorId;                       // Vendor ID
-    const char* name;                           // Name of the device
-    const char* description;                    // Description of the device
-    const char* devName;                        // String that will be presented in /dev (i.e. kb0, sda, etc.)
-    char last_error[64];                        // Last error message from the device in human-readable format
-    DEVICE_TYPE type;                           // Type of device
-    void* deviceInfo;                           // Device-specific data (if any)
-    struct user_device* parent;                 // Pointer to the parent device (if any)
-    struct user_device* next;                   // Pointer to the next user device (if any)
-    struct user_device* firstChild;             // Pointer to the first child device (if any)
-} user_device_t;
+typedef struct Date_Time {
+    __uint8_t second;
+    __uint8_t minute;
+    __uint8_t hour;
+    __uint8_t day;
+    __uint8_t month;
+    unsigned short year;
+} datetime_t;
 
-typedef void (*KeyboardCallback)(KeyboardEvent_t event);
-
-typedef unsigned int pid_t;
-
-struct Node_Data {
-    unsigned int size;                         // Size of the node in bytes
-    unsigned int type;                         // Type of the node (file, directory, etc.)
-    unsigned int permissions;                  // Permissions for the node (read, write, etc.)
-    pid_t owner;                               // Owner of the node
-    char name[];                               // Name of the node (TODO: change this)
+// General-purpose input event for devices
+struct ievent {
+    datetime_t time;            // The time this event occurred
+    unsigned short type;        // The type of event this is
+    unsigned short code;        // Special code for the evtent  
+    int value;                  // Value returned
 };
 
-#define NODE_TYPE_FILE 0
-#define NODE_TYPE_DIRECTORY 1
-#define NODE_TYPE_DEVICE 2
-#define NODE_TYPE_OTHER 10
+typedef struct Version {
+    __uint8_t major;
+    __uint8_t minor;
+    __uint8_t patch;
+} version_t;
 
-// For peeking a mutex
-typedef int MUTEXSTATUS;
-#define MUTEX_IS_UNLOCKED 0
-#define MUTEX_AQUIRED 1
-#define MUTEX_IS_LOCKED -1
-#define MUTEX_FAILURE -2
+typedef unsigned short pid_t;
 
-typedef int FILESTATUS;
-#define FILE_INVALID_OFFSET -1
-#define FILE_LOCKED -2
-#define FILE_NOT_FOUND -3
-#define FILE_OPEN 1
-#define FILE_CLOSED 2
-#define FILE_EXISTS 3
-#define FILE_READ_ONLY 4
-#define FILE_WRITE_ONLY 5
-#define FILE_WRITE_SUCCESS 6
-#define FILE_READ_SUCCESS 7
-#define FILE_READ_INCOMPLETE 8
-#define FILE_NOT_RESIZEABLE 9
+// Simple directory entry struct.
+struct dirent {
+    unsigned char type;                         // The type of entry this is
+    unsigned int len;                           // The length of this structure
+    char name[];                                // The name of this directory entry (remember to allocate sizeof(struct dirent) + strlen(name))
+};
+
+struct stat {
+    device_id_t device;                         // If a device, this is its device ID
+    unsigned int permissions;                   // The permissions of this VFS entry
+    unsigned int flags;
+    uid_t ownerUID;                             // The owner user of this entry
+    gid_t ownerGID;                             // The owner group of this entry
+    unsigned int size;                          // The size (in bytes) of this entry
+    unsigned int blockSize;                     // What do I use this for?
+    unsigned int blockCount;                    // The number of 512-byte blocks on this device
+    datetime_t lastAccess;                      // Last access date and time
+    datetime_t lastModified;                    // Last modification date and time
+    datetime_t lastStatChange;                  // Last status change date and time
+};
+
+struct framebuffer {
+    void* address;                              // The address of the framebuffer
+    unsigned int size;                          // Size in bytes
+    unsigned short width;                       // Width in pixels (or characters)
+    unsigned short height;                      // Height in pixels (or characters)
+    unsigned short pitch;                       // Bytes per line
+    __uint8_t bpp;                              // Bits per pixel
+    _Bool text;                                 // True if the framebuffer is in text mode (kernel will assume VGA-like text/attribute)
+    __uint8_t red_mask_size;                    // Number of bits used for red
+    __uint8_t green_mask_size;                  // Number of bits used for green
+    __uint8_t blue_mask_size;                   // Number of bits used for blue
+    __uint8_t reserved_mask_size;               // Either bits used for alpha or reserved
+};
+
+// For Semaphore operations
+#define SEM_DEADLOCK_DETECTED -999              // A deadlock was detected!
+#define SEM_INTERNAL_ERROR -3                   // There was a kernel error!
+#define SEM_INVALID_LOCK -2                     // A lock value was not 0 or 1
+#define SEM_UNLOCKED 0                          // Semaphore is currently unlocked
+#define SEM_LOCKED 1                            // Semaphore is already locked
+#define SEM_AQUIRED 2                           // Semaphore was aquired by this process
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+typedef int fd_t;
+
 typedef struct {
     FILESTATUS status;          // Result of the open operation
-    int fd;                     // File descriptor
+    fd_t fd;                    // File descriptor
 } file_result;
 
 struct sysinfo {
@@ -156,95 +171,6 @@ struct p_info {
     unsigned int heapSize;                // Size of the heap in bytes
 };
 
-typedef int fd;
-
-// Debug system call - prints a confirmation to the screen
-int sys_debug(void);
-
-// Install a keyboard handler to /dev/kb0 (TODO: support more keyboards)
-int install_keyboard_handler(KeyboardCallback callback);
-
-// Remove a keyboard handler from /dev/kb0
-int remove_keyboard_handler(KeyboardCallback callback);
-
-int install_timer_handler(timer_callback_t callback, unsigned int interval);
-
-int remove_timer_handler(timer_callback_t callback);
-
-// Write to a file descriptor
-FILESTATUS write(int fd, const void* buf, unsigned int count);
-
-// Read from a file descriptor
-FILESTATUS read(int fd, void* buf, unsigned int count);
-
-// Read file data
-FILESTATUS istat(const char* directory, unsigned int number, struct Node_Data* buf);
-
-// Exit the current process
-void exit(int status);
-
-// Fork the current process (returns the PID of the child process)
-int fork(void);
-
-// Execute a new process (replaces the current one)
-int exec(const char* path, const char* argv[], const char* envp[], int argc);
-
-// Wait for a process to exit
-int waitpid(pid_t pid);
-
-// Get the PID of the current process
-pid_t getpid(void);
-
-// Get the PID of the parent process
-pid_t getppid(void);
-
-// Get the current working directory
-int getcwd(char* buf, unsigned int size);
-
-// Change the current working directory
-int chdir(const char* path);
-
-// Open a file
-file_result open(const char* path, int flags);
-
-// Close a file
-FILESTATUS close(int fd);
-
-// Seek to a position in a file
-unsigned int seek(int fd, unsigned int* offset, int whence);
-
-// Sleep for a certain amount of time (in milliseconds)
-int sleep(unsigned long long milliseconds);
-
-// Get the current date and time
-int gettime(datetime_t* datetime);
-
-// Kill a process owned by the current user (if running as root, any non-kernel process can be killed)
-int kill(pid_t pid);
-
-// Yield the CPU for cooperative multitasking
-void yield(void);
-
-// Page a new section of memory to a specific virtual address and of a specific size
-int mmap(void* addr, unsigned int length, unsigned int flags);
-
-// Unpage a section of memory owned by the process (excludes kernel and processes have their own page directories)
-int munmap(void* addr, unsigned int length);
-
-// Change the size of this application's heap
-int brk(unsigned int size);
-
-// Change the flags of an area of the application's memory
-int mprotect(void* addr, unsigned int length, unsigned int flags);
-
-int sys_dumpregs();
-
-int sysinfo(struct sysinfo* info);
-
-// Priveliged system call. Shuts down the system.
-int shutdown(void);
-
-// Priveliged system call. Reboots the system.
-int reboot(void);
+// TODO: Make a complete set of system call wrappers and helper functions to put here
 
 #endif      // SYSTEM_H

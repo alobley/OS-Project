@@ -10,10 +10,6 @@
 enum System_Calls {
     SYS_DBG = 0,                            // Debug system call
 
-    // Keyboard management
-    SYS_INSTALL_KBD_HANDLE,                 // Install a keyboard callback
-    SYS_REMOVE_KBD_HANDLE,                  // Remove a keyboard callback
-
     // Filesystem I/O (the file operations do include devices)
     SYS_WRITE,                              // Write to a file descriptor
     SYS_READ,                               // Read from a file descriptor (must make an EXT driver to see about symlink open/close)
@@ -21,11 +17,11 @@ enum System_Calls {
     SYS_CLOSE,                              // Close a file
     SYS_SEEK,                               // Seek to a position in a file
     SYS_FSYNC,                              // Flush a file's buffers (write the data to disk)
-    SYS_SYNC,                               // Flush all files' buffers (write the data to disk) (NEED global files - do I need a flag for which VFS node data I need to write?)
+    SYS_SYNC,                               // Flush all files' buffers (write the data to disk) (Just search the VFS and write the data using the mountpoint)
     SYS_TRUNCATE,                           // Truncate a file to a certain size
-    SYS_STAT,                               // Get VFS node information from a given path (devices, files, and directories are allowed and includes dirent info)
-    SYS_FSTAT,                              // Get VFS node information from a file descriptor (devices, files, and directories are allowed and includes dirent info)
-    SYS_ISTAT,                              // Get VFS node information from a file's index in a given directory (devices, files, and directories are allowed and includes dirent info)
+    SYS_STAT,                               // Get VFS node information from a given path (devices, files, and directories are allowed)
+    SYS_FSTAT,                              // Get VFS node information from a file descriptor (devices, files, and directories are allowed)
+    SYS_GETDENTS,                           // Get directory entry data
     SYS_CHMOD,                              // Change file permissions
     SYS_CHOWN,                              // Change file ownership
     SYS_SYMLINK,                            // Create a symbolic link
@@ -42,17 +38,21 @@ enum System_Calls {
     SYS_DUP2,                               // Replace and Duplicate a file descriptor - replaces the original file at a descriptor pointer with a new one
     SYS_FCNTL,                              // Get the file control information for a file descriptor
     SYS_IOCTL,                              // Perform an I/O control operation on a file descriptor
+    SYS_POLL,                               // Wait for a file in a given set of file descriptors to update
 
     // Process management
     SYS_EXIT,                               // Exit the current process
     SYS_FORK,                               // Fork the current process
-    SYS_EXEC,                               // Execute a new process which replaces the current one
+    SYS_EXEC,                               // Execute a new process which replaces the current one - does not copy env
+    SYS_EXECVE,                             // Execute a new process which replaces the current one - copies env
     SYS_WAIT_PID,                           // Wait for a process to exit
     SYS_GET_PID,                            // Get the PID of the current process
     SYS_PINFO,                              // Get the process information of a process
     SYS_GET_PPID,                           // Get the PID of the parent process
     SYS_KILL,                               // Kill a process
     SYS_YIELD,                              // Voluntarily yield the CPU
+    SYS_GETRLIMIT,                          // Get the resource limits of a process
+    SYS_SETRLIMIT,                          // Set the resource limits of a process
 
     // Inter-process communication
     SYS_PIPE,                               // Create a pipe (returns a file descriptor, to remove the pipe, simply use close)
@@ -64,13 +64,13 @@ enum System_Calls {
     SYS_MSGRCV,                             // Receive a message
     SYS_SEMGET,                             // Get a semaphore
     SYS_SEMOP,                              // Perform an operation on a semaphore
+    SYS_SETSID,                             // Set the session ID for this process
+    SYS_GETSID,                             // Get the current session ID for this process
 
     // Time management
     SYS_SLEEP,                              // Sleep for a certain amount of time
     SYS_GET_TIME,                           // Get the current date and time of day
     SYS_SET_TIME,                           // Set the current date and time of day
-    SYS_INSTALL_TIMER_HANDLE,               // Install a timer callback
-    SYS_REMOVE_TIMER_HANDLE,                // Remove a timer callback
 
     // Networking
     SYS_SOCKET,                             // Create a socket (returns a file descriptor)
@@ -88,35 +88,37 @@ enum System_Calls {
     // Memory management
     SYS_MMAP,                               // Map files or devices into memory
     SYS_MUNMAP,                             // Unmap a region of memory
-    SYS_BRK,                                // Change the heap size
-    SYS_SBRK,                               // Increase the heap size by X bytes
-    SYS_MPROTECT,                           // Change the protection of memory pages
+    SYS_BRK,                                // Change the heap size to X bytes. Returns pointer to the heap if X = 0.
+    SYS_MPROTECT,                           // Change the protection of a memory region using given flags
 
     // System information
     SYS_REGDUMP,                            // Dump the registers to the console
     SYS_SYSINFO,                            // Get system information (including what would come from uname)
+    SYS_GET_DRIVER,                         // Get the PID of a registered driver - takes a path to its device's VFS entry
 
     // Signal management
     SYS_SENDSIG,                            // Send a signal to a process
     SYS_SIGACTION,                          // Set a signal handler
     SYS_SIGPROCMASK,                        // Set the signal mask for a process
+    SYS_ALARM,                              // Set an alarm for a process
 
     // Priveliged system calls for drivers and kernel modules or system management (privelige check required, will check UID or GID)
     // Note - these will always be the highest system calls
-    SYS_MODULE_LOAD,                        // Load a kernel module
-    SYS_MODULE_UNLOAD,                      // Unload a kernel module
-    SYS_ADD_VFS_DEV,                        // Add a device to the VFS
+    SYS_REGISTER_DRIVER,                    // Register this program as a driver
+    SYS_UNREGISTER_DRIVER,                  // Unregister this program as a driver
     SYS_MODULE_QUERY,                       // Query a kernel module
     SYS_FIND_MODULE,                        // Find a kernel module by its supported device type
-    SYS_REGISTER_DEVICE,                    // Register a device
-    SYS_UNREGISTER_DEVICE,                  // Unregister a device
-    SYS_GET_DEVICE,                         // Get a device by its device ID
+    SYS_REGISTER_DEVICE,                    // Register a device into the system (must provide a valid path)
+    SYS_UNREGISTER_DEVICE,                  // Unregister a device from the system
+    SYS_OPEN_DEVICE,                        // Open a device by its device ID - returns file descriptor (the kernel sometimes passes device IDs to drivers)
+    SYS_AQUIRE_DEVICE,                      // Request control of a specific device (takes a path). Good for drivers that want to replace kernel drivers.
     SYS_REQUEST_IRQ,                        // Request an IRQ
     SYS_RELEASE_IRQ,                        // Release an IRQ
-    SYS_DRIVER_MMAP,                        // Memory-map a region of physical memory to the driver's memory space
+    SYS_DRIVER_MMAP,                        // Memory-map a region of physical memory to the driver's memory space (driver chooses page frames)
     SYS_DRIVER_MUNMAP,                      // Unmap a region of physical memory from the driver
     SYS_IO_PORT_READ,                       // Read from an I/O port
     SYS_IO_PORT_WRITE,                      // Write to an I/O port
+    SYS_DRIVER_YIELD,                       // This system call inicates when a driver has finished an operation.
     SYS_CHROOT,                             // Change the root directory of the VFS
 
     // User/Group management
@@ -128,6 +130,10 @@ enum System_Calls {
     SYS_GETGROUPS,                          // Get the groups of the current process
     SYS_SHUTDOWN,                           // Shutdown the system
     SYS_REBOOT,                             // Reboot the system
+
+    // Kernel querying
+    SYS_KLOG_READ,                          // Read the kernel log (I will eventually need to change printk to not print directly to the screen)
+    SYS_KLOG_FLUSH,                         // Flush the kernel log
 };
 
 static const char* kernelRelease = "Alpha";

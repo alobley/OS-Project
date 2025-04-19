@@ -3,7 +3,7 @@
  * This software is licensed under the MIT license. See the LICENSE file in the root directory for more details.
  * 
  * This file is part of Dedication OS.
- * This file contains the code and core components of the paging subsystem for Dedication OS. All virtual memory management is performed here.
+ * This file contains the code and core components of the paging subsystem for Dedication OS. Most virtual memory management is performed here.
  ***********************************************************************************************************************************************************************/
 #include <paging.h>
 #include <alloc.h>
@@ -18,12 +18,6 @@ size_t totalMemSize;
 size_t mappedPages;
 
 physaddr_t lastPhysicalAddress = 0;
-
-// Page table entry
-typedef unsigned int page_t;
-
-// Page directory entry
-typedef unsigned int pde_t;
 
 // Page table structure (size is one page each)
 struct ALIGNED(PAGE_SIZE) Page_Table {
@@ -64,18 +58,8 @@ struct ALIGNED(PAGE_SIZE) Page_Directory {
         "mov %%eax, %%cr0"          \
         ::: "eax")
 
-// Clear the whole TLB
-#define FlushTLB()                  \
-        asm volatile (              \
-            "mov %%cr3, %%eax\n\t"  \
-            "mov %%eax, %%cr3\n\t"  \
-            ::: "eax", "memory")
-
 // Load CR3 with a pointer (physical address) to a page directory
 #define LoadPageDirectory(dir) asm volatile("mov %0, %%cr3" :: "r"(dir))
-
-// REMINDER TO ME: parse the memory map to put this somewhere
-static physaddr_t kernel_PD_physaddr = 0;
 
 #define PAGE_DIR_VIRTUAL ((struct Page_Directory*) PD_VIRTADDR)
 #define PAGE_TABLE_VIRTUAL(pdIndex)  ((struct Page_Table*)(PT_VIRTADDR + (pdIndex * PAGE_SIZE)))
@@ -340,6 +324,29 @@ page_result_t palloc(virtaddr_t address, unsigned int flags){
     return PAGE_OK;
 }
 
+/// @brief Remap a page from an old virtual address to a new virtual address
+/// @param old The old (page-aligned) virtual address
+/// @param new The new (page-aligned) virtual address
+/// @return Success or error code
+page_result_t RemapPage(virtaddr_t old, virtaddr_t new){
+    old = PAGE_ADDR_MASK(old);
+    if(!(PAGE_DIR_VIRTUAL(PDE_INDEX(old)) & PDE_PRESENT) || !(PAGE_TABLE_VIRTUAL(PDE_INDEX(old))->pages[PTE_INDEX(old)] & PAGE_PRESENT)){
+        // No page present at that virtual address, nothing to do
+        return PAGE_NOT_PRESENT;
+    }
+
+    page_t page = PAGE_TABLE_VIRTUAL(PDE_INDEX(old))->pages[PTE_INDEX(old)];
+    physaddr_t frame = PAGE_ADDR_MASK(page);
+    unsigned int flags = page & 0xFFF;
+
+    cli                                             // Be absolutely certain the frame won't be retaken while moving it
+    pfree(old);
+    page_result_t result = physpalloc(PAGE_ADDR_MASK(new), frame, flags);
+    sti
+
+    return result;
+}
+
 /// @brief Allocate a page based on a given physical address
 /// @param virt The virtual address of the page to allocate
 /// @param phys The physical address of the page to allocate
@@ -508,6 +515,25 @@ bool SanityCheck(){
 }
 //#pragma GCC pop_options
 
+/// @brief Copy the page tables of another process to a new process. Ignores the kernel.
+/// @param pde An array of 1024 PDEs to be mapped
+/// @return There will almost certainly be a page fault on error
+void ReplacePageTables(pde_t* pdes){
+    for(index_t i = PDE_INDEX(USER_MEM_START); i < PDE_INDEX(USER_MEM_END); i++){
+        PAGE_DIR_VIRTUAL->tables[i] = pdes[i];
+    }
+    FlushTLB();
+}
+
+/// @brief Clear the user memory page tables to prepare for mapping a new process
+/// @warning DOES NOT DEALLOCATE THE PAGES! THE KERNEL MUST DO IT THROUGH PFREE!
+void ClearPageTables(){
+    for(index_t i = PDE_INDEX(USER_MEM_START); i < PDE_INDEX(USER_MEM_END); i++){
+        PAGE_DIR_VIRTUAL->tables[i] = 0;
+    }
+    FlushTLB();
+}
+
 /// @brief Create the initial page directory and map the kernel to it as well as some other initialization
 /// @param systemMem The total amount of system RAM in bytes
 /// @return Success or error code
@@ -577,8 +603,9 @@ page_result_t PageKernel(size_t systemMem){
     virtaddr_t newVgaAddr = next_free_addr;
 
     for(physaddr_t i = 0xA0000; i < 0xA0000 + (vgaPages * PAGE_SIZE); i += PAGE_SIZE){
-        if(physpalloc(next_free_addr, i, DEFAULT_KERNEL_PAGE_FLAGS) != PAGE_OK){
-            // Since we haven't remapped the VGA framebuffer yet, all we can do is halt the system.
+        if(physpalloc(next_free_addr, i, DEFAULT_KERNEL_PAGE_FLAGS | PAGE_SHARED) != PAGE_OK){
+            DisablePaging();
+            printk("Error paging VGA memory!\n");
             STOP;
         }
         next_free_addr += PAGE_SIZE;

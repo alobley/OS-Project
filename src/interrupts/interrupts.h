@@ -6,42 +6,6 @@
 #include <stddef.h>
 #include <string.h>
 
-// Parameters are pushed in reverse order onto the stack
-struct Registers {
-    volatile uint32_t gs, fs, es, ds;
-    volatile uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
-    volatile uint32_t int_no, err_code;
-    volatile uint32_t eip, cs;
-    union {
-        volatile struct {
-            volatile uint32_t carry : 1;
-            volatile uint32_t _reserved0 : 1;
-            volatile uint32_t parity : 1;
-            volatile uint32_t _reserved1 : 1;
-            volatile uint32_t auxCarry : 1;
-            volatile uint32_t _reserved2 : 1;
-            volatile uint32_t zero : 1;
-            volatile uint32_t sign : 1;
-            volatile uint32_t trap : 1;
-            volatile uint32_t interruptEnable : 1;
-            volatile uint32_t direction : 1;
-            volatile uint32_t overflow : 1;
-            volatile uint32_t iopl : 2;
-            volatile uint32_t nestedTask : 1;
-            volatile uint32_t _reserved3 : 1;
-            volatile uint32_t resume : 1;
-            volatile uint32_t virtual8086 : 1;
-            volatile uint32_t alignmentCheck : 1;
-            volatile uint32_t virtualInterrupt : 1;
-            volatile uint32_t virtualInterruptPending : 1;
-            volatile uint32_t id : 1;
-            volatile uint32_t _reserved4 : 10;
-        } PACKED eflags;
-        volatile uint32_t eflags_raw;
-    };
-    volatile uint32_t user_esp, ss;
-};
-
 #define PIC1 0x20
 #define PIC1_OFFSET 0x20
 #define PIC1_DATA (PIC1 + 1)

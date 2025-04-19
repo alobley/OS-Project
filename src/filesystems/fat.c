@@ -483,9 +483,9 @@ DRIVERSTATUS MountFS(device_t* this, char* mountPath) {
             // Create VFS node
             vfs_node_t* newNode = NULL;
             if(currentEntry->attributes & FAT_ATTR_DIRECTORY) {
-                newNode = VfsMakeNode(strdup(fileName), true, false, false, false, 0, 0755, ROOT_UID, NULL);
+                newNode = VfsMakeNode(strdup(fileName), NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
             } else {
-                newNode = VfsMakeNode(strdup(fileName), false, false, true, true, currentEntry->fileSize, 0644, ROOT_UID, NULL);
+                newNode = VfsMakeNode(strdup(fileName), NODE_FLAG_RESIZEABLE, currentEntry->fileSize, 0644, ROOT_UID, NULL);
             }
             
             if(newNode == NULL) {
@@ -504,10 +504,7 @@ DRIVERSTATUS MountFS(device_t* this, char* mountPath) {
         
         // Set up the mount node properties
         mountNode->size = numRootEntries;
-        mountNode->isDirectory = true;
-        mountNode->readOnly = false;
-        mountNode->writeOnly = false;
-        mountNode->isResizeable = false;
+        mountNode->flags = NODE_FLAG_DIRECTORY;
         mountNode->permissions = 0755;
         //mountNode->mountPoint = mountPoint;
 
@@ -576,7 +573,7 @@ DRIVERSTATUS ReadFile(device_t* this, void* buffer, size_t size){
         STOP
         return DRIVER_INVALID_ARGUMENT; // File not found
     }
-    if(readInto->isDirectory){
+    if(readInto->flags & NODE_FLAG_DIRECTORY){
         //printk("Cannot read a directory!\n");
         return DRIVER_INVALID_ARGUMENT; // Cannot read a directory
     }

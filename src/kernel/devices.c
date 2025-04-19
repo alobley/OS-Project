@@ -3,255 +3,290 @@
 #include <vfs.h>
 #include <console.h>
 
-device_registry_t* registry = NULL;
+device_registry_t deviceRegistry = {0};
+driver_registry_t driverRegistry = {0};
 
+/// @brief Find a free index in a bitmap
+/// @param bitmap Pointer to the bitmap
+/// @param bitmapSize The size of the bitmap in uint32_t
+/// @return The index that is free, or an index that is greater than the size of the bitmap on failure
+index_t FindIndex(uint32_t* bitmap, size_t bitmapSize){
+    for(size_t i = 0; i < bitmapSize; i++){
+        if(bitmap[i] != 0xFFFFFFFF){
+            for(size_t j = 0; j < 32; j++){
+                if(!(bitmap[i] & (1 << j))){
+                    bitmap[i] |= 1 << j;
+                    return i * 32 + j;
+                }
+            }
+        }
+    }
+
+    return bitmapSize + 1;
+}
+
+/// @brief Obtain a free device ID to use
+/// @return The new device ID
+device_id_t AllocateDeviceID(){
+    device_id_t id = (device_id_t)FindIndex(deviceRegistry.bitmap, REGISTRY_BITMAP_SIZE);
+    SetBitmapBit(deviceRegistry.bitmap, (index_t)id);
+
+    return id;
+}
+
+/// @brief Set a device ID as free for use
+/// @param id The device ID to free
+void ReleaseDeviceID(device_id_t id){
+    SetBitmapBit(deviceRegistry.bitmap, id);
+}
+
+/// @brief Create the system's device registry
+/// @return Success or error code
 int CreateDeviceRegistry(){
-    registry = (device_registry_t*)halloc(sizeof(device_registry_t));
-    if(registry == NULL){
-        return DRIVER_OUT_OF_MEMORY;
+    deviceRegistry.bitmap = halloc(REGISTRY_BITMAP_SIZE * sizeof(uint32_t));
+    if(deviceRegistry.bitmap == NULL){
+        return STANDARD_FAILURE;
     }
-    memset(registry, 0, sizeof(device_registry_t));
+    memset(deviceRegistry.bitmap, 0, REGISTRY_BITMAP_SIZE * sizeof(uint32_t));
 
-    return DRIVER_SUCCESS;
+    deviceRegistry.devices = halloc(DEFAULT_REGISTRY_ARRAY_SIZE);
+    if(deviceRegistry.devices == NULL){
+        return STANDARD_FAILURE;
+    }
+    memset(deviceRegistry.devices, 0, DEFAULT_REGISTRY_ARRAY_SIZE);
+    deviceRegistry.devArrSize = DEFAULT_REGISTRY_ARRAY_SIZE;
+
+    deviceRegistry.numDevices = 0;
+
+    return STANDARD_SUCCESS;
 }
 
+/// @brief Clear the system's device registry
 void DestroyDeviceRegistry(){
-    device_t* current = registry->firstDevice;
-    while(current != NULL){
-        device_t* next = current->next;
-        hfree(current);
-        current = next;
+    hfree(deviceRegistry.bitmap);
+    for(index_t i = 0; i < deviceRegistry.devArrSize; i++){
+        if(deviceRegistry.devices[i] != NULL){
+            UnregisterDevice(deviceRegistry.devices[i]);
+        }
     }
-    hfree(registry);
+    hfree(deviceRegistry.devices);
+    memset(&deviceRegistry, 0, sizeof(device_registry_t));
 }
 
-int RegisterDevice(device_t* device){
-    if(device == NULL || device->userDevice == NULL){
-        printk("Error: NULL device passed to RegisterDevice\n");
-        return DRIVER_NOT_INITIALIZED;
+/// @brief Takes a pointer to a device that a driver has constructed, copies it, initializes it, and adds it to the VFS.
+/// @param userDevice The device created by the driver
+/// @param path The (absolute) path the device should be located in. Must be in /dev.
+/// @param permissions The permissions of the new device
+/// @return Success or error code
+dresult_t RegisterDevice(device_t* userDevice, char* path, int permissions){
+    if(strncmp(path, "/dev", 4) != 0){
+        // Devices are only allowed in the /dev directory!
+        return DRIVER_ACCESS_DENIED;
     }
 
-    if(registry->firstDevice == NULL){
-        registry->firstDevice = device;
-        registry->lastDevice = device;
-        device->next = NULL;
-    }else{
-        registry->lastDevice->next = device;
-        registry->lastDevice->userDevice->next = device->userDevice;
-        registry->lastDevice = device;
-        device->next = NULL;
-    }
-    
-    registry->numDevices++;
-    return DRIVER_SUCCESS;
-}
-
-int UnregisterDevice(device_t* device){
-    if(registry->firstDevice == NULL){
-        return DRIVER_NOT_INITIALIZED;
+    if(deviceRegistry.numDevices >= REGISTRY_BITMAP_SIZE * 32){
+        return DRIVER_REGISTRY_FULL;
     }
 
-    if(registry->firstDevice == device){
-        registry->firstDevice = device->next;
-        if(registry->lastDevice == device){
-            registry->lastDevice = NULL;
-        }
-    }else{
-        device_t* current = registry->firstDevice;
-        while(current != NULL && current->next != device){
-            current = current->next;
-        }
-        if(current == NULL){
-            return DRIVER_NOT_INITIALIZED;
-        }
-        current->next = device->next;
-        current->userDevice->next = device->userDevice->next;
-        if(registry->lastDevice == device){
-            registry->lastDevice = current;
-        }
+    if(GetCurrentProcess()->driver == NULL){
+        // Process has not registered itself as a driver yet!
+        return DRIVER_ACCESS_DENIED;
     }
-    registry->numDevices--;
-    return DRIVER_SUCCESS;
-}
 
-/// @brief Register a driver into the device registry
-/// @param driver Pointer to the driver to register
-/// @param device Pointer to the device this driver is responsible for - can be null.
-/// @return Code based on the result of the operation
-DRIVERSTATUS RegisterDriver(driver_t* driver, device_t* device){
-    if(device != NULL){
-        device->driver = driver;
+    if(userDevice == NULL || path == NULL || permissions == 0){
+        return DRIVER_INVALID_ARGUMENT;
     }
-    if(driver == NULL){
-        return DRIVER_NOT_INITIALIZED;
-    }
-    if(registry->firstDriver == NULL){
-        registry->firstDriver = driver;
-        registry->lastDriver = driver;
-        driver->next = NULL;
-    }else{
-        registry->lastDriver->next = driver;
-        registry->lastDriver = driver;
-        driver->next = NULL;
-    }
-    return DRIVER_SUCCESS;
-}
 
-DRIVERSTATUS UnregisterDriver(driver_t* driver, device_t* device){
-    device->driver = NULL;
-    if(registry->firstDriver == NULL){
-        return DRIVER_NOT_INITIALIZED;
-    }
-    if(registry->firstDriver == driver){
-        registry->firstDriver = driver->next;
-        if(registry->lastDriver == driver){
-            registry->lastDriver = NULL;
-        }
-    }else{
-        driver_t* current = registry->firstDriver;
-        while(current != NULL && current->next != driver){
-            current = current->next;
-        }
-        if(current == NULL){
-            return DRIVER_NOT_INITIALIZED;
-        }
-        current->next = driver->next;
-        if(registry->lastDriver == driver){
-            registry->lastDriver = current;
-        }
-    }
-    return DRIVER_SUCCESS;
-}
-
-device_t* GetDeviceByID(device_id_t id){
-    device_t* current = registry->firstDevice;
-    while(current != NULL){
-        if(current->id == id){
-            return current;
-        }
-        current = current->next;
-    }
-    return NULL;
-}
-
-device_t* GetFirstDeviceByType(DEVICE_TYPE type){
-    device_t* current = registry->firstDevice;
-    while(current != NULL){
-        if(current->type == type){
-            return current;
-        }
-        current = current->next;
-    }
-    return NULL;
-}
-
-device_t* GetNextDeviceByType(device_t* previous, DEVICE_TYPE type){
-    device_t* current = previous->next;
-    while(current != NULL){
-        if(current->type == type){
-            return current;
-        }
-        current = current->next;
-    }
-    return NULL;
-}
-
-device_t* GetDeviceFromVfs(char* path){
-    vfs_node_t* node = VfsFindNode(path);
-    if(node == NULL){
-        return NULL;
-    }
-    return (device_t*)node->data;
-}
-
-device_id_t devid = 0;
-device_t* CreateDevice(const char* name, const char* devName, const char* description, void* data, driver_t* driver, DEVICE_TYPE type, vendor_id_t vendorId, device_flags_t flags, readhandle_t read, writehandle_t write, ioctlhandle_t ioctl, device_t* parent){
-    device_t* device = (device_t*)halloc(sizeof(device_t));
+    device_t* device = halloc(sizeof(device_t));
     if(device == NULL){
-        return NULL;
+        return DRIVER_FAILURE;
     }
-    memset(device, 0, sizeof(device_t));
-    device->id = devid;
-    devid++;
-    device->vendorId = vendorId;
-    device->status = DEVICE_STATUS_IDLE;
-    memcpy(&device->flags, &flags, sizeof(device_flags_t));
-    device->name = name;
-    device->description = description;
-    device->devName = devName;
-    device->driver = driver;
-    device->deviceInfo = data;                                   // Partitions identified by filesystem drivers
-    device->type = DEVICE_TYPE_BLOCK;
-    device->read = read;
-    device->write = write;
-    device->ioctl = ioctl;
-    device->last_error[0] = '\0';
-    device->lock = MUTEX_INIT;
-    device->parent = parent;
-    device->next = NULL;
-    device->firstChild = NULL;
+    memcpy(device, userDevice);
 
-    user_device_t* userDevice = (user_device_t*)halloc(sizeof(user_device_t));
-    if(userDevice == NULL){
+    device->name = strcpy(userDevice->name);
+    if(device->name == NULL){
         hfree(device);
-        return NULL;
+        return DRIVER_FAILURE;
     }
-    userDevice->id = device->id;
-    userDevice->vendorId = device->vendorId;
-    userDevice->name = device->name;
-    userDevice->description = device->description;
-    userDevice->devName = device->devName;
-    userDevice->type = device->type;
-    userDevice->last_error[0] = '\0';
-    userDevice->parent = NULL;
-    userDevice->next = NULL;
-    userDevice->firstChild = NULL;
-    userDevice->deviceInfo = data;
-    if(parent != NULL){
-        userDevice->parent = parent->userDevice;
-    }
-    device->userDevice = userDevice;
 
-    return device;
+    device->id = AllocateDeviceID();
+    if(device->id > UINT16_MAX){
+        return DRIVER_FAILURE;
+    }
+
+    // Processes MUST register themselves as drivers before mounting devices
+    device->driver = GetCurrentProcess()->driver;
+
+    device->lock = MUTEX_INIT;
+
+    // Extract the device name from the given path and separate them
+    char* devName = strrchr(path, '/');
+    *devName = '\0';
+    devName++;
+
+    // Create the new device node
+    device->node = VfsAddDevice(device, devName, path, permissions);
+    if(device->node == NULL){
+        ReleaseDeviceID(device->id);
+        return DRIVER_FAILURE;
+    }
+
+    // Add the device to the device registry
+    if(deviceRegistry.devArrSize > device->id){
+        deviceRegistry.devices = rehalloc(deviceRegistry.devices, deviceRegistry.devArrSize * 2);
+        deviceRegistry.devArrSize *= 2;
+    }
+    deviceRegistry.devices[device->id] = device;
+    deviceRegistry.numDevices++;
+
+    return DRIVER_SUCCESS;
 }
 
-driver_id_t id = 0;
-driver_t* CreateDriver(const char* name, const char* description, uint32_t version, DEVICE_TYPE type, driver_init_t init, driver_deinit_t deinit, driver_probe_t probe){
-    driver_t* driver = (driver_t*)halloc(sizeof(driver_t));
-    memset(driver, 0, sizeof(driver_t));
-    driver->name = name;
-    driver->description = description;
-    driver->id = id;
-    id++;
-    driver->type = type;
-    driver->version = version;
-    driver->init = init;
-    driver->deinit = deinit;
-    driver->probe = probe;
-    return driver;
+/// @brief Unregister a device from the system
+/// @param device The device to unregister
+void UnregisterDevice(device_t* device){
+    VfsRemoveNode(device->node);
+    deviceRegistry.devices[device->id] = NULL;
+    deviceRegistry.numDevices--;
+    ReleaseDeviceID(device->id);
+    hfree(device->name);
+    hfree(device);
 }
 
-// Search for a compatible driver in the device tree
-driver_t* FindDriver(device_t* device, DEVICE_TYPE type){
-    if(device == NULL || registry->firstDriver == NULL){
-        //printk("No drivers found!\n");
+/// @brief Create the system driver registry for driver lookup
+/// @return Success or error code
+int CreateDriverRegistry(){
+    driverRegistry.bitmap = halloc(REGISTRY_BITMAP_SIZE * sizeof(uint32_t));
+    if(driverRegistry.bitmap == NULL){
+        return STANDARD_FAILURE;
+    }
+    memset(driverRegistry.bitmap, 0, REGISTRY_BITMAP_SIZE * sizeof(uint32_t));
+
+    driverRegistry.drivers = halloc(sizeof(driver_t*) * DEFAULT_REGISTRY_ARRAY_SIZE);
+    if(driverRegistry.drivers == NULL){
+        return STANDARD_FAILURE;
+    }
+    memset(driverRegistry.drivers, 0, sizeof(driver_t*) * DEFAULT_REGISTRY_ARRAY_SIZE);
+    driverRegistry.drvArrSize = DEFAULT_REGISTRY_ARRAY_SIZE;
+
+    driverRegistry.numDrivers = 0;
+
+    return STANDARD_SUCCESS;
+}
+
+/// @brief Destroy the system's driver registry
+void DestroyDriverRegistry(){
+    hfree(driverRegistry.bitmap);
+    for(index_t i = 0; i < driverRegistry.drvArrSize; i++){
+        if(driverRegistry.drivers[i] != NULL){
+            UnregisterDriver(driverRegistry.drivers[i]);
+        }
+    }
+    hfree(driverRegistry.drivers);
+    memset(&driverRegistry, 0, sizeof(driver_registry_t));
+}
+
+/// @brief Register a driver with the system
+/// @warning Make sure the kernel calls the driver's init function!
+/// @param userDriver A pointer to the struct in the driver's virtual memory space
+/// @param inKernel Whether or not the driver is directly part of the kernel's binary (those drivers will call this function directly)
+/// @return Success or error code
+dresult_t RegisterDriver(driver_t* userDriver, bool inKernel){
+    if(userDriver == NULL || userDriver->probe == NULL){
+        // The driver structure must be properly initialized by the driver!
+        return DRIVER_INVALID_ARGUMENT;
+    }
+
+    userDriver->in_kernel = inKernel;
+
+    if(driverRegistry.numDrivers >= REGISTRY_BITMAP_SIZE * 32){
+        return DRIVER_REGISTRY_FULL;
+    }
+
+    driver_t* toRegister = NULL;
+
+    if(userDriver->type & DEVICE_TYPE_FILESYSTEM){
+        // Special case for filesystem drivers
+        fs_driver_t* driver = halloc(sizeof(fs_driver_t));
+        if(driver == NULL){
+            return DRIVER_FAILURE;
+        }
+        memset(driver, 0, sizeof(fs_driver_t));
+        memcpy(driver, (fs_driver_t*)userDriver);
+
+        driver->driver.name = strdup(userDriver->name);
+        if(driver->driver.name == NULL){
+            return DRIVER_FAILURE;
+        }
+
+        toRegister = &driver->driver;
+    }else{
+        driver_t* driver = halloc(sizeof(driver_t));
+        if(driver == NULL){
+            return DRIVER_FAILURE;
+        }
+        memset(driver, 0, sizeof(driver_t));
+        memcpy(driver, userDriver, sizeof(driver_t));
+
+        driver->name = strdup(userDriver->name);
+        if(driver->name == NULL){
+            return DRIVER_FAILURE;
+        }
+
+        toRegister = driver;
+    }
+
+    // Set the driver field in the PCB and the owner field in the driver to the driver struct and the driver's PCB, respectively.
+    GetCurrentProcess()->driver = toRegister;
+    toRegister->owner = GetCurrentProcess();
+
+    // Add the driver to the driver registry
+    index_t arrIndex = FindIndex(driverRegistry.bitmap, REGISTRY_BITMAP_SIZE);
+    toRegister->index = arrIndex;
+    if(driverRegistry.drvArrSize > arrIndex){
+        driverRegistry.drivers = rehalloc(driverRegistry.drivers, driverRegistry.drvArrSize * 2);
+        driverRegistry.drvArrSize *= 2;
+    }
+    ClearBitmapBit(driverRegistry.bitmap, arrIndex);
+    driverRegistry.drivers[arrIndex] = toRegister;
+    driverRegistry.numDrivers++;
+
+    return DRIVER_SUCCESS;
+}
+
+void UnregisterDriver(driver_t* driver){
+    SetBitmapBit(driverRegistry.bitmap, driver->index);
+    driverRegistry.drivers[driver->index] = NULL;
+    hfree(driver->name);
+    hfree(driver);
+    driverRegistry.numDrivers--;
+}
+
+// Find a driver compatible with the given device
+dresult_t FindDriver(device_t* device){
+    // Just linearly search
+    for(index_t i = 0; i < driverRegistry.drvArrSize / 4; i++){
+        if(driverRegistry.drivers[i] != NULL){
+            if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS){
+                // This only works for ring 0 drivers. I'll need to context switch to user-space drivers...
+                device->driver = driverRegistry.drivers[i];
+                return DRIVER_SUCCESS;
+            }
+        }
+    }
+
+    // No supported driver found, remove it from the registry
+    UnregisterDevice(device);
+    return DRIVER_FAILURE;
+}
+
+/// @brief Obtain a pointer to a device based on its device ID
+/// @param device The device ID to locate
+/// @return Pointer to the device with the corresponding ID, or NULL if none.
+device_t* GetDeviceByID(device_id_t device){
+    // This is, thankfully, very simple
+    if(device > deviceRegistry.devArrSize / sizeof(device_t*)){
         return NULL;
     }
-    driver_t* current = registry->firstDriver;
-    while(current != NULL){
-        if(current == NULL){
-            break;
-        }
-        if(current->probe == NULL){
-            current = current->next;
-            continue;
-        }
-        if(current->probe(device) == DRIVER_INITIALIZED && current->type == type){
-            //printk("Found driver %s for device %s\n", current->name, device->name);
-            return current;
-        }
-        current = current->next;
-    }
-    //printk("No valid drivers found!\n");
-    return NULL;
+    return deviceRegistry.devices[device];
 }

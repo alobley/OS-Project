@@ -25,7 +25,7 @@ typedef struct MemoryBlock {
 block_header_t* firstBlock = NULL;
 
 // Although targeting a single-CPU environment, multiple processes might request kernel resources at the same time. Allocation is quick so wait times likely won't be long.
-mutex_t heapMutex = MUTEX_INIT;
+spinlock_t heapLock = SPINLOCK_INIT;
 
 void InitializeAllocator(void){
     firstBlock = (block_header_t*)heapStart;
@@ -37,6 +37,7 @@ void InitializeAllocator(void){
     heapEnd = heapStart + PAGE_SIZE;
 
     for(int i = 0; i < 500; i++){
+        // Helps detect bad RAM
         nop
     }
 
@@ -101,8 +102,9 @@ MALLOC void* halloc(size_t size){
         return NULL;
     }
 
-    while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
-    MutexLock(&heapMutex);
+    while(SpinLock(&heapLock, GetCurrentProcess()) == SEM_LOCKED){
+        // Spin
+    }
 
     block_header_t* current = firstBlock;
     block_header_t* previous = NULL;
@@ -129,13 +131,13 @@ MALLOC void* halloc(size_t size){
                 newBlock->next->prev = newBlock;
             }
             
-            MutexUnlock(&heapMutex);
+            SpinUnlock(&heapLock);
             //printk("Splitting block\n");
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }else if(current->free && current->size >= size){
             // A suitable block of perfect size was found
             current->free = false;
-            MutexUnlock(&heapMutex);
+            SpinUnlock(&heapLock);
             //printk("Perfect block found\n");
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
@@ -155,7 +157,7 @@ MALLOC void* halloc(size_t size){
             // Check if we would exceed memory limits
             if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
                heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
-                MutexUnlock(&heapMutex);
+                SpinUnlock(&heapLock);
                 return NULL;
             }
             
@@ -166,7 +168,7 @@ MALLOC void* halloc(size_t size){
                     for(size_t j = 0; j < i; j++) {
                         pfree(heapEnd + (j * PAGE_SIZE));
                     }
-                    MutexUnlock(&heapMutex);
+                    SpinUnlock(&heapLock);
                     printk("PAGING ERROR\n");
                     STOP
                 }
@@ -193,7 +195,7 @@ MALLOC void* halloc(size_t size){
             current->free = false;
             current->magic = MEMBLOCK_MAGIC;
             heapEnd += pagesToAdd * PAGE_SIZE;
-            MutexUnlock(&heapMutex);
+            SpinUnlock(&heapLock);
             return (void*)((uint8_t*)current + HEADER_SIZE);
         }
         previous = current;
@@ -204,7 +206,7 @@ MALLOC void* halloc(size_t size){
 
     // We've reached the end of the list and didn't find a suitable block
     if(heapEnd >= USER_MEM_START || heapEnd + size + HEADER_SIZE <= heapEnd){
-        MutexUnlock(&heapMutex);
+        SpinUnlock(&heapLock);
         return NULL;
     }
 
@@ -218,7 +220,7 @@ MALLOC void* halloc(size_t size){
     // Check if we would exceed memory limits
     if(heapEnd + (pagesToAdd * PAGE_SIZE) > USER_MEM_START || 
        heapEnd + (pagesToAdd * PAGE_SIZE) < heapEnd) {
-        MutexUnlock(&heapMutex);
+        SpinUnlock(&heapLock);
         return NULL;
     }
     
@@ -228,7 +230,7 @@ MALLOC void* halloc(size_t size){
             for(size_t j = 0; j < i; j++) {
                 pfree(heapEnd + (j * PAGE_SIZE));
             }
-            MutexUnlock(&heapMutex);
+            SpinUnlock(&heapLock);
             printk("PAGING ERROR\n");
             STOP
         }
@@ -268,7 +270,7 @@ MALLOC void* halloc(size_t size){
     }
     
     heapEnd += pagesToAdd * PAGE_SIZE;
-    MutexUnlock(&heapMutex);
+    SpinUnlock(&heapLock);
     //printk("Memory allocated at 0x%x ", newBlock + HEADER_SIZE);
     return (void*)((uint8_t*)newBlock + HEADER_SIZE);
 }
@@ -280,8 +282,9 @@ void hfree(void* ptr){
 
     //printk("Freeing memory at 0x%x ", ptr);
 
-    while(PeekMutex(&heapMutex) == MUTEX_IS_LOCKED);
-    MutexLock(&heapMutex);
+    while(SpinLock(&heapLock, GetCurrentProcess()) == SEM_LOCKED){
+        // Spin
+    }
 
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
@@ -365,13 +368,18 @@ void hfree(void* ptr){
         }
     }
 
-    MutexUnlock(&heapMutex);
+    SpinUnlock(&heapLock);
 }
 
-// Reallocate some memory to a new size
+// Reallocate some memory to a new size (expects the new area added to be initialized to 0)
 MALLOC void* rehalloc(void* ptr, size_t newSize){
     if(ptr == NULL){
-        return halloc(newSize);
+        char* newPtr = halloc(newSize);
+        if(newPtr == NULL){
+            return NULL;
+        }
+        memset(newPtr, 0, newSize);
+        return newPtr;
     }
     block_header_t* block = (block_header_t*)((uintptr_t)ptr - HEADER_SIZE);
     if(block->magic != MEMBLOCK_MAGIC){
@@ -390,6 +398,7 @@ MALLOC void* rehalloc(void* ptr, size_t newSize){
         // Failed to allocate new memory
         return NULL;
     }
+    memset(newPtr, 0, newSize);
     memcpy(newPtr, ptr, block->size);
     hfree(ptr);
     return newPtr;

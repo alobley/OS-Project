@@ -1,6 +1,16 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+// Parameters are pushed in reverse order onto the stack
+struct Registers {
+    unsigned int gs, fs, es, ds;
+    unsigned int edi, esi, ebp, esp, ebx, edx, ecx, eax;
+    unsigned int int_no, err_code;
+    unsigned int eip, cs;
+    unsigned int eflags;
+    unsigned int user_esp, ss;
+};
+
 #define NORET __attribute__((noreturn))                 // Function will not return
 #define PACKED __attribute__((packed))                  // Packs the struct so there is no padding
 #define ALIGNED(x) __attribute__((aligned(x)))          // Aligns the variable to x bytes

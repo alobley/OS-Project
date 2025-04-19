@@ -136,7 +136,7 @@ void ls(UNUSED char* cmd){
         printf("Error: current directory does not exist\n");
         return;
     }
-    if(!current->isDirectory){
+    if(!(current->flags & NODE_FLAG_DIRECTORY)){
         printf("Error: current directory is not a directory\n");
         return;
     }

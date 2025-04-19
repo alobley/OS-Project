@@ -12,6 +12,8 @@
 #include <common.h>
 #include <multiboot.h>
 
+#define EMERGENCY_NO_MEMORY -1000             // If a function returns this, a variable passed to the function has been compromised and the kernel should destroy it.
+
 #define PAGE_SIZE 0x1000                                    // The size of a single standard (4KiB) page
 #define HUGE_PAGE_SIZE 0x400000                             // The size of a signle huge (4MiB) page
 
@@ -24,10 +26,10 @@
 
 // The first virtual memory address containing user-mode RAM
 #define USER_MEM_START 0x40000000                           // TODO: Fix this and replace with bounds for a higher-half architecture
-
 // The last virtual memory address containing user-mode RAM
 #define USER_MEM_END PD_VIRTADDR                            // TODO: Fix this and replace with bounds for a higher-half architecture
-// Can I get around the address discrepancy using PIC?
+#define USER_MEM_SIZE (USER_MEM_END - USER_MEM_START)
+
 #define KERNEL_PHYSADDR 0x200000                            // The kernel will expect to be loaded at this address.
 #define KERNEL_VIRTADDR 0x200000                            // TODO: Fix this and create atrampoline section to get to a higher-half kernel (this value should be 0xC0000000)
 
@@ -81,13 +83,15 @@ typedef unsigned int virtaddr_t;
 #define PAGE_GLOBAL (1 << 8)                                // The page is never invalidated, even if CR3 changes
 #define PAGE_NOSWAP (1 << 9)                                // Available for the OS to use. Disables swapping by the OS.
 #define PAGE_NOREMAP (1 << 10)                              // Available for the OS to use. Determines whether the page's frame can be reused as regular memory.
-#define PAGE_SHARED (1 << 11)                               // This page is shared between multiple processes. This is a software flag and not set by the CPU.
+#define PAGE_SHARED (1 << 11)                               // Available for the OS to use. This page is shared between multiple processes.
 
 // Define some default flags which will most commonly be used for convenience
 #define DEFAULT_KERNEL_PDE_FLAGS (PDE_PRESENT | PDE_RW)
 #define DEFAULT_USER_PDE_FLAGS (PDE_PRESENT | PDE_RW | PDE_USER)
 
-#define DEFAULT_KERNEL_PAGE_FLAGS (PAGE_PRESENT | PAGE_RW)
+#define DEFAULT_KERNEL_PAGE_FLAGS (PAGE_PRESENT | PAGE_RW | PAGE_GLOBAL)
+
+#define KERNEL_TEMP_PAGE_FLAGS (PAGE_PRESENT | PAGE_RW)
 #define DEFAULT_USER_PAGE_FLAGS (PAGE_PRESENT | PAGE_RW | PAGE_USER)
 
 // Mask a physical address of a page (4KiB of physical memory) to align it properly and set flags. The address should already be aligned regardless.
@@ -98,6 +102,13 @@ typedef unsigned int virtaddr_t;
 
 #define INVALID_ADDRESS 3                                   // An address that is not page-aligned and therefore indicates an invalid page.
 #define PAGE_NULL ((void*)INVALID_ADDRESS)                  // Must be different than actual NULL because NULL is a valid page address
+
+// Clear the whole TLB except for global pages
+#define FlushTLB()                  \
+        asm volatile (              \
+            "mov %%cr3, %%eax\n\t"  \
+            "mov %%eax, %%cr3\n\t"  \
+            ::: "eax", "memory")
 
 // A success or error code returned by a paging operation
 typedef enum PAGE_RESULT {
@@ -121,6 +132,12 @@ typedef enum PAGE_RESULT {
     FAULT_HANDLED            = 4     // A page fault was handled gracefully
 } page_result_t;
 
+// Page table entry
+typedef unsigned int page_t;
+
+// Page directory entry
+typedef unsigned int pde_t;
+
 // The total amount of system RAM in bytes
 extern size_t totalMemSize;
 
@@ -141,6 +158,12 @@ void MapBitmap(mmap_entry_t* memoryMap, size_t memmapLength);
 /// @param address The address of the new page (must be aligned)
 /// @return Success or error code
 page_result_t palloc(virtaddr_t address, unsigned int flags);
+
+/// @brief Remap a page from an old virtual address to a new virtual address
+/// @param old The old (page-aligned) virtual address
+/// @param new The new (page-aligned) virtual address
+/// @return Success or error code
+page_result_t RemapPage(virtaddr_t old, virtaddr_t new)
 
 /// @brief Allocate a page based on a given physical address
 /// @param virt The virtual address of the page to allocate
@@ -175,6 +198,13 @@ page_result_t PageKernel(size_t systemMem);
 /// @param cr2 The value of CR2
 /// @return Whether the fault was handled or not
 page_result_t HandlePageFault(uint32_t errCode, uint32_t cr2);
+
+/// @brief Copy the page tables of another process to a new process. Ignores the kernel.
+/// @param pdes An array of 1024 PDEs to be mapped
+/// @return Success or error code
+void ReplacePageTables(pde_t* pdes);
+
+void ClearPageTables();
 
 /// @brief Check all of the page tables and page directories for sanity
 /// @warning This function will take a lot of time to complete. It checks every possible page frame for every possible page.

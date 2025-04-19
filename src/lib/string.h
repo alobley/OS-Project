@@ -4,7 +4,11 @@
 #include <stddef.h>
 
 // Copy a block of memory to another location
-static inline void* memcpy(void* dest, const void* src, unsigned long size){
+static inline void* memcpy(void* dest, const void* src, unsigned int size){
+    if(size == 0){
+        // Nothing to do
+        return dest;
+    }
     unsigned char* d = (unsigned char*) dest;
     unsigned char* s = (unsigned char*) src;
     for(unsigned long i = 0; i < size; i++){
