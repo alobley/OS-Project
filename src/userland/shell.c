@@ -2,8 +2,9 @@
 #include <string.h>
 #include <vfs.h>
 #include <hash.h>
-#include <drivers.h>
-#include "../libc/stdio.h"
+#include <console.h>
+#include <acpi.h>
+#include <keyboard.h>
 
 size_t dirSize = 1024;
 hash_table_t* cmdTable;
@@ -23,10 +24,10 @@ volatile bool done = false;
 char* currentWorkingDir = NULL;
 
 void printPrompt(){
-    printf("[");
+    printk("[");
     // Get only the last part of the working directory
     if(currentWorkingDir == NULL){
-        printf("ERROR");
+        printk("ERROR");
     }else{
         char* lastPart = strrchr(currentWorkingDir, '/');
         if(strcmp(currentWorkingDir, VFS_ROOT) == 0){
@@ -34,52 +35,72 @@ void printPrompt(){
         }else{
             lastPart++;
         }
-        printf(lastPart);
+
+        printk(lastPart);
     }
-    printf("]");
-    printf(prompt);
+    printk("]");
+    printk(prompt);
+}
+
+// Handle a key press
+void handler(KeyboardEvent_t event){
+    if(event.keyUp || event.ascii == 0){
+        return;
+    }
+    switch(event.ascii){
+        case '\n': {
+            printk("\n");
+            enterPressed = true;
+            break;
+        }
+        case '\b': {
+            if(cmdBufferIndex > 0){
+                cmdBufferIndex--;
+                WriteChar(event.ascii);
+            }
+            break;
+        }
+        default: {
+            if(cmdBufferIndex < CMD_MAX_SIZE - 1){
+                cmdBuffer[cmdBufferIndex] = event.ascii;
+                cmdBufferIndex++;
+                WriteChar(event.ascii);
+            }
+            break;
+        }
+    }
 }
 
 void clear(UNUSED char* cmd){
-    write(STDOUT_FILENO, ANSI_ESCAPE, strlen(ANSI_ESCAPE));
+    ClearScreen();
+    //write(STDOUT_FILENO, ANSI_ESCAPE, strlen(ANSI_ESCAPE));
 }
 
 void help(UNUSED char* cmd){
-    printf("Commands:\n");
-    printf("clear: clears the screen\n");
-    printf("help: prints this help message\n");
-    printf("exit: exits the shell\n");
-    printf("syscall: tests the system call mechanism\n");
-    printf("pinfo: prints the process info of the shell\n");
-    printf("time: prints the current time\n");
-    printf("settz: sets the timezone\n");
-    printf("pwd: prints the current working directory\n");
-    printf("ls: lists the files in the current directory\n");
-    printf("cd: changes the current directory\n");
-    printf("shutdown: shuts down the system\n");
-    printf("sysinfo: prints system information\n");
+    printk("Commands:\n");
+    printk("clear: clears the screen\n");
+    printk("help: prints this help message\n");
+    printk("exit: exits the shell\n");
+    printk("syscall: tests the system call mechanism\n");
+    printk("time: prints the current time\n");
+    printk("settz: sets the timezone\n");
+    printk("pwd: prints the current working directory\n");
+    printk("ls: lists the files in the current directory\n");
+    printk("cd: changes the current directory\n");
+    printk("shutdown: shuts down the system\n");
+    printk("sysinfo: prints system information\n");
 }
 
 void exitShell(UNUSED char* cmd){
-    printf("Exiting shell...\n");
+    printk("Exiting shell...\n");
     done = true;
 }
 
 void syscall(UNUSED char* cmd){
     int result = 0;
-    result = sys_debug();
-    printf("System call returned: 0x%x\n", result);
-}
-
-void pinfo(UNUSED char* cmd){
-    pid_t currentPid = getpid();
-    printf("Process ID: %d\n", currentPid);
-    printf("Owner: ");
-    if(currentPid == ROOT_UID){
-        printf("root\n");
-    }else{
-        printf("user\n");
-    }
+    do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
+    getresult(result);
+    printk("System call returned: 0x%x\n", result);
 }
 
 void time(UNUSED char* cmd){
@@ -87,18 +108,18 @@ void time(UNUSED char* cmd){
     if(hour > 12){
         hour -= 12;
     }
-    printf("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
-    printf("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
+    printk("Date: %d/%d/%d\n", currentTime.month, currentTime.day, currentTime.year);
+    printk("Time: %d:%d:%d\n", hour, currentTime.minute, currentTime.second);
 }
 
 void settz(char* cmd){
     // Assumes the clock is originally set to UTC
     char* tz = cmd + 6;
     if(strlen(tz) == 0 || strlen(cmd) < 6){
-        printf("Usage: settz <timezone>\n");
+        printk("Usage: settz <timezone>\n");
         return;
     }
-    printf("Setting timezone to %s\n", tz);
+    printk("Setting timezone to %s\n", tz);
     if(strcmp(tz, "UTC") == 0){
         SetTime();
     }else if(strcmp(tz, "EST") == 0){
@@ -121,33 +142,33 @@ void settz(char* cmd){
             }
         }
     }else{
-        printf("Only EST and UTC are supported\n");
+        printk("Only EST and UTC are supported\n");
     }
 }
 
 void pwd(UNUSED char* cmd){
     // Allocate a buffer for the directory
-    printf("%s\n", currentWorkingDir);
+    printk("%s\n", currentWorkingDir);
 }
 
 void ls(UNUSED char* cmd){
     vfs_node_t* current = VfsFindNode(currentWorkingDir);
     if(current == NULL){
-        printf("Error: current directory does not exist\n");
+        printk("Error: current directory does not exist\n");
         return;
     }
     if(!(current->flags & NODE_FLAG_DIRECTORY)){
-        printf("Error: current directory is not a directory\n");
+        printk("Error: current directory is not a directory\n");
         return;
     }
     if(strcmp(current->name, "/") != 0){
-        // printf .. for the previous directory
-        printf("..\n");
+        // printk .. for the previous directory
+        printk("..\n");
     }
     vfs_node_t* child = current->firstChild;
     for(size_t i = 0; i < current->size; i++){
         if(child != NULL){
-            printf("%s\n", child->name);
+            printk("%s\n", child->name);
             child = child->next;
         }
     }
@@ -156,46 +177,51 @@ void ls(UNUSED char* cmd){
 void cd(char* cmd){
     char* dir = cmd + 3;
     if(strlen(dir) == 0 || strlen(cmd) < 3){
-        printf("Usage: cd <directory>\n");
+        printk("Usage: cd <directory>\n");
         return;
     }
     
-    if(chdir(dir) == STANDARD_FAILURE){
-        printf("Error: directory %s does not exist\n", dir);
+    int result = 0;
+    do_syscall(SYS_CHDIR, (uint32_t)dir, strlen(dir), 0, 0, 0);
+    getresult(result);
+    if(result != SYSCALL_SUCCESS){
+        printk("Error: directory %s does not exist\n", dir);
     }
 
     memset(currentWorkingDir, 0, strlen(currentWorkingDir));
-    getcwd(currentWorkingDir, dirSize);
+    do_syscall(SYS_GETCWD, (uint32_t)currentWorkingDir, dirSize, 0, 0, 0);
 }
 
 void shutdown_system(UNUSED char* cmd){
-    shutdown();
-    printf("Shutdown failed. It is safe to turn off your computer.\n");
+    AcpiShutdown();
+    printk("Shutdown failed. It is safe to turn off your computer.\n");
     while(1);
 }
 
 void systeminfo(UNUSED char* cmd){
-    printf("System information:\n");
-    struct sysinfo info;
-    sysinfo(&info);
-    printf("Kernel version: %d.%d.%d\n", info.kernelVersion.major, info.kernelVersion.minor, info.kernelVersion.patch);
-    printf("Kernel release: %s\n", info.kernelRelease);
-    printf("CPU ID: %s\n", info.cpuID);
-    printf("Uptime: %llu seconds\n", info.uptime);
-    printf("Total memory: %d MiB\n", info.totalMemory / 1024 / 1024);
-    printf("Used memory: %d MiB\n", info.usedMemory / 1024 / 1024);
-    printf("Free memory: %d MiB\n", info.freeMemory / 1024 / 1024);
-    printf("ACPI supported: ");
+    printk("System information:\n");
+    struct uname info;
+    do_syscall(SYS_UNAME, (uint32_t)&info, 0, 0, 0, 0);
+    printk("Kernel version: %d.%d.%d\n", info.kernelVersion.major, info.kernelVersion.minor, info.kernelVersion.patch);
+    printk("Kernel release: %s\n", info.kernelRelease);
+    printk("CPU ID: %s\n", info.cpuOEM);
+    printk("Uptime: %llu seconds\n", info.uptime);
+    printk("Total memory: %d MiB\n", info.totalMemory / 1024 / 1024);
+    printk("Used memory: %d MiB\n", info.usedMemory / 1024 / 1024);
+    printk("Free memory: %d MiB\n", info.freeMemory / 1024 / 1024);
+    printk("ACPI supported: ");
     if(info.acpiSupported){
-        printf("yes\n");
+        printk("yes\n");
     }else{
-        printf("no\n");
+        printk("no\n");
     }
 }
 
 void ProcessCommand(char* cmd){
     if(strlen(cmd) == 0){
         printPrompt();
+        cmdBufferIndex = 0;
+        memset(cmdBuffer, 0, CMD_MAX_SIZE);
         return;
     }
 
@@ -217,19 +243,23 @@ void ProcessCommand(char* cmd){
         // Search for a program to execute
         if(*cmd == 0){
             printPrompt();
+            cmdBufferIndex = 0;
+            memset(cmdBuffer, 0, CMD_MAX_SIZE);
             return;
         }
 
-        int result = exec(cmd, NULL, NULL, 0);
+        int result = SYSCALL_TASKING_FAILURE;
 
         if(result == SYSCALL_TASKING_FAILURE){
-            printf("Error: failed to load and execute file.\n");
+            printk("Error: failed to load and execute file.\n");
         }else if(result == SYSCALL_FAULT_DETECTED){
-            printf("Segmentation Fault\n");
+            printk("Segmentation Fault\n");
         }else{
-            printf("Program exited with code %d\n", result);
+            printk("Program exited with code %d\n", result);
         }
     }
+    cmdBufferIndex = 0;
+    memset(cmdBuffer, 0, CMD_MAX_SIZE);
     if(!done){
         printPrompt();
     }
@@ -239,7 +269,9 @@ void ProcessCommand(char* cmd){
 // Most recent removal:
 // - Program loading and execution
 int shell(void){
-    write(STDOUT_FILENO, ANSI_ESCAPE, strlen(ANSI_ESCAPE));
+    ClearScreen();
+
+    InstallKeyboardCallback(handler);
 
     // Create a table with a default size of 30
     cmdTable = CreateTable(30);
@@ -249,7 +281,6 @@ int shell(void){
     HashInsert(cmdTable, "help", help);
     HashInsert(cmdTable, "exit", exitShell);
     HashInsert(cmdTable, "syscall", syscall);
-    HashInsert(cmdTable, "pinfo", pinfo);
     HashInsert(cmdTable, "time", time);
     HashInsert(cmdTable, "settz", settz);
     HashInsert(cmdTable, "pwd", pwd);
@@ -258,35 +289,33 @@ int shell(void){
     HashInsert(cmdTable, "shutdown", shutdown_system);
     HashInsert(cmdTable, "sysinfo", systeminfo);
 
-    // Test the write system call by using it to printf the welcome message
-    printf("Kernel-Integrated Shell (KISh)\n");
-    printf("Type 'help' for a list of commands\n");
+    // Test the write system call by using it to printk the welcome message
+    printk("Kernel-Integrated Shell (KISh)\n");
+    printk("Type 'help' for a list of commands\n");
 
 
     currentWorkingDir = (char*)halloc(dirSize);
     if(currentWorkingDir == NULL){
-        printf("Error: failed to allocate memory for current working directory\n");
+        printk("Error: failed to allocate memory for current working directory\n");
         return STANDARD_FAILURE;
     }
     memset(currentWorkingDir, 0, dirSize);
-    getcwd(currentWorkingDir, dirSize);
+    do_syscall(SYS_GETCWD, (uint32_t)currentWorkingDir, dirSize, 0, 0, 0);
 
     printPrompt();
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     if(cmdBuffer == NULL){
-        printf("Error: failed to allocate memory for command buffer\n");
+        printk("Error: failed to allocate memory for command buffer\n");
         return STANDARD_FAILURE;
     }
     memset(cmdBuffer, 0, CMD_MAX_SIZE);
 
     while(!done){
-        if(read(STDIN_FILENO, cmdBuffer, CMD_MAX_SIZE) != FILE_READ_SUCCESS){
-            printf("Error: failed to read from stdin\n");
-            return STANDARD_FAILURE;
+        if(enterPressed){
+            cmdBuffer[cmdBufferIndex] = '\0';
+            enterPressed = false;
+            ProcessCommand(cmdBuffer);
         }
-        size_t bufferLen = strlen(cmdBuffer);
-        cmdBuffer[bufferLen - 1] = '\0';
-        ProcessCommand(cmdBuffer);
     }
     
     hfree(cmdBuffer);

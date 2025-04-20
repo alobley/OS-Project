@@ -6,7 +6,7 @@
 #include <alloc.h>
 #include <vfs.h>
 #include <kernel.h>
-#include <drivers.h>
+#include <devices.h>
 
 #define KEYBOARD_ISR 0x21
 #define KEYBOARD_IRQ 1
@@ -194,7 +194,7 @@ bool MouseExists(){
 
 PS2Info ps2Info;
 
-void InitializeKeyboard(){
+int InitializeKeyboard(){
     if(acpiInfo.exists && !PS2ControllerExists()){
         // If PS/2 controller doesn't exist, return. These kinds of systems will not be supported until USB is implemented.
         printk("PS/2 Controller not found. This computer can't be used.\n");
@@ -241,7 +241,7 @@ void InitializeKeyboard(){
     if(inb(PS2_DATA_PORT) != 0x55){
         // Self-test failed, something should be done to inform the kernel.
         printk("PS/2 Controller self-test failed.\n");
-        return;
+        return DRIVER_FAILURE;
     }
 
     // Just in case the controller was reset, set the configuration byte again
@@ -282,7 +282,7 @@ void InitializeKeyboard(){
     if(result != 0x55 && result != 0x00){
         // Self-test failed, something should be done to inform the kernel.
         printk("PS/2 keyboard self-test failed.\n");
-        return;
+        return DRIVER_FAILURE;
     }
 
     if(mouseExists){
@@ -326,7 +326,7 @@ void InitializeKeyboard(){
     if(result1 == 0xFC || result1 == 0){
         // Reset failed
         printk("PS/2 keyboard reset failed.\n");
-        return;
+        return DRIVER_FAILURE;
     }else{
         // The reset was successful, the next bytes should be the device types
         inb(PS2_DATA_PORT);
@@ -348,7 +348,7 @@ void InitializeKeyboard(){
         if(result1 == 0xFC || result1 == 0){
             // Reset failed
             printk("PS/2 keyboard reset failed.\n");
-            return;
+            return DRIVER_FAILURE;
         }else{
             // The reset was successful, the next bytes should be the device types
             inb(PS2_DATA_PORT);
@@ -379,24 +379,42 @@ void InitializeKeyboard(){
     uint8_t ack = inb(PS2_DATA_PORT);
     if (ack != 0xFA) {
         printk("Failed to set scan code set.\n");
-        return;
+        return DRIVER_FAILURE;
     }
 
-    keyboard_t* keyboardDeviceInfo = (keyboard_t*)halloc(sizeof(keyboard_t));
-    memset(keyboardDeviceInfo, 0, sizeof(keyboard_t));
-    keyboardDeviceInfo->AddCallback = InstallKeyboardCallback;
-    keyboardDeviceInfo->RemoveCallback = RemoveKeyboardCallback;
+    driver_t* keyboardDriver = halloc(sizeof(driver_t));
+    if(keyboardDriver == NULL){
+        // Failed to allocate memory for the driver
+        printk("Failed to allocate memory for the keyboard driver.\n");
+        return DRIVER_FAILURE;
+    }
+    memset(keyboardDriver, 0, sizeof(driver_t));
 
-    device_t* keyboardDevice = CreateDevice("PS/2 Keyboard", "kb0", "PS/2 Keyboard", (void*)keyboardDeviceInfo, NULL, DEVICE_TYPE_CHAR, 0, (device_flags_t){0}, NULL, NULL, NULL, NULL);
+    keyboardDriver->class = DEVICE_CLASS_INPUT | DEVICE_CLASS_CHAR;
+    keyboardDriver->type = DEVICE_TYPE_KEYBOARD;
+    keyboardDriver->init = InitializeKeyboard;
+    keyboardDriver->deinit = NULL;
+    keyboardDriver->probe = NULL;
+    keyboardDriver->name = "ps2_keyboard";
+    RegisterDriver(keyboardDriver, true);
 
-    driver_t* keyboardDriver = CreateDriver("ps2_keyboard", "PS/2 Keyboard Driver", 1, DEVICE_TYPE_CHAR, NULL, NULL, NULL);
-    module_load(keyboardDriver, keyboardDevice);
+    device_t* keyboardDevice = halloc(sizeof(device_t));
+    if(keyboardDevice == NULL){
+        // Failed to allocate memory for the device
+        printk("Failed to allocate memory for the keyboard device.\n");
+        return DRIVER_FAILURE;
+    }
+    memset(keyboardDevice, 0, sizeof(device_t));
 
-    add_vfs_device(keyboardDevice, keyboardDevice->devName, "/dev");
+    keyboardDevice->class = DEVICE_CLASS_INPUT | DEVICE_CLASS_CHAR;
+    keyboardDevice->type = DEVICE_TYPE_KEYBOARD;
+    keyboardDevice->driver = keyboardDriver;
+    keyboardDevice->name = "PS/2 Keyboard";
+
+    RegisterDevice(keyboardDevice, "/dev/kb0", 0666);
 
     // Install the keyboard interrupt
-    request_irq(KEYBOARD_IRQ, kb_handler);
+    InstallIRQ(KEYBOARD_IRQ, kb_handler);
 
-    // Add the keyboard device to the VFS (just do it like this for now, later I will properly make the keyboard driver)
-    register_device(keyboardDevice);
+    return DRIVER_SUCCESS;
 }

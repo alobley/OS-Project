@@ -144,9 +144,17 @@ int InheritFiles(pcb_t* newProcess, pcb_t* parent){
         vfs_node_t* stdout = VfsFindNode("/dev/stdout");
         vfs_node_t* stderr = VfsFindNode("/dev/stderr");
 
-        CreateFileContext(stdin, newProcess->fileTable, stdin->flags);
-        CreateFileContext(stdout, newProcess->fileTable, stdout->flags);
-        CreateFileContext(stderr, newProcess->fileTable, stderr->flags);
+        if(!stdin || !stdout || !stderr){
+            hfree(table->bitmap);
+            hfree(table->openFiles);
+            hfree(table);
+            printk("KERNEL PANIC: Could not find stdin, stdout, or stderr\n");
+            STOP
+        }
+
+        //CreateFileContext(stdin, newProcess->fileTable, O_RDONLY);
+        //CreateFileContext(stdout, newProcess->fileTable, O_WRONLY);
+        //CreateFileContext(stderr, newProcess->fileTable, O_WRONLY);
     }
 
     return STANDARD_SUCCESS;
@@ -341,7 +349,6 @@ pcb_t* CreateProcess(const char* processName, uint64_t timeSlice, struct Resourc
     newProcess->pageTables = halloc(sizeof(pde_t) * 1024);
     if(newProcess->pageTables == NULL){
         FreePid(newProcess->pid);
-        hfree(newProcess->processName);
         hfree(newProcess);
         return NULL;
     }
@@ -349,7 +356,6 @@ pcb_t* CreateProcess(const char* processName, uint64_t timeSlice, struct Resourc
     // Inherit the file table, if any, of the parent
     if(InheritFiles(newProcess, parent) == STANDARD_FAILURE){
         FreePid(newProcess->pid);
-        hfree(newProcess->processName);
         hfree(newProcess->pageTables);
         hfree(newProcess);
         return NULL;
@@ -387,7 +393,7 @@ int LoadExecute(pcb_t* process, vfs_node_t* data){
 }
 
 // NOTE: This must unpage the current process and load the new process
-int ReplaceProcess(char* newName, void* data, pcb_t* pcb, struct registers* regs){
+int ReplaceProcess(char* newName, void* data, pcb_t* pcb, struct Registers* regs){
     // TODO: implement
     return STANDARD_FAILURE;
 }
@@ -526,7 +532,7 @@ void SpinUnlock(spinlock_t* lock){
 }
 
 // This shall only be called upon an interrupt. Both fields are required.
-int ContextSwitch(struct Registers* regs, pcb_t* next){
+void ContextSwitch(struct Registers* regs, pcb_t* next){
     if(next == NULL){
         // Find another process to switch to instead
         uint64_t timeout = GetTicks() + 5000;             // 5 second timeout
@@ -564,7 +570,6 @@ int ContextSwitch(struct Registers* regs, pcb_t* next){
 
     // Re-enable interrupts and return
     sti
-    return STANDARD_SUCCESS;
 }
 
 /// @brief Add a new memory region to a process
@@ -609,7 +614,7 @@ int AddMemoryRegion(pcb_t* process, size_t length, uint32_t flags, void* start, 
         newEnd = process->regions[REGION_SHM_INDEX]->start;
     }
 
-    for(int j = 0; j < i -1; j++){
+    for(index_t j = 0; j < i -1; j++){
         if((newStart >= process->regions[j]->start && newStart <= process->regions[j]->end) || (newEnd >= process->regions[j]->start && newEnd <= process->regions[j]->end)){
             // Region is poking into another memory region and cannot be used. There isn't enough memory left to allocate.
             return STANDARD_FAILURE;
@@ -631,19 +636,19 @@ int AddMemoryRegion(pcb_t* process, size_t length, uint32_t flags, void* start, 
 
     newRegion->start = newStart;
     newRegion->end = newEnd;
-    newRegion->size = length;
+    newRegion->end = start + length;
     newRegion->flags = flags;
 
     for(size_t i = 0; i < pagesToAdd; i++){
         // Page the memory
-        if(user_palloc(newStart + (i * PAGE_SIZE), DEFAULT_USER_PAGE_FLAGS) != PAGE_OK){
+        if(user_palloc((virtaddr_t)newStart + (i * PAGE_SIZE), DEFAULT_USER_PAGE_FLAGS) != PAGE_OK){
             // Out of memory!
             hfree(newRegion);
             process->numRegions--;
             process->regions = rehalloc(process->regions, process->numRegions * sizeof(memregion_t*));
             // Free allocated pages
             for(size_t j = 0; j < i; j++){
-                pfree(newStart + (j * PAGE_SIZE));
+                pfree((virtaddr_t)newStart + (j * PAGE_SIZE));
             }
             if(process->regions == NULL){
                 return EMERGENCY_NO_MEMORY;

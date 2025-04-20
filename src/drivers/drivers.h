@@ -27,9 +27,9 @@ typedef unsigned short modid_t;
 // All of these functions should end with a SYS_YIELD, as they will be entered through an iret. Otherwise, the driver will crash.
 typedef dresult_t (*init_handle_t)(void);
 typedef dresult_t (*deinit_handle_t)(void);
-typedef dresult_t (*read_handle_t)(void* buf, size_t len, size_t offset);
-typedef dresult_t (*write_handle_t)(void* buf, size_t len, size_t offset);
-typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg);
+typedef dresult_t (*read_handle_t)(device_id_t device, void* buf, size_t len, size_t offset);               // Offset is within the given buffer
+typedef dresult_t (*write_handle_t)(device_id_t device, void* buf, size_t len, size_t offset);              // Offset is the offset of the device (drivers are free to ignore)
+typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg, device_id_t device);
 typedef dresult_t (*irq_handle_t)(int num);
 typedef dresult_t (*probe_t)(device_id_t device, unsigned int deviceClass, unsigned int deviceType);
 
@@ -140,6 +140,7 @@ struct device {
     const char* name;               // Name of the device
     unsigned int class;             // Bitfield for the class of device this is
     unsigned int type;              // Bitfield for the type of device this is
+    void* driverData;               // Pointer to the driver-specific data (if any)
     device_ops_t ops;               // Per-device operations
     device_id_t id;                 // The device ID of this device (set by the kernel)
     device_id_t parent;             // The device ID of the parent device (if any - set by the driver upon the kernel probing a device)

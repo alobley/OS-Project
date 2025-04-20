@@ -144,14 +144,14 @@ static inline char* strchr(const char* str, int value){
 
 // Locate the last occurrence of a character in a string
 static inline char* strrchr(const char* str, int value){
-    const char* last = (char*)NULL;
+    const char* last = (char*)str;
     while(*str){
         if(*str == value){
             last = str;
         }
         str++;
     }
-    return (char*) last;
+    return (char*)last;
 }
 
 // Locate the last occurrence of a character in a string

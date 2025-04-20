@@ -84,13 +84,8 @@ dresult_t RegisterDevice(device_t* device, char* path, int permissions){
         return DRIVER_ACCESS_DENIED;
     }
 
-    if(deviceRegistry.numDevices >= REGISTRY_BITMAP_SIZE * 32){
+    if(deviceRegistry.numDevices == UINT16_MAX){
         return DRIVER_REGISTRY_FULL;
-    }
-
-    if(GetCurrentProcess()->driver == NULL){
-        // Process has not registered itself as a driver yet!
-        return DRIVER_ACCESS_DENIED;
     }
 
     if(device == NULL || path == NULL || permissions == 0){
@@ -101,9 +96,6 @@ dresult_t RegisterDevice(device_t* device, char* path, int permissions){
     if(device->id > UINT16_MAX){
         return DRIVER_FAILURE;
     }
-
-    // Processes MUST register themselves as drivers before mounting devices
-    device->driver = GetCurrentProcess()->driver;
 
     device->lock = MUTEX_INIT;
 
@@ -120,7 +112,7 @@ dresult_t RegisterDevice(device_t* device, char* path, int permissions){
     }
 
     // Add the device to the device registry
-    if(deviceRegistry.devArrSize > device->id){
+    if(deviceRegistry.devArrSize > (size_t)device->id){
         deviceRegistry.devices = rehalloc(deviceRegistry.devices, deviceRegistry.devArrSize * 2);
         deviceRegistry.devArrSize *= 2;
     }
@@ -132,13 +124,14 @@ dresult_t RegisterDevice(device_t* device, char* path, int permissions){
 
 /// @brief Unregister a device from the system
 /// @param device The device to unregister
-void UnregisterDevice(device_t* device){
+int UnregisterDevice(device_t* device){
     VfsRemoveNode(device->node);
     deviceRegistry.devices[device->id] = NULL;
     deviceRegistry.numDevices--;
     ReleaseDeviceID(device->id);
     hfree(device->name);
     hfree(device);
+    return 0;
 }
 
 /// @brief Create the system driver registry for driver lookup
@@ -180,18 +173,18 @@ void DestroyDriverRegistry(){
 /// @param inKernel Whether or not the driver is directly part of the kernel's binary (those drivers will call this function directly)
 /// @return Success or error code
 dresult_t RegisterDriver(driver_t* driver, bool inKernel){
-    if(driver == NULL || driver->probe == NULL){
+    if(driver == NULL){
         // The driver structure must be properly initialized by the driver!
         return DRIVER_INVALID_ARGUMENT;
     }
 
-    if(driverRegistry.numDrivers >= REGISTRY_BITMAP_SIZE * 32){
+    if(driverRegistry.numDrivers == UINT16_MAX){
         return DRIVER_REGISTRY_FULL;
     }
 
     // Add the driver to the driver registry
     modid_t arrIndex = FindIndex(driverRegistry.bitmap, REGISTRY_BITMAP_SIZE);
-    toRegister->id = arrIndex;
+    driver->id = arrIndex;
     if(driverRegistry.drvArrSize > arrIndex){
         driverRegistry.drivers = rehalloc(driverRegistry.drivers, driverRegistry.drvArrSize * 2);
         driverRegistry.drvArrSize *= 2;
@@ -214,18 +207,18 @@ dresult_t RegisterDriver(driver_t* driver, bool inKernel){
 
 /// @brief Unregister a driver from the system (does unload it)
 /// @param driver The driver to unregister
-void UnregisterDriver(driver_t* driver){
+int UnregisterDriver(driver_t* driver){
     driver->deinit();
-    SetBitmapBit(driverRegistry.bitmap, driver->index);
-    driverRegistry.drivers[driver->index] = NULL;
-    hfree(driver->name);
+    SetBitmapBit(driverRegistry.bitmap, driver->id);
+    driverRegistry.drivers[driver->id] = NULL;
     hfree(driver);
     driverRegistry.numDrivers--;
 
     if(driver->inKernel){
-        return;
+        return DRIVER_SUCCESS;
     }
     // Call a driver unload function...
+    return DRIVER_FAILURE;
 }
 
 // Find a driver compatible with the given device
@@ -247,14 +240,11 @@ dresult_t FindDriver(device_t* device){
 }
 
 fs_driver_t* FindFsDriver(device_t* device){
-    index_t numSkipped = 0;
     for(index_t i = 0; i < driverRegistry.drvArrSize / 4; i++){
         if(driverRegistry.drivers[i] != NULL){
-            if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS && numSkipped >= skip && (driverRegistry.drivers[i]->type & DEVICE_TYPE_FILESYSTEM)){
+            if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS && (driverRegistry.drivers[i]->type & DEVICE_TYPE_FILESYSTEM)){
                 // This only works for ring 0 drivers. I'll need to context switch to user-space drivers...
-                return driverRegistry.drivers[i];
-            }else if(driverRegistry.drivers[i]->probe(device->id, device->class, device->type) == DRIVER_SUCCESS && (driverRegistry.drivers[i]->type & DEVICE_TYPE_FILESYSTEM)){
-                numSkipped++;
+                return (fs_driver_t*)driverRegistry.drivers[i];
             }
         }
     }
@@ -266,7 +256,7 @@ fs_driver_t* FindFsDriver(device_t* device){
 /// @return Pointer to the device with the corresponding ID, or NULL if none.
 device_t* GetDeviceByID(device_id_t device){
     // This is, thankfully, very simple
-    if(device > deviceRegistry.devArrSize / sizeof(device_t*)){
+    if((size_t)device > deviceRegistry.devArrSize / sizeof(device_t*)){
         return NULL;
     }
     return deviceRegistry.devices[device];
@@ -275,14 +265,14 @@ device_t* GetDeviceByID(device_id_t device){
 uint32_t loadedModules = 0;
 void* moduleRegionStart = NULL;
 
-int LoadModule(driver_t* driver, void* data){
+int LoadModule(char* path){
     // Load a module from the given path
     // This is a placeholder for now, but it should be implemented in the future
     return STANDARD_FAILURE;
 }
 
-void UnloadModule(driver_t* driver){
+int UnloadModule(modid_t driver){
     // Unload a module
     // This is a placeholder for now, but it should be implemented in the future
-    return;
+    return 0;
 }

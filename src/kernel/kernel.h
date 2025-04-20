@@ -1,8 +1,6 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-#include <system.h>
-
 #ifndef asm
 #define asm __asm__
 #endif
@@ -99,7 +97,7 @@ enum System_Calls {
     SYS_MODULE_QUERY,                       // Query a kernel module
     SYS_REGISTER_DEVICE,                    // Register a device into the system (must provide a valid path)
     SYS_UNREGISTER_DEVICE,                  // Unregister a device from the system
-    SYS_AQUIRE_DEVICE,                      // Request control of a specific device (takes a path). Good for drivers that want to replace kernel drivers.
+    SYS_ACQUIRE_DEVICE,                     // Request control of a specific device (takes a path). Good for drivers that want to replace kernel drivers.
     SYS_REQUEST_IRQ,                        // Request an IRQ
     SYS_RELEASE_IRQ,                        // Release an IRQ
     SYS_GET_API,                            // Get the kernel API functions
@@ -131,6 +129,6 @@ static const char* kernelRelease = "Alpha";
     asm volatile("int $0x30" : : "a" (num), "b" (arg1), "c" (arg2), "d" (arg3), "S" (arg4), "D" (arg5) : "memory");
 
 typedef unsigned int _ADDRESS;
-#define getresult(x) __asm__ volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory");
+#define getresult(x) asm volatile("mov %%eax, %0" : "=r" (x) : : "eax", "memory");
 
 #endif // KERNEL_H

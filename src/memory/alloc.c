@@ -294,7 +294,6 @@ void hfree(void* ptr){
         // Invalid memory block
         printk("KERNEL PANIC: Invalid memory block magic number: 0x%x\n", block->magic);
         printk("Invalid ptr: 0x%x, header address: 0x%x\n", ptr, block);
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP;
     }
 

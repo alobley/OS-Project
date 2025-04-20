@@ -109,7 +109,7 @@ void InitializeACPI(){
     // Enable ACPI mode if not already enabled
     if(acpiInfo.fadt->smiCmd != 0 && acpiInfo.fadt->acpiEnable != 0 && acpiInfo.fadt->acpiDisable != 0 && (inw(acpiInfo.fadt->pm1aCtrlBlk) & 0x01) == 0){
         outb(acpiInfo.fadt->smiCmd, acpiInfo.fadt->acpiEnable);
-        sleep(3000);    // Wait 3 seconds
+        busysleep(3000);    // Wait 3 seconds
         while((inw(acpiInfo.fadt->pm1aCtrlBlk) & 0x01) == 0);
     }
 }

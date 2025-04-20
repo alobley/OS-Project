@@ -147,7 +147,7 @@ typedef struct PS2Info {
     uint8_t scanCodeSet;
 } PS2Info;
 
-void InitializeKeyboard();
+int InitializeKeyboard();
 
 bool MouseExists();
 

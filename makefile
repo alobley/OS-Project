@@ -39,17 +39,17 @@ LIBC_DIR=$(SRC_DIR)/libc
 # Include Directories
 INCLUDES=-I $(SRC_DIR) -I $(KERNEL_DIR) -I $(LIB_DIR) -I $(CONSOLE_DIR) -I $(INT_DIR) -I $(MEM_DIR) -I $(PS2_DIR) -I $(TIME_DIR) -I $(GRAPHICS_DIR)
 INCLUDES+=-I $(USER_DIR) -I $(MULTITASK_DIR) -I $(SOUND_DIR) -I $(ACPI_DIR) -I $(STRUCT_DIR) -I $(VFS_DIR) -I $(DISK_DIR) -I $(STRUCT_DIR) -I $(FS_DIR) 
-INCLIDES+=-I$(LIBC_DIR) -I $(DRIVER_DIR)
+INCLIDES+=-I$(LIBC_DIR)
 
 # Compilation Flags (TODO: don't compile with lGCC)
 CFLAGS=-T linker.ld -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align -lgcc -fno-stack-protector -fno-delete-null-pointer-checks -fno-tree-dce
 CFLAGS+=$(INCLUDES) -Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer #-save-temps
 
 # Libraries to compile with
-LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(LIB_DIR)/kernel_system.c $(DRIVER_DIR)/drivers.c
+LIBS=$(BUILD_DIR)/kernel_start.o $(CONSOLE_DIR)/console.c $(INT_DIR)/interrupts.c $(KERNEL_DIR)/devices.c $(LIB_DIR)/kernel_system.c
 LIBS+=$(INT_DIR)/pic.c $(TIME_DIR)/time.c $(MEM_DIR)/paging.c $(MEM_DIR)/alloc.c $(PS2_DIR)/keyboard.c $(VFS_DIR)/vfs.c #$(PS2_DIR)/ps2.c 
 LIBS+=$(MULTITASK_DIR)/multitasking.c $(SOUND_DIR)/pcspkr.c $(ACPI_DIR)/acpi.c $(KERNEL_DIR)/users.c $(STRUCT_DIR)/hash.c  $(USER_DIR)/shell.c
-LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(DISK_DIR)/mbr.c $(FS_DIR)/fat.c $(LIBC_DIR)/stdio.c
+LIBS+=$(CONSOLE_DIR)/tty.c $(DISK_DIR)/ata.c $(FS_DIR)/fat.c #$(LIBC_DIR)/stdio.c
 
 # Assembly and Kernel Files
 ASMFILE=stage0
@@ -58,7 +58,7 @@ CFILE=kernel
 # Placeholder for additional kernel functionality
 PROGRAM_FILE=programtoload
 
-USER_CFLAGS=-I $(USER_DIR) -I $(KERNEL_DIR) -I src/libc -I $(LIB_DIR) -static -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align
+USER_CFLAGS=-I $(USER_DIR) -I $(KERNEL_DIR) -I $(LIBC_DIR) -I $(DRIVER_DIR) -I $(LIB_DIR) -static -m32 -ffreestanding -O2 -nostdlib --std=c99 -Wall -Wextra -Wcast-align
 USER_CFLAGS+=-lgcc -fno-stack-protector -fno-delete-null-pointer-checks -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -T $(USER_DIR)/userland.ld
 USER_CFLAGS+=-Wno-unused -Wno-array-bounds -Werror -march=i586 -mtune=generic
 
@@ -106,8 +106,8 @@ assemble: create_dirs
 
 # Compile Kernel
 compile: create_dirs $(KERNEL_DIR)/$(CFILE).c
-	$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
-	$(CCOM) -o $(BUILD_DIR)/usershell.elf $(USER_DIR)/userc.c $(USER_DIR)/system.c $(USER_CFLAGS)
+	@$(CCOM) -o $(BUILD_DIR)/$(CFILE).elf $(KERNEL_DIR)/$(CFILE).c $(LIBS) $(CFLAGS)
+	@$(CCOM) -o $(BUILD_DIR)/usershell.elf $(USER_DIR)/userc.c $(USER_DIR)/system.c $(USER_CFLAGS)
 #src/libc/stdio.c
 #$(CCOM) -m16 -o $(BUILD_DIR)/stage1.bin $(BOOT_DIR)/stage2.c $(BUILD_DIR)/stage1.o -T$(BOOT_DIR)/boot.ld -static -ffreestanding -nostdlib -fno-stack-protector -lgcc --std=c99 -Wall -Wextra -Wcast-align -Wno-unused -Wno-array-bounds -Werror -I $(BOOT_DIR)
 
@@ -127,6 +127,7 @@ addfiles: create_dirs
 	sudo cp $(BUILD_DIR)/hello.elf mnt/HELLO.ELF
 	sudo cp $(BUILD_DIR)/usershell.elf mnt/SHELL.ELF
 	sync
+	sleep 1
 	sudo umount mnt
 
 # Create the Hard Drive Image, for some reason .qcow2 doesn't show sectors properly.

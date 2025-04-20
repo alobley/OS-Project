@@ -8,6 +8,8 @@
 
 typedef struct Device device_t;
 
+typedef unsigned long long lba_t;         // Logical Block Addressing
+
 typedef unsigned short modid_t;         // Module ID for kernel modules
 
 // Result of a driver operation
@@ -21,11 +23,11 @@ typedef int dresult_t;
 
 typedef dresult_t (*init_handle_t)(void);
 typedef dresult_t (*deinit_handle_t)(void);
-typedef dresult_t (*read_handle_t)(void* buf, size_t len, size_t offset);               // Offset is within the given buffer
-typedef dresult_t (*write_handle_t)(void* buf, size_t len, size_t offset);              // Offset is the offset of the device
-typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg);
+typedef dresult_t (*read_handle_t)(device_id_t device, void* buf, size_t len, size_t offset);               // Offset is within the given buffer
+typedef dresult_t (*write_handle_t)(device_id_t device, void* buf, size_t len, size_t offset);              // Offset is the offset of the device
+typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg, device_id_t device);
 typedef dresult_t (*irq_handle_t)(int num);
-typedef dresult_t (*poll_t)(struct file* file, short* revents);
+typedef dresult_t (*poll_t)(void* file, short* revents);                                // Reminder to me to implement a struct file or something
 typedef dresult_t (*probe_t)(device_id_t device, unsigned int deviceClass, unsigned int deviceType);
 
 // Per-device operations
@@ -67,7 +69,7 @@ enum Device_Type {
     // More...
 };
 
-typedef struct Kernel_Module {
+typedef struct Driver {
     const char* name;               // Name of the driver
     unsigned int class;             // Bitfield containing the class of device this driver supports
     unsigned int type;              // Bitfield containing the type of device this driver supports
@@ -91,13 +93,15 @@ typedef struct FS_Driver {
     dresult_t (*fsync)(char* path);                             // Sync one file to the disk
     dresult_t (*delete)(char* path);                            // Delete a file from the filesystem
     dresult_t (*mount)(device_id_t device, char* path);         // The driver must mount the filesystem at the given path
-    dresult_t (*unmount)(device_id_t device);                   // Unmount the directiories from the given filesystem device
+    dresult_t (*unmount)(device_id_t device, char* path);       // Unmount the directiories from the given filesystem device
+    int fs;
 } fs_driver_t;
 
 typedef struct Device {
     char* name;                     // Name of the device
     unsigned int class;             // Bitfield for the class of device this is
     unsigned int type;              // Bitfield for the type of device this is
+    void* driverData;               // Pointer to the driver-specific data (if any)
     device_ops_t ops;               // Per-device operations
     device_id_t id;                 // The device ID of this device
     device_id_t parent;             // The device ID of a parent device, if any
@@ -156,10 +160,10 @@ struct kernelapi {
     void (*hfree)(void* ptr);                                                       // Free memory from the kernel heap  
     void* (*rehalloc)(void* ptr, size_t size);                                      // Reallocate memory from the kernel heap
     page_result_t (*mmap)(virtaddr_t virt, physaddr_t phys, unsigned int flags);    // This "mmap" is actually physpalloc
-    struct vfs_node* (*VfsFindNode)(char* path);                                    // Find a VFS node by its path
-    struct vfs_node* (*VfsMakeNode)(char* name, unsigned int flags, size_t size, unsigned int permissions, uid_t owner, void* data); // Create a VFS node (does not add it to the VFS tree)
-    int (*VfsRemoveNode)(struct vfs_node* node);                                    // Remove a VFS node
-    int (*VfsAddChild)(struct vfs_node* parent, struct vfs_node* child);            // Add a child to a VFS node
+    vfs_node_t* (*VfsFindNode)(char* path);                                         // Find a VFS node by its path
+    vfs_node_t* (*VfsMakeNode)(char* name, unsigned int flags, size_t size, unsigned int permissions, uid_t owner, void* data); // Create a VFS node (does not add it to the VFS tree)
+    int (*VfsRemoveNode)(vfs_node_t* node);                                         // Remove a VFS node
+    int (*VfsAddChild)(vfs_node_t* parent, vfs_node_t* child);                      // Add a child to a VFS node
     device_t* (*GetDevice)(device_id_t device);                                     // Get a device by its ID   
 
     // IN/OUT and string functions should be implemented in the driver (the kernel's versions are static inlines)
@@ -175,13 +179,13 @@ void ReleaseDeviceID(device_id_t id);
 int CreateDeviceRegistry();
 void DestroyDeviceRegistry();
 dresult_t RegisterDevice(device_t* userDevice, char* path, int permissions);
-void UnregisterDevice(device_t* device);
+int UnregisterDevice(device_t* device);
 
 // Driver registry management
 int CreateDriverRegistry();
 void DestroyDriverRegistry();
 dresult_t RegisterDriver(driver_t* userDriver, bool inKernel);
-void UnregisterDriver(driver_t* driver);
+int UnregisterDriver(driver_t* driver);
 
 
 // Device/driver lookup
@@ -199,7 +203,7 @@ fs_driver_t* FindFsDriver(device_t* device);
 /// @return Pointer to the device, or NULL if none
 device_t* GetDeviceByID(device_id_t device);
 
-int LoadModule(driver_t* driver, void* data);
-void UnloadModule(driver_t* driver);
+int LoadModule(char* path);
+int UnloadModule(modid_t driver);
 
 #endif // DEVICES_H

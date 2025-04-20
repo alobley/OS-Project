@@ -1,6 +1,7 @@
 #include <vfs.h>
 #include <alloc.h>
 #include <console.h>
+#include <devices.h>
 
 vfs_node_t* root = NULL;
 
@@ -203,16 +204,6 @@ vfs_node_t* VfsAddDevice(device_t* device, char* name, char* path, int permissio
     }
     VfsAddChild(VfsFindNode(path), node);
 
-    device->path = halloc(strlen(path) + strlen(name) + 2);
-    if(device->path == NULL){
-        hfree(node->name);
-        hfree(node);
-        return NULL;
-    }
-    memset(device->path, 0, strlen(path) + strlen(name) + 2);
-    strcpy(device->path, path);
-    strcat(device->path, "/");
-    strcat(device->path, name);
     node->device = device;
     return node;
 }
@@ -282,11 +273,17 @@ fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags
         return STANDARD_FAILURE;
     }
     memset(context, 0, sizeof(file_context_t));
+    
     context->node = node;
     node->refCount++;
     context->fd = AllocateFileDescriptor(table);
+    if(context->fd == -1){
+        hfree(context);
+        return OUT_OF_MEMORY;
+    }
     table->numOpenFiles++;
-    if(table->arrSize < context->fd){
+
+    if(table->arrSize < (size_t)context->fd){
         table->openFiles = rehalloc(table->openFiles, table->numOpenFiles * sizeof(file_context_t*));
         if(table->openFiles == NULL){
             return EMERGENCY_NO_MEMORY;
@@ -298,7 +295,7 @@ fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags
 }
 
 fd_t ReplaceFileContext(vfs_node_t* node, file_table_t* table, fd_t oldfd, fd_t newfd){
-    if(newfd > DEFAULT_MAX_FDS || table->openFiles[newfd] != NULL || table->numOpenFiles < oldfd || table->openFiles[oldfd] == NULL){
+    if(newfd > DEFAULT_MAX_FDS || table->openFiles[newfd] != NULL || table->numOpenFiles < (size_t)oldfd || table->openFiles[oldfd] == NULL){
         return STANDARD_FAILURE;
     }
 
@@ -306,7 +303,7 @@ fd_t ReplaceFileContext(vfs_node_t* node, file_table_t* table, fd_t oldfd, fd_t 
     if(context == NULL){
         return STANDARD_FAILURE;
     }
-    if(table->arrSize < newfd){
+    if(table->arrSize < (size_t)newfd){
         table->openFiles = rehalloc(table->openFiles, table->numOpenFiles * sizeof(file_context_t*));
         if(table->openFiles == NULL){
             return EMERGENCY_NO_MEMORY;
@@ -354,27 +351,13 @@ void VfsDetachMountpoint(vfs_node_t* mountNode) {
 int InitializeVfs(multiboot_info_t* mbootInfo) {
     // Initialize the virtual filesystem
     // Create the root directory
-    mountpoint_t* rootMount = NULL;
-    rootMount = (mountpoint_t*)halloc(sizeof(mountpoint_t));
-    if(rootMount == NULL){
-        return STANDARD_FAILURE;
-    }
-    memset(rootMount, 0, sizeof(mountpoint_t));
-    rootMount->filesystem = NULL;
-    rootMount->mountPath = (char*)halloc(2);
-    if(rootMount->mountPath == NULL){
-        return STANDARD_FAILURE;
-    }
-    strcpy(rootMount->mountPath, "/");
-    rootMount->next = NULL;
-    rootMount->mountPoint = NULL;
 
     root = VfsMakeNode("/", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(root == NULL){
         return STANDARD_FAILURE;
     }
 
-    root->mountPoint = rootMount;
+    root->mountPoint = NULL;
 
     int status = 0;
 

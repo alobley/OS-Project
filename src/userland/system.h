@@ -2,7 +2,6 @@
 #define SYSTEM_H
 
 #include <kernel.h>
-#define SYSTEM_API_VERSION 0
 
 #ifndef __size_t_defined
 #define __size_t_defined
@@ -16,6 +15,14 @@ typedef signed int ssize_t;
 
 // Internal uint8_t type to make variables more readable
 typedef unsigned char __uint8_t;
+
+typedef struct Version {
+    __uint8_t major;
+    __uint8_t minor;
+    __uint8_t patch;
+} version_t;
+
+#define SYSTEM_API_VERSION ((version_t){.major = 0, .minor = 1, .patch = 0}) // The version of the system API
 
 #define ANSI_ESCAPE "\033[2J\033[H"
 
@@ -86,12 +93,6 @@ struct ievent {
     unsigned short code;        // Special code for the evtent  
     int value;                  // Value returned
 };
-
-typedef struct Version {
-    __uint8_t major;
-    __uint8_t minor;
-    __uint8_t patch;
-} version_t;
 
 typedef unsigned short pid_t;
 

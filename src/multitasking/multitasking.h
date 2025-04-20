@@ -14,6 +14,7 @@ typedef struct File_Table file_table_t;
 typedef struct IPC_Pipe pipe_t;
 typedef struct Pipe_Queue_Node pqnode;
 typedef struct Pipe_Queue pqueue_t;
+typedef struct Device device_t;
 
 extern uint16_t numProcesses;
 
@@ -181,7 +182,7 @@ typedef struct Process_Control_Block {
     memregion_t** regions;                  // A dynamic array of this process's memory regions
     size_t numRegions;                      // The length of the memory regions array
 
-    pqueue_t pipes;                         // A queue of pipes into and out of the process
+    pqueue_t* pipes;                        // A queue of pipes into and out of the process
 
     size_t usedMemory;                      // The amount of memory this process is using
 
@@ -371,10 +372,6 @@ int InsertSignals(pcb_t* process, unsigned int signal);
 void Scheduler(struct Registers* state);
 
 void DefaultSignalHandler();
-
-message_queue_t* CreateMessageQueue(size_t capacity);
-
-int SendMessage(message_queue_t* queue, void* data, size_t size);
 
 int SetProcessGroup(pcb_t* process, pid_t pgid);
 pcb_t* GetSessionLeader(pid_t sid);

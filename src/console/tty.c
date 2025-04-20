@@ -2,7 +2,7 @@
 #include <console.h>
 #include <multitasking.h>
 #include <kernel.h>
-#include <drivers.h>
+#include <devices.h>
 #include <keyboard.h>
 
 #define DEFAULT_TTY_WIDTH 80

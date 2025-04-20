@@ -27,7 +27,6 @@
 #include <keyboard.h>                   // Entire 8042 subsystem (not just keyboard - should fix)
 #include <tty.h>                        // TTY subsystem
 #include <ata.h>                        // PATA driver
-#include <mbr.h>                        // MBR structures
 #include <fat.h>                        // FAT filesystem driver
 #include <pcspkr.h>                     // PC speaker driver
 #include <acpi.h>                       // ACPI support
@@ -172,15 +171,17 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     printk("Initializing heap allocator...\n");
     InitializeAllocator();
 
+    printk("Testing system calls...\n");
     // Do a debug syscall to test the syscall interface
     do_syscall(SYS_DBG, 0, 0, 0, 0, 0);
+    printk("Syscall debug test completed successfully!\n");
 
     //uint32_t usedMem = totalPages * PAGE_SIZE;                  // Calculate the current amount of memory used by the system (this will change - maybe add a timer handler to update it?)
     //printk("Used memory: %d MiB\n", usedMem / 1024 / 1024);     // Print the amount of used memory in MiB
 
     // Stress test the memory allocator
     printk("Stress testing the heap allocator...\n");
-    for(int i = 1; i < 100; i++){
+    for(int i = 1; i < 1000; i++){
         // Allocate an increasingly large amount of memory
         //printk("Allocating %u bytes\n", PAGE_SIZE * i);
         uint8_t* test = halloc(PAGE_SIZE * i);
@@ -213,7 +214,6 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     if(result != STANDARD_SUCCESS){
         // If there was a failure, the system can't continue as the VFS is needed for most operations
         printk("KERNEL PANIC: Failed to initialize VFS!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
     printk("VFS initialized successfully!\n");
@@ -234,6 +234,39 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Make STDIN, STDOUT, and STDERR (as devices)...
     // I just recently completely overhauled half the system, so the old code no longer worked
+    device_t* stdin = halloc(sizeof(device_t));
+    if(stdin == NULL){
+        // Failed to allocate memory for stdin
+        printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
+        STOP
+    }
+    memset(stdin, 0, sizeof(device_t));
+    stdin->name = "stdin";
+    stdin->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
+    RegisterDevice(stdin, "/dev/stdin", S_IROTH);
+
+    device_t* stdout = halloc(sizeof(device_t));
+    if(stdout == NULL){
+        // Failed to allocate memory for stdin
+        printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
+        STOP
+    }
+    memset(stdout, 0, sizeof(device_t));
+    stdout->name = "stdout";
+    stdout->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
+    RegisterDevice(stdin, "/dev/stdout", S_IROTH);
+
+    device_t* stderr = halloc(sizeof(device_t));
+    if(stderr == NULL){
+        // Failed to allocate memory for stdin
+        printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
+        STOP
+    }
+    memset(stderr, 0, sizeof(device_t));
+    stdout->name = "stderr";
+    stderr->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
+    RegisterDevice(stdin, "/dev/stderr", S_IROTH);
+
     printk("STDIN, STDOUT, and STDERR created successfully!\n");
 
     //STOP
@@ -244,12 +277,10 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     if(kernelPCB == NULL){
         // No PCB means no multitasking - the kernel can't run
         printk("KERNEL PANIC: Failed to create kernel PCB!\n");
-        do_syscall(SYS_REGDUMP, 0, 0, 0, 0, 0);
         STOP
     }
     SetCurrentProcess(kernelPCB);                                   // Set the current process to the kernel PCB
     printk("Kernel PCB created successfully!\n");
-    SetCurrentProcess(kernelPCB);
 
     InitializeKeyboard();                                           // Initialize the keyboard driver
     //InitializeTTY();                                              // Initialize the TTY subsystem

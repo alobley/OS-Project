@@ -330,7 +330,7 @@ page_result_t palloc(virtaddr_t address, unsigned int flags){
 /// @return Success or error code
 page_result_t RemapPage(virtaddr_t old, virtaddr_t new){
     old = PAGE_ADDR_MASK(old);
-    if(!(PAGE_DIR_VIRTUAL(PDE_INDEX(old)) & PDE_PRESENT) || !(PAGE_TABLE_VIRTUAL(PDE_INDEX(old))->pages[PTE_INDEX(old)] & PAGE_PRESENT)){
+    if(!(PAGE_DIR_VIRTUAL->tables[PDE_INDEX(old)] & PDE_PRESENT) || !(PAGE_TABLE_VIRTUAL(PDE_INDEX(old))->pages[PTE_INDEX(old)] & PAGE_PRESENT)){
         // No page present at that virtual address, nothing to do
         return PAGE_NOT_PRESENT;
     }
