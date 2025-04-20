@@ -65,6 +65,9 @@ Ensure you have the following installed:
 - `i386-elf-ld`
 - `binutils`
 - `NASM`
+- `grub-mkrescue`
+- `dd`
+- `xorriso`
 - `QEMU`
 
 ### Build Instructions
