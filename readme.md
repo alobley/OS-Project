@@ -24,7 +24,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Add FAT support [x] (Current goal)
 - Add the ability to load and execute programs [x]
 - Implement a userland kernel API in C [x] (more or less functional, can be compiled with user programs)
-- Fully implement process scheduling and multitasking [*]
+- Fully implement process scheduling and multitasking [x]
 - Replace KISh with a proper userland shell [x]
 - Make a libc and more complete userland [*]
 - Add PCI/PCIE support [*]
@@ -32,8 +32,8 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Add an initramfs for use on startup [-]
 - Add a SATA disk driver [-]
 - Fully implement mouse driver [-]
-- Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [-]
-- Harden the kernel against vulnerabilities [-]
+- Optimize paging and improve heap memory management (algorithm is spaghetti code currently) [x]
+- Harden the kernel against vulnerabilities [x]
 - Implement a better VGA driver, a VMWare SVGA driver, and an i915 driver [-]
 
 ## Goals to reach before 1.0
