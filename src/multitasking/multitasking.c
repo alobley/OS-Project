@@ -5,6 +5,7 @@
 #include <vfs.h>
 #include <gdt.h>
 #include <time.h>
+#include <devices.h>
 
 // REMINDER: I need to update the TTY subsystem and kernel-integrated drivers to comply with the new multitasking and I/O system
 
@@ -62,6 +63,12 @@ void ClearBitmapBit(uint32_t* bitmap, index_t bit){
     bitmap[bit / 32] &= ~(1 << (bit % 32));
 }
 
+
+extern device_t* stdin;
+extern device_t* stdout;
+extern device_t* stderr;
+
+
 int InheritFiles(pcb_t* newProcess, pcb_t* parent){
     if(parent != NULL){
         // Inherit the file table of the parent
@@ -117,7 +124,7 @@ int InheritFiles(pcb_t* newProcess, pcb_t* parent){
         memset(table, 0, sizeof(file_table_t));
 
         newProcess->fileTable = table;
-        table->arrSize = 3;
+        table->arrSize = 0;
         table->max_fds = DEFAULT_MAX_FDS;
 
         table->bitmap = halloc(sizeof(uint32_t) * 2048);
@@ -136,14 +143,6 @@ int InheritFiles(pcb_t* newProcess, pcb_t* parent){
         }
         memset(table->openFiles, 0, table->numOpenFiles * sizeof(file_context_t*));
 
-        SetBitmapBit(table->bitmap, STDIN_FILENO);
-        SetBitmapBit(table->bitmap, STDOUT_FILENO);
-        SetBitmapBit(table->bitmap, STDERR_FILENO);
-
-        vfs_node_t* stdin = VfsFindNode("/dev/stdin");
-        vfs_node_t* stdout = VfsFindNode("/dev/stdout");
-        vfs_node_t* stderr = VfsFindNode("/dev/stderr");
-
         if(!stdin || !stdout || !stderr){
             hfree(table->bitmap);
             hfree(table->openFiles);
@@ -152,9 +151,9 @@ int InheritFiles(pcb_t* newProcess, pcb_t* parent){
             STOP
         }
 
-        //CreateFileContext(stdin, newProcess->fileTable, O_RDONLY);
-        //CreateFileContext(stdout, newProcess->fileTable, O_WRONLY);
-        //CreateFileContext(stderr, newProcess->fileTable, O_WRONLY);
+        CreateFileContext(stdin->node, newProcess->fileTable, O_RDONLY);
+        CreateFileContext(stdout->node, newProcess->fileTable, O_WRONLY);
+        CreateFileContext(stderr->node, newProcess->fileTable, O_WRONLY);
     }
 
     return STANDARD_SUCCESS;

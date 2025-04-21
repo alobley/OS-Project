@@ -18,7 +18,7 @@ Currently, this project is still in the early stages. I've spent the past year l
 - Implement a PC speaker driver (this one should be very simple) [x]
 - Add ACPI and/or APM support [x]
 - Make a more complete list of system calls [x]
-- Create a standardized driver interface and add device management [x] (will likely never not be in progress)
+- Create a standardized driver interface and add device management [x]
 - Implement a VFS for standardized file interaction [x]
 - Add a PATA disk driver [x]
 - Add FAT support [x] (Current goal)

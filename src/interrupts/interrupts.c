@@ -165,8 +165,13 @@ static HOT void syscall_handler(struct Registers *regs){
 
             // TODO: change this to page remapping or something so the kernel doesn't have to relay data (that's super inefficient and a security risk)
 
-            if((regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END) && currentProcess != kernelPCB){
+            if((regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END) && currentProcess != kernelPCB){
                 // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+
+            if(regs->ecx == 0){
                 regs->eax = SYSCALL_INVALID_ARGUMENT;
                 return;
             }
@@ -175,6 +180,7 @@ static HOT void syscall_handler(struct Registers *regs){
                 file_table_t* table = currentProcess->fileTable;
                 file_context_t* context = table->openFiles[regs->ebx];
                 vfs_node_t* node = context->node;
+                //STOP
 
                 if((node->flags & NODE_FLAG_RO) || (!(node->permissions & S_IROTH) && !(currentProcess->user == node->owner))  || (context->flags & O_RDONLY)){
                     regs->eax = SYSCALL_ACCESS_DENIED;

@@ -22,6 +22,7 @@ typedef struct VFS_Node {
     size_t size;                                // If file, the size in bytes (if loaded), if directory, the number of children it has
     union {
         struct VFS_Node* firstChild;            // Pointer to the first child (if directory)
+        struct VFS_Node* symlink;               // Pointer to the symlink (if symlink)
         device_t* device;                       // Pointer to the device struct (if device)
         void* data;                             // Pointer to the file data (if file)
     };

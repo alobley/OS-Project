@@ -23,7 +23,7 @@ volatile bool done = false;
 
 char* currentWorkingDir = NULL;
 
-void printPrompt(){
+void PrintPrompt(){
     printk("[");
     // Get only the last part of the working directory
     if(currentWorkingDir == NULL){
@@ -142,7 +142,7 @@ void settz(char* cmd){
             }
         }
     }else{
-        printk("Only EST and UTC are supported\n");
+        printk("Only EST and UTC are supported.\n");
     }
 }
 
@@ -206,9 +206,9 @@ void systeminfo(UNUSED char* cmd){
     printk("Kernel release: %s\n", info.kernelRelease);
     printk("CPU ID: %s\n", info.cpuOEM);
     printk("Uptime: %llu seconds\n", info.uptime);
-    printk("Total memory: %d MiB\n", info.totalMemory / 1024 / 1024);
-    printk("Used memory: %d MiB\n", info.usedMemory / 1024 / 1024);
-    printk("Free memory: %d MiB\n", info.freeMemory / 1024 / 1024);
+    printk("Total memory: %d MiB\n", info.totalMemory / (1024 * 1024));
+    printk("Used memory: %d.%d MiB\n", info.usedMemory / (1024 * 1024), (info.usedMemory / 1024) % 1024);
+    printk("Free memory: %d.%d MiB\n", info.freeMemory / (1024 * 1024), (info.freeMemory / 1024) % 1024);
     printk("ACPI supported: ");
     if(info.acpiSupported){
         printk("yes\n");
@@ -219,7 +219,7 @@ void systeminfo(UNUSED char* cmd){
 
 void ProcessCommand(char* cmd){
     if(strlen(cmd) == 0){
-        printPrompt();
+        PrintPrompt();
         cmdBufferIndex = 0;
         memset(cmdBuffer, 0, CMD_MAX_SIZE);
         return;
@@ -242,7 +242,7 @@ void ProcessCommand(char* cmd){
     }else{
         // Search for a program to execute
         if(*cmd == 0){
-            printPrompt();
+            PrintPrompt();
             cmdBufferIndex = 0;
             memset(cmdBuffer, 0, CMD_MAX_SIZE);
             return;
@@ -261,7 +261,7 @@ void ProcessCommand(char* cmd){
     cmdBufferIndex = 0;
     memset(cmdBuffer, 0, CMD_MAX_SIZE);
     if(!done){
-        printPrompt();
+        PrintPrompt();
     }
 }
 
@@ -269,7 +269,7 @@ void ProcessCommand(char* cmd){
 // Most recent removal:
 // - Program loading and execution
 int shell(void){
-    ClearScreen();
+    do_syscall(SYS_WRITE, STDOUT_FILENO, (uint32_t)ANSI_ESCAPE, strlen(ANSI_ESCAPE), 0, 0);
 
     InstallKeyboardCallback(handler);
 
@@ -302,7 +302,7 @@ int shell(void){
     memset(currentWorkingDir, 0, dirSize);
     do_syscall(SYS_GETCWD, (uint32_t)currentWorkingDir, dirSize, 0, 0, 0);
 
-    printPrompt();
+    PrintPrompt();
     cmdBuffer = (char*)halloc(CMD_MAX_SIZE);
     if(cmdBuffer == NULL){
         printk("Error: failed to allocate memory for command buffer\n");

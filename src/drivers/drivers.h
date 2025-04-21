@@ -16,11 +16,12 @@ struct device;
 
 // Result of a driver operation
 typedef int dresult_t;
+#define DRIVER_INVALID_ARGUMENT -3
 #define DRIVER_ACCESS_DENIED -2
 #define DRIVER_FAILURE -1
 #define DRIVER_SUCCESS 0
 #define DRIVER_NOT_SUPPORTED 1
-#define DRIVER_INVALID_ARGUMENT 2
+#define DRIVER_REGISTRY_FULL 2
 
 typedef unsigned short modid_t;
 
@@ -77,6 +78,7 @@ struct vfs_node {
     size_t size;                        // If file, the size in bytes (if loaded), if directory, the number of children it has
     union {
         struct vfs_node* firstChild;    // Pointer to the first child (if directory)
+        struct vfs_node* symlink;       // Pointer to the symlink (if symlink)
         // No need for device pointer, the kernel handles /dev.
         void* data;                     // Pointer to the file data (if file)
     };
@@ -103,15 +105,15 @@ struct vfs_node {
 #define NODE_FLAG_NOTREAD (1 << 8)              // A node has not been read into memory if it is mounted (be it file data or a directory)
 
 struct kmod {
-    const char* name;               // Name of the driver
-    unsigned int class;             // Bitfield containing the class of device this driver supports
-    unsigned int type;              // Bitfield containing the type of device this driver supports
-    size_t driver_size;             // Size of the driver in memory
+    const char* name;               // Name of the module
+    unsigned int class;             // Bitfield containing the class of device this module supports
+    unsigned int type;              // Bitfield containing the type of device this module supports
+    size_t driver_size;             // Size of the module in memory
     init_handle_t init;             // Initialization function
     deinit_handle_t deinit;         // De-initialization function
-    probe_t probe;                  // Lets the kernel probe this driver to support a specific device
+    probe_t probe;                  // Lets the kernel probe this module to support a specific device
     modid_t id;                     // This module's ID
-    _Bool busy;                     // Whether this driver is busy or not (set by the driver to prevent the kernel from calling its functions while it's working)
+    _Bool busy;                     // Whether this module is busy or not (set by the module to prevent the kernel from calling its functions while it's working)
     _Bool _reserved1;               // Reserved for use by the kernel
     char _reserved2[12];            // Reserved for use by the kernel
 };
@@ -120,8 +122,6 @@ struct kmod {
 struct fs_driver {
     struct kmod driver;
     driver_t driver;
-    struct vfs_node* (*readdir)(device_id_t device, char* path);    // Read a directory from a given filesystem (path relative to the VFS's root)
-    dresult_t (*closedir)(device_id_t device, char* path);          // Clear a directory previously read from a filesystem (path relative to the VFS's root)
     dresult_t (*sync)(device_id_t device);                          // Sync the filesystem to the disk
     dresult_t (*fsync)(char* path);                                 // Sync one file to the disk (path relative to the VFS's root)
     dresult_t (*delete)(char* path);                                // Delete a file from the filesystem (path relative to the VFS's root)

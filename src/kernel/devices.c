@@ -104,15 +104,23 @@ dresult_t RegisterDevice(device_t* device, char* path, int permissions){
     *devName = '\0';
     devName++;
 
+    //printk("Registering device %s with ID %d\n", devName, device->id);
+
     // Create the new device node
     device->node = VfsAddDevice(device, devName, path, permissions);
     if(device->node == NULL){
         ReleaseDeviceID(device->id);
+        //printk("Failed to create device node %s\n", path);
+        //STOP
         return DRIVER_FAILURE;
     }
 
+    //printk("Adding device node %s to the device registry\n", path);
     // Add the device to the device registry
     if(deviceRegistry.devArrSize > (size_t)device->id){
+        if(deviceRegistry.devArrSize == 0){
+            deviceRegistry.devArrSize++;
+        }
         deviceRegistry.devices = rehalloc(deviceRegistry.devices, deviceRegistry.devArrSize * 2);
         deviceRegistry.devArrSize *= 2;
     }
@@ -260,6 +268,10 @@ device_t* GetDeviceByID(device_id_t device){
         return NULL;
     }
     return deviceRegistry.devices[device];
+}
+
+size_t GetNumDevices(){
+    return deviceRegistry.numDevices;
 }
 
 uint32_t loadedModules = 0;

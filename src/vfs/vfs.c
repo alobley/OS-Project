@@ -202,6 +202,7 @@ vfs_node_t* VfsAddDevice(device_t* device, char* name, char* path, int permissio
     if(node == NULL){
         return NULL;
     }
+    
     VfsAddChild(VfsFindNode(path), node);
 
     node->device = device;
@@ -268,13 +269,15 @@ void FreeFileDescriptor(fd_t file, file_table_t* table){
 }
 
 fd_t CreateFileContext(vfs_node_t* node, file_table_t* table, unsigned int flags){
-    file_context_t* context = (file_context_t*)halloc(sizeof(file_context_t));
+    file_context_t* context = halloc(sizeof(file_context_t));
     if(context == NULL){
         return STANDARD_FAILURE;
     }
     memset(context, 0, sizeof(file_context_t));
     
     context->node = node;
+    context->offset = 0;
+    context->flags = flags;
     node->refCount++;
     context->fd = AllocateFileDescriptor(table);
     if(context->fd == -1){
@@ -361,16 +364,6 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
 
     int status = 0;
 
-    // Make the /dev directory
-    vfs_node_t* dev = VfsMakeNode("dev", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
-    if(dev == NULL){
-        return STANDARD_FAILURE;
-    }
-    status = VfsAddChild(root, dev);
-    if(status != STANDARD_SUCCESS){
-        return STANDARD_FAILURE;
-    }
-
     // Make the /initrd directory
     vfs_node_t* initrd = VfsMakeNode("initrd", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
     if(initrd == NULL){
@@ -396,6 +389,16 @@ int InitializeVfs(multiboot_info_t* mbootInfo) {
         return STANDARD_FAILURE;
     }
     status = VfsAddChild(root, rootmnt);
+    if(status != STANDARD_SUCCESS){
+        return STANDARD_FAILURE;
+    }
+
+    // Make the /dev directory
+    vfs_node_t* dev = VfsMakeNode("dev", NODE_FLAG_DIRECTORY | NODE_FLAG_RESIZEABLE, 0, 0755, ROOT_UID, NULL);
+    if(dev == NULL){
+        return STANDARD_FAILURE;
+    }
+    status = VfsAddChild(root, dev);
     if(status != STANDARD_SUCCESS){
         return STANDARD_FAILURE;
     }

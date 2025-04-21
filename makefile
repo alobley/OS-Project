@@ -5,7 +5,7 @@ ARCH=i386
 BOOTDISK=boot.img
 
 # QEMU Arguments
-EMARGS=-m 1024M -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu pentium -accel kvm
+EMARGS=-m 512M -smp 1 -vga std -display sdl,gl=on -machine pc-i440fx-5.2 -cpu pentium -accel kvm
 EMARGS+=-hda bin/harddisk.vdi
 EMARGS+=-audiodev sdl,id=sdl,out.frequency=48000,out.channels=2,out.format=s32
 EMARGS+=-device sb16,audiodev=sdl -machine pcspk-audiodev=sdl
@@ -127,7 +127,7 @@ addfiles: create_dirs
 	sudo cp $(BUILD_DIR)/hello.elf mnt/HELLO.ELF
 	sudo cp $(BUILD_DIR)/usershell.elf mnt/SHELL.ELF
 	sync
-	sleep 1
+	@sleep 1
 	sudo umount mnt
 
 # Create the Hard Drive Image, for some reason .qcow2 doesn't show sectors properly.

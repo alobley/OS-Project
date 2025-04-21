@@ -10,16 +10,16 @@ typedef struct Device device_t;
 
 typedef unsigned long long lba_t;         // Logical Block Addressing
 
-typedef unsigned short modid_t;         // Module ID for kernel modules
+typedef unsigned short modid_t;           // Module ID for kernel modules
 
 // Result of a driver operation
 typedef int dresult_t;
-#define DRIVER_REGISTRY_FULL -3
+#define DRIVER_INVALID_ARGUMENT -3
 #define DRIVER_ACCESS_DENIED -2
 #define DRIVER_FAILURE -1
 #define DRIVER_SUCCESS 0
 #define DRIVER_NOT_SUPPORTED 1
-#define DRIVER_INVALID_ARGUMENT 2
+#define DRIVER_REGISTRY_FULL 2
 
 typedef dresult_t (*init_handle_t)(void);
 typedef dresult_t (*deinit_handle_t)(void);
@@ -27,7 +27,7 @@ typedef dresult_t (*read_handle_t)(device_id_t device, void* buf, size_t len, si
 typedef dresult_t (*write_handle_t)(device_id_t device, void* buf, size_t len, size_t offset);              // Offset is the offset of the device
 typedef dresult_t (*ioctl_handle_t)(int cmd, void* arg, device_id_t device);
 typedef dresult_t (*irq_handle_t)(int num);
-typedef dresult_t (*poll_t)(void* file, short* revents);                                // Reminder to me to implement a struct file or something
+typedef dresult_t (*poll_t)(void* file, short* revents);                                                    // Reminder to me to implement a struct file or something
 typedef dresult_t (*probe_t)(device_id_t device, unsigned int deviceClass, unsigned int deviceType);
 
 // Per-device operations
@@ -66,6 +66,7 @@ enum Device_Type {
     DEVICE_TYPE_RTC = (1 << 10),
     DEVICE_TYPE_TIMER = (1 << 11),
     DEVICE_TYPE_FILESYSTEM = (1 << 12),
+    DEVICE_TYPE_TTY = (1 << 13),
     // More...
 };
 
@@ -87,14 +88,11 @@ typedef struct Driver {
 // Device driver specific to filesystems. No other drivers will have special treatment. Read/write functions still work with file reading/writing.
 typedef struct FS_Driver {
     driver_t driver;
-    vfs_node_t* (*readdir)(device_id_t device, char* path);     // Read a directory from a given filesystem  (path relative to the filesystem's root)
-    dresult_t (*closedir)(device_id_t device, char* path);      // Clear a directory previously read from a filesystem (path relative to the filesystem's root)
     dresult_t (*sync)(device_id_t device);                      // Sync the filesystem to the disk
     dresult_t (*fsync)(char* path);                             // Sync one file to the disk
     dresult_t (*delete)(char* path);                            // Delete a file from the filesystem
     dresult_t (*mount)(device_id_t device, char* path);         // The driver must mount the filesystem at the given path
     dresult_t (*unmount)(device_id_t device, char* path);       // Unmount the directiories from the given filesystem device
-    int fs;
 } fs_driver_t;
 
 typedef struct Device {
@@ -202,6 +200,8 @@ fs_driver_t* FindFsDriver(device_t* device);
 /// @param device The device ID to get
 /// @return Pointer to the device, or NULL if none
 device_t* GetDeviceByID(device_id_t device);
+
+size_t GetNumDevices();
 
 int LoadModule(char* path);
 int UnloadModule(modid_t driver);

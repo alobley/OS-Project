@@ -119,6 +119,8 @@ typedef struct ataDisk {
     uint16_t numSectors;        // Number of sectors
 } disk_t;
 
+driver_t* ataDriver = NULL;
+
 // Get the control register of a given base
 inline uint16_t GetCtrl(uint16_t basePort){
     switch (basePort){
@@ -456,6 +458,8 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
     }
 
     device_t* this = GetDeviceByID(device);
+
+    ataDriver->busy = true;
     
     // Extract parameters from buffer
     uint64_t* buf = (uint64_t*)buffer;
@@ -478,6 +482,8 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
     if(disk->addressing == LBA28) {
         // Limit to 256 sectors for LBA28
         sectorCount = (sectorCount > 256) ? 256 : sectorCount;
+
+        //printk("Reading from disk...\n");
         
         // Select master/slave with correct drive bits
         if(disk->slave) {
@@ -518,11 +524,13 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
                 if(status & FLG_ERR) {
                     uint8_t error = inb(ErrorPort(disk->base));
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
                 
                 if(--timeout <= 0) {
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
             } while((status & FLG_BSY) || !(status & FLG_DRQ));
@@ -576,11 +584,13 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
                 if(status & FLG_ERR) {
                     uint8_t error = inb(ErrorPort(disk->base));
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
                 
                 if(--timeout <= 0) {
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
             } while((status & FLG_BSY) || !(status & FLG_DRQ));
@@ -629,11 +639,13 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
                 if(status & FLG_ERR) {
                     uint8_t error = inb(ErrorPort(disk->base));
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
                 
                 if(--timeout <= 0) {
                     SoftwareReset(disk);
+                    ataDriver->busy = false;
                     return DRIVER_FAILURE;
                 }
             } while((status & FLG_BSY) || !(status & FLG_DRQ));
@@ -651,6 +663,7 @@ int ReadSectors(device_id_t device, void* buffer, size_t size, size_t ignored) {
     // Reset the drive for next operation
     SoftwareReset(disk);
     
+    ataDriver->busy = false;
     return DRIVER_SUCCESS;
 }
 
@@ -661,7 +674,7 @@ int WriteSectors(device_id_t this, void* buffer, size_t size, size_t offset){
 
 // Write sectors function...
 
-int ProcessIoctl(int cmd, void* argp, device_id_t device){
+ssize_t ProcessIoctl(int cmd, void* argp, device_id_t device){
     disk_t* disk = (disk_t*)GetDeviceByID(device)->driverData;
     switch(cmd){
         // IOCTL requests
@@ -672,6 +685,14 @@ int ProcessIoctl(int cmd, void* argp, device_id_t device){
         case 2:{
             SoftwareReset(disk);
             return DRIVER_SUCCESS;
+        }
+        case 3:{
+            // Get the sector size (in bytes) of the disk
+            return disk->sectorSize;
+        }
+        case 4:{
+            // Get the low 32 bits of the disk size in sectors
+            return (ssize_t)disk->size;
         }
         default:{
             return DRIVER_FAILURE;
@@ -687,7 +708,7 @@ static device_t** devices = NULL;
  * - Make a driver specifically for more advanced disk interaction and load it from the disk
 */
 int InitializeAta(){
-    driver_t* ataDriver = halloc(sizeof(driver_t));
+    ataDriver = halloc(sizeof(driver_t));
     if(ataDriver == NULL){
         return DRIVER_FAILURE;
     }
@@ -738,8 +759,11 @@ int InitializeAta(){
         devices[i]->ops.write = WriteSectors;
         devices[i]->ops.ioctl = ProcessIoctl;
         devices[i]->driverData = (void*)currentDisk;
-        RegisterDevice(devices[i], diskName, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-        diskName[9]++;
+        RegisterDevice(devices[i], strdup(diskName), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+
+        foundDisks++;
+        
+        diskName[8]++;
     }
 
     if(foundDisks == 0){

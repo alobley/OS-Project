@@ -114,6 +114,10 @@ void CreateGDT(){
 
 extern int shell();
 
+device_t* stdin = NULL;
+device_t* stdout = NULL;
+device_t* stderr = NULL;
+
 /// @brief The main entry point for the kernel
 /// @param magic The magic number provided by the bootloader (must be multiboot-compliant)
 /// @param mbootInfo A pointer to the multiboot info structure provided by the bootloader
@@ -181,9 +185,8 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     // Stress test the memory allocator
     printk("Stress testing the heap allocator...\n");
-    for(int i = 1; i < 1000; i++){
+    for(int i = 1; i < 100; i++){
         // Allocate an increasingly large amount of memory
-        //printk("Allocating %u bytes\n", PAGE_SIZE * i);
         uint8_t* test = halloc(PAGE_SIZE * i);
         if(test == NULL){
             // Memory allocation failed
@@ -202,9 +205,8 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     printk("Getting system time from CMOS...\n");
     SetTime();
 
-    // Test the timer (removed for faster debugging - the timer works)
-    //printk("Testing the timer...\n");
     // Test the PC speaker (removed because it is loud af)
+    //printk("Testing PC speaker...\n");
     //PCSP_Beep();
 
     // Initialization - third stage
@@ -232,9 +234,9 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     printk("System registries created successfully!\n");
 
 
-    // Make STDIN, STDOUT, and STDERR (as devices)...
+    // Make STDIN, STDOUT, and STDERR
     // I just recently completely overhauled half the system, so the old code no longer worked
-    device_t* stdin = halloc(sizeof(device_t));
+    stdin = halloc(sizeof(device_t));
     if(stdin == NULL){
         // Failed to allocate memory for stdin
         printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
@@ -242,10 +244,10 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     }
     memset(stdin, 0, sizeof(device_t));
     stdin->name = "stdin";
-    stdin->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
+    stdin->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT | DEVICE_CLASS_VIRTUAL;
     RegisterDevice(stdin, "/dev/stdin", S_IROTH);
 
-    device_t* stdout = halloc(sizeof(device_t));
+    stdout = halloc(sizeof(device_t));
     if(stdout == NULL){
         // Failed to allocate memory for stdin
         printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
@@ -253,23 +255,19 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     }
     memset(stdout, 0, sizeof(device_t));
     stdout->name = "stdout";
-    stdout->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
-    RegisterDevice(stdin, "/dev/stdout", S_IROTH);
+    stdout->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_VIRTUAL;
+    RegisterDevice(stdout, "/dev/stdout", S_IROTH);
 
-    device_t* stderr = halloc(sizeof(device_t));
+    stderr = halloc(sizeof(device_t));
     if(stderr == NULL){
         // Failed to allocate memory for stdin
         printk("KERNEL PANIC: Failed to allocate memory for stdin!\n");
         STOP
     }
     memset(stderr, 0, sizeof(device_t));
-    stdout->name = "stderr";
-    stderr->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_INPUT;
-    RegisterDevice(stdin, "/dev/stderr", S_IROTH);
-
-    printk("STDIN, STDOUT, and STDERR created successfully!\n");
-
-    //STOP
+    stderr->name = "stderr";
+    stderr->class = DEVICE_CLASS_CHAR | DEVICE_CLASS_VIRTUAL;
+    RegisterDevice(stderr, "/dev/stderr", S_IROTH);
 
     // Set the current process to the kernel (we don't need a proper context since the kernel won't actually "run" per se)
     // Create the kernel's PCB
@@ -282,18 +280,53 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     SetCurrentProcess(kernelPCB);                                   // Set the current process to the kernel PCB
     printk("Kernel PCB created successfully!\n");
 
-    InitializeKeyboard();                                           // Initialize the keyboard driver
-    //InitializeTTY();                                              // Initialize the TTY subsystem
+    InitializeKeyboard();                                           // Initialize the keyboard driver (TODO: turn into a real driver)
+    InitializeTTY();                                                // Initialize the TTY subsystem
     
     InitializeAta();                                                // Initialize the built-in PATA driver (will likely be replaced by a module later in boot when the filesystem is mounted)
 
     printk("Initializing FAT driver...\n");
-    //STOP
 
     // Initialize the FAT driver
-    InitializeFAT();
+    if(InitializeFAT() != DRIVER_SUCCESS){
+        // If there was a failure, the system can't continue as the FAT driver is needed for most operations
+        printk("KERNEL PANIC: Failed to initialize FAT driver!\n");
+        STOP
+    }
 
-    printk("FAT driver initialized successfully!\n");
+    printk("FAT driver initialized successfully! Mounting filesystems...\n");
+
+    // Search for disk devices and assign them filesystem drivers (if any)
+    for(size_t i = 0; i < GetNumDevices(); i++){
+        device_t* device = GetDeviceByID(i);
+        if(device == NULL || device->driver == NULL){
+            continue;
+        }
+
+        if(device->class & DEVICE_CLASS_BLOCK && device->type & DEVICE_TYPE_STORAGE){
+            // This is a block device and a storage device
+            FindFsDriver(device);
+        }
+    }
+
+    // Find the root filesystem and mount it
+    for(size_t i = 0; i < GetNumDevices(); i++){
+        device_t* device = GetDeviceByID(i);
+        if(device == NULL){
+            continue;
+        }
+
+        if(device->type == (DEVICE_TYPE_STORAGE | DEVICE_TYPE_PARTITION | DEVICE_TYPE_FILESYSTEM)){
+            // This is a block device and a storage device
+            fs_driver_t* driver = (fs_driver_t*)device->driver;
+            if(driver != NULL && (driver->driver.type & DEVICE_TYPE_FILESYSTEM)){
+                // The driver was found, mount the filesystem
+                //printk("Mounting filesystem on device %s...\n", device->name);
+                driver->mount(device->id, "/root");
+            }
+        }
+    }
+    printk("Root filesystem mounted successfully!\n");
 
     // Initialization - fourth stage
 
@@ -310,6 +343,31 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
     //ScheduleProcess(shellPCB);
     // Do a SYS_YIELD
     //do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
+
+    /* This was to test the new driver interface and ATA driver. It works.
+    vfs_node_t* node = VfsFindNode("/dev/pat0");
+    device_t* device = node->device;
+
+    uint64_t* buffer = halloc(512);
+
+    // Read a total of 1 sector starting at sector 0
+    buffer[0] = 0;
+    buffer[1] = 1;
+    device->ops.read(device->id, buffer, 512, 0);
+
+    uint16_t* data = (uint16_t*)buffer;
+
+    if(data[255] == 0xAA55){
+        // The first sector is a valid boot sector
+        printk("Valid boot sector found!\n");
+        printk("Data at the end of the sector: 0x%x\n", data[255]);
+        STOP
+    }else{
+        // The first sector is not a valid boot sector
+        printk("Invalid boot sector found!\n");
+        STOP
+    }
+    */
 
     shell();
 

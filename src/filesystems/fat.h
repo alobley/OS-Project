@@ -3,6 +3,6 @@
 
 #include <devices.h>
 
-int InitializeFAT();
+dresult_t InitializeFAT();
 
 #endif
