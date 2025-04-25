@@ -158,7 +158,7 @@ physaddr_t PopFrame(){
         STOP
     }
     while(!TestBit(*frameSp / PAGE_SIZE)){
-        // Just in case the frame was incorrectly pushed or its status changed, skip it.
+        // Just in case the frame was incorrectly pushed or its status changed, skip it. (Helpful for regions allocated with physpalloc)
         // Changes to the memory bitmap should be exceedingly rare after the kernel maps itself.
         if(frameSp <= &_frameStack[0]){
             // Out of memory!
@@ -369,15 +369,9 @@ page_result_t physpalloc(virtaddr_t virt, physaddr_t phys, unsigned int flags){
         return PAGE_ALREADY_MAPPED;
     }
 
-    if(TestBit(PAGE_ADDR_MASK(phys) / PAGE_SIZE)){
-        // Sometimes usable memory will be physically allocated, so only clear the bit if it needs to be cleared.
-        ClearBit(PAGE_ADDR_MASK(phys) / PAGE_SIZE);
-
-        // Reload the frame stack (this function likely won't often be called, and since it's a stack, a complete reload is neccessary)
-        // It's also likely that (after the kernel is paged) most physically allocated regions won't be located in usable RAM.
-        FlushFrameStack();
-        MapFrameStack();
-    }
+    // Sometimes usable memory will be physically allocated. If the bit is already cleared, this won't do anything.
+    // This may dirty the stack, but it likely won't happen often and there's code to skip bad frames.
+    ClearBit(PAGE_ADDR_MASK(phys) / PAGE_SIZE);
 
     // Map the address
     PAGE_TABLE_VIRTUAL(pdIndex)->pages[ptIndex] = PAGE_ADDR_MASK(phys) | flags | PAGE_NOREMAP;

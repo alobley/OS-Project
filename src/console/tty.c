@@ -5,6 +5,7 @@
 #include <devices.h>
 #include <keyboard.h>
 #include <vfs.h>
+#include <stdio.h>
 
 #define DEFAULT_TTY_WIDTH 80
 #define DEFAULT_TTY_HEIGHT 25
@@ -83,7 +84,6 @@ dresult_t TTYClear(tty_t* tty){
         return DRIVER_FAILURE;
     }
     
-    memset(tty->buffer, 0, DEFAULT_TTY_SIZE * sizeof(uint16_t));
     tty->cursor_x = 0;
     tty->cursor_y = 0;
     
@@ -94,7 +94,9 @@ dresult_t TTYClear(tty_t* tty){
 
     if(tty->active){
         // Update the framebuffer
-        ClearScreen();
+        for(size_t i = 0; i < DEFAULT_TTY_SIZE; i++){
+            ((uint16_t*)(vgaFramebuffer->address))[i] = tty->buffer[i];
+        }
         MoveCursor(tty->cursor_x, tty->cursor_y);
     }
     
@@ -110,6 +112,10 @@ void TTYScroll(tty_t* tty){
     }
     tty->cursor_y--;
     tty->cursor_x = 0;
+
+    for(int i = 0; i < tty->fb->width * tty->fb->height; i++){
+        ((uint16_t*)(tty->fb->address))[i] = tty->buffer[i];
+    }
 }
 
 dresult_t TTYWrite(device_id_t device, void* buf, size_t len, size_t offset){
@@ -127,40 +133,120 @@ dresult_t TTYWrite(device_id_t device, void* buf, size_t len, size_t offset){
     if(offset >= DEFAULT_TTY_SIZE){
         return DRIVER_FAILURE;
     }
-    tty->cursor_x = offset % DEFAULT_TTY_WIDTH;
-    tty->cursor_y = offset / DEFAULT_TTY_WIDTH;
 
     uint16_t* buffer = (uint16_t*)buf;
     for(size_t i = 0; i < len; i++){
-        while(tty->cursor_x >= DEFAULT_TTY_WIDTH){
-            tty->cursor_x -= DEFAULT_TTY_WIDTH;
+        if((buffer[i] & 0xFF) == '\n'){
+            // Just update cursor position for newline, don't write to buffer
+            tty->cursor_x = 0;
             tty->cursor_y++;
+        }else if((buffer[i] & 0xFF) == '\b'){
+            if(tty->cursor_x > 0){
+                tty->cursor_x--;
+            }else{
+                tty->cursor_x = 0;
+            }
+            // Clear the character at current position
+            tty->buffer[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x] = 0x0F00;
+
+            if(tty->active){
+                ((uint16_t*)(tty->fb->address))[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x] = 0x0F00;
+            }
+        }else{
+            // Write the character to buffer and advance cursor
+            // Check if we need to scroll
+            tty->buffer[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x] = buffer[i];
+
+            if(tty->active){
+                ((uint16_t*)(tty->fb->address))[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x] = tty->buffer[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x];
+            }
+
+            tty->cursor_x++;
+            if(tty->cursor_x >= DEFAULT_TTY_WIDTH){
+                tty->cursor_x = 0;
+                tty->cursor_y++;
+            }
         }
-        while(tty->cursor_y >= DEFAULT_TTY_HEIGHT){
-            TTYScroll(tty);
-            tty->cursor_y -= 1;
-        }
-        tty->buffer[tty->cursor_y * DEFAULT_TTY_WIDTH + tty->cursor_x + offset] = (((uint16_t*)buf)[i] | (uint16_t)0x0F00);
-        tty->cursor_x++;
+    }
+
+    // Check if we need to scroll
+    while(tty->cursor_y >= DEFAULT_TTY_HEIGHT){
+        TTYScroll(tty);
     }
     
     if(tty->active){
-        // Update the framebuffer
+        // Update the cursor position
         MoveCursor(tty->cursor_x, tty->cursor_y);
-        for(size_t i = 0; i < len; i++){
-            if(i % 2){
-                WriteChar(((char*)buf)[i]);
-            }
-        }
     }
     
     return DRIVER_SUCCESS;
 }
 
+int startOffset = 0;
+void ttykeypress(KeyboardEvent_t event){
+    if(event.keyUp || event.ascii == 0){
+        return;
+    }
+
+    if(event.scanCode == ENTER){
+        readComplete = true;
+    }else{
+        readComplete = false;
+    }
+    if(event.ascii != '\b'){
+        readChars++;
+    }else{
+        if(readChars > 0){
+            readChars--;
+        }
+    }
+    
+    if(activeTTY->cursor_x > startOffset || readChars > 0){
+        uint8_t buf[2];
+        buf[0] = event.ascii;
+        buf[1] = 0x0F;
+        TTYWrite(activeTTY->this->id, (void*)&buf[0], 1, activeTTY->cursor_x + (activeTTY->cursor_y * DEFAULT_TTY_WIDTH));
+        if(activeTTY->reading){
+            activeTTY->stdBuffer[readChars - 1] = event.ascii;
+        }
+    }
+    lastKey = event.ascii;
+}
+
 dresult_t StdinRead(device_id_t device, void* buf, size_t len, size_t offset){
     // Read from the standard input
+
+    readComplete = false;
+    readChars = 0;
+    startOffset = activeTTY->cursor_x;
+    activeTTY->reading = true;
+
+    sti;  // Enable interrupts
+
+    size_t actualReads = 0;
+    while(!readComplete){
+        // Wait for a key press
+        if(lastKey != 0) {
+            if(lastKey == '\b') {
+                // Handle backspace
+                if(actualReads > 0) {
+                    actualReads--;
+                    ((char*)buf)[actualReads] = 0;
+                }
+            } 
+            else if(lastKey != '\n' && actualReads < len - 1) {
+                // Store the character
+                ((char*)buf)[actualReads++] = lastKey;
+            }
+            // Reset lastKey after processing
+            lastKey = 0;
+        }
+    }
     
-    return DRIVER_SUCCESS;
+    // Add null terminator to make it a proper C string
+    ((char*)buf)[actualReads] = '\0';
+    
+    return actualReads;
 }
 
 dresult_t StderrWrite(device_id_t device, void* buf, size_t len, size_t offset){
@@ -178,48 +264,26 @@ dresult_t StdoutWrite(device_id_t device, void* buf, size_t len, size_t offset){
         return DRIVER_FAILURE;
     }
 
+    tty_t* tty = (tty_t*)GetDeviceByID(device)->driverData;
+
     if(strcmp(((char*)buf), ANSI_ESCAPE) == 0){
-        TTYClear((tty_t*)GetDeviceByID(device)->driverData);
+        TTYClear(tty);
         return DRIVER_SUCCESS;
     }
 
     char* buffer = (char*)buf;
     for(size_t i = 0; i < len; i++){
         char c[2] = {0};
-        c[0] = 0x0F;
-        c[1] = buffer[i];
-        tty_t* tty = (tty_t*)GetDeviceByID(device)->driverData;
+        c[0] = buffer[i];
+        c[1] = 0x0F;
         if(tty == NULL){
             return DRIVER_FAILURE;
         }
-        TTYWrite(device, (void*)&c[0], 2, offset + i);
+        
+        TTYWrite(tty->this->id, (void*)&c[0], 1, offset + i);
     }
     
     return DRIVER_SUCCESS;
-}
-
-void ttykeypress(KeyboardEvent_t event){
-    if(event.keyUp || event.ascii == 0){
-        return;
-    }
-    if(event.scanCode == ENTER){
-        readComplete = true;
-    }else{
-        readComplete = false;
-    }
-    if(event.ascii != '\b'){
-        readChars++;
-    }
-    if(readChars > 0){
-        uint8_t buf[2];
-        buf[0] = 0x0F;
-        buf[1] = event.ascii;
-        TTYWrite(activeTTY->this->id, (void*)&buf[0], 2, activeTTY->cursor_x + (activeTTY->cursor_y * DEFAULT_TTY_WIDTH));
-        if(activeTTY->reading){
-            activeTTY->stdBuffer[readChars - 1] = event.ascii;
-        }
-    }
-    lastKey = event.ascii;
 }
 
 
@@ -320,6 +384,8 @@ int InitializeTTY(){
     RegisterDevice(ttyDevice, "/dev/tty0", S_IROTH | S_IWOTH);
     ttyDevice->node->size = DEFAULT_TTY_SIZE * sizeof(uint16_t);
 
+    TTYClear(tty);
+
     activeTTY = tty;
 
     stdin->driver = this;
@@ -338,7 +404,7 @@ int InitializeTTY(){
     stdout->ops.write = StdoutWrite;
     stderr->ops.write = StderrWrite;
 
-    //InstallKeyboardCallback(ttykeypress);
+    InstallKeyboardCallback(ttykeypress);
     
     return DRIVER_SUCCESS;
 }

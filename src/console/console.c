@@ -37,6 +37,9 @@ HOT void MoveCursor(uint16_t x, uint16_t y){
 
     // Make sure the cursor is visible
     *(uint16_t*)((VGA_ADDRESS + (offset * 2)) + 1) = VGA_WHITE_ON_BLACK;
+
+    cursor_x = x;
+    cursor_y = y;
 }
 
 // Set the maximum mode for the VGA (highest width and height)

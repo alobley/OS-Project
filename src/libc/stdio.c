@@ -5,6 +5,23 @@
 #include <string.h>
 #include <system.h>
 #include <stdbool.h>
+#include <kernel.h>
+
+int write(int fd, const void* buf, size_t count){
+    // Write to a file descriptor
+    int result = 0;
+    do_syscall(SYS_WRITE, fd, (uint32_t)buf, count, 0, 0);
+    getresult(result);
+    return result;
+}
+
+int read(int fd, void* buf, size_t count){
+    // Read from a file descriptor
+    int result = 0;
+    do_syscall(SYS_READ, fd, (uint32_t)buf, count, 0, 0);
+    getresult(result);
+    return result;
+}
 
 void printfloat(double num, int precision){
     char buffer[65];                    // Maximum of 64 characters for a double

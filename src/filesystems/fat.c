@@ -476,6 +476,8 @@ dresult_t Mount(device_id_t device, char* path){
                 newNode = VfsMakeNode(name, NODE_FLAG_MOUNTED | NODE_FLAG_NOTREAD, currentEntry[i].fileSize, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IXUSR | S_IXGRP, ROOT_UID, 0);
             }
 
+            newNode->size = currentEntry[i].fileSize;
+
             if(newNode == NULL){
                 // Failed to create the node
                 hfree(entries);

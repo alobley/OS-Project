@@ -690,9 +690,58 @@ static HOT void syscall_handler(struct Registers *regs){
 
             // Returns: (ssize_t) bytes read - negative on error
 
-            // I need to implement this one too ASAP
+            struct dirent* dirent = (struct dirent*)regs->ecx;
+            if((regs->ecx == 0 || regs->ecx < USER_MEM_START || regs->ecx > USER_MEM_END) && currentProcess != kernelPCB){
+                // Invalid address
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
 
-            regs->eax = SYSCALL_NOT_IMPLEMENTED;
+            if(currentProcess->fileTable->arrSize < regs->ebx){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+            file_context_t* context = currentProcess->fileTable->openFiles[regs->ebx];
+            if(context == NULL || context->node == NULL){
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+            vfs_node_t* node = context->node;
+            if(node == NULL || (node->flags & NODE_FLAG_DEVICE) || (node->flags & NODE_FLAG_WO)){
+                // Invalid read
+                regs->eax = SYSCALL_INVALID_ARGUMENT;
+                return;
+            }
+            if(node->flags & NODE_FLAG_DIRECTORY){
+                // This is a directory, we can read from it
+                vfs_node_t* child = node->firstChild;
+                size_t bytesRead = 0;
+
+                while(child != NULL && bytesRead < regs->edx){
+                    if(bytesRead + sizeof(struct dirent) + strlen(child->name) > regs->edx){
+                        // Not enough space in the buffer
+                        break;
+                    }
+
+                    dirent->len = strlen(child->name);
+                    dirent->type = child->flags;
+                    strcpy(dirent->name, child->name);
+                    bytesRead += sizeof(struct dirent) + strlen(child->name);
+                    child = child->next;
+                    dirent = (struct dirent*)((char*)regs->ecx + bytesRead);
+                }
+
+                if(bytesRead == 0){
+                    // No entries found
+                    regs->eax = SYSCALL_FAILURE;
+                    return;
+                }
+                regs->eax = bytesRead;
+                regs->eax = SYSCALL_SUCCESS;
+                return;
+            }
+
+            regs->eax = SYSCALL_INVALID_ARGUMENT;
             break;
         }
 

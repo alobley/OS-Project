@@ -53,52 +53,6 @@ void InitializeAllocator(void){
     }
 }
 
-// Allocate aligned memory
-MALLOC void* aligned_halloc(size_t size, size_t alignment) {
-    // Alignment must be a power of 2
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        return NULL;
-    }
-    
-    // Alignment less than pointer size doesn't make sense
-    if (alignment < sizeof(void*)) {
-        alignment = sizeof(void*);
-    }
-    
-    // Allocate enough extra space to ensure we can align the pointer
-    // and store the original allocation address
-    size_t extra = alignment + sizeof(void*);
-    void* raw_memory = halloc(size + extra);
-    if (raw_memory == NULL) {
-        return NULL;
-    }
-    
-    // Calculate the aligned address
-    uintptr_t raw_addr = (uintptr_t)raw_memory;
-    uintptr_t offset = (alignment - (raw_addr % alignment)) % alignment;
-    uintptr_t aligned_addr = raw_addr + offset;
-    
-    // Store the original pointer just before the aligned memory
-    void** ptr_storage = (void**)(aligned_addr - sizeof(void*));
-    *ptr_storage = raw_memory;
-    
-    return (void*)aligned_addr;
-}
-
-// Free aligned memory
-void aligned_hfree(void* ptr) {
-    if (ptr == NULL) {
-        return;
-    }
-    
-    // Get the original allocation address
-    void** ptr_storage = (void**)((uintptr_t)ptr - sizeof(void*));
-    void* original_ptr = *ptr_storage;
-    
-    // Free the original allocation
-    hfree(original_ptr);
-}
-
 // More complex memory allocation algorithm that takes blocks and makes them exactly the correct size
 MALLOC void* halloc(size_t size){
     if(size == 0){

@@ -149,8 +149,6 @@ void kb_handler(){
     scanCode = inb(PS2_DATA_PORT);
     outb(PIC_EOI, PIC_EOI);
 
-    //printk("A key was pressed!\n");
-
     KeyboardEvent_t event;
     event.scanCode = scanCode;
     if(shiftPressed){

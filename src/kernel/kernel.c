@@ -338,36 +338,14 @@ NORET void kmain(uint32_t magic, multiboot_info_t* mbootInfo){
 
     printk("Boot complete. Starting shell...\n");
 
+    // TODO: Reimplement actual process loading and execution (everything else with multitasking is done)
+    // Then have an init process...
+
     // Search for the shell in the root directory and execute it (Should I also try the chroot? It might be a good idea to use init as well...)
     //pcb_t* shellPCB = Load("/root/SHELL.ELF", NULL, NULL, 0);
     //ScheduleProcess(shellPCB);
     // Do a SYS_YIELD
     //do_syscall(SYS_YIELD, 0, 0, 0, 0, 0);
-
-    /* This was to test the new driver interface and ATA driver. It works.
-    vfs_node_t* node = VfsFindNode("/dev/pat0");
-    device_t* device = node->device;
-
-    uint64_t* buffer = halloc(512);
-
-    // Read a total of 1 sector starting at sector 0
-    buffer[0] = 0;
-    buffer[1] = 1;
-    device->ops.read(device->id, buffer, 512, 0);
-
-    uint16_t* data = (uint16_t*)buffer;
-
-    if(data[255] == 0xAA55){
-        // The first sector is a valid boot sector
-        printk("Valid boot sector found!\n");
-        printk("Data at the end of the sector: 0x%x\n", data[255]);
-        STOP
-    }else{
-        // The first sector is not a valid boot sector
-        printk("Invalid boot sector found!\n");
-        STOP
-    }
-    */
 
     shell();
 
